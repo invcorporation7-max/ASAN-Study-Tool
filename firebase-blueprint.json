@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user study profile and preferences stored in Firestore.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "plan": {
+          "type": "string",
+          "enum": ["basic", "pro", "admin"]
+        },
+        "spectraUrl": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "displayName", "plan", "createdAt", "updatedAt"]
+    },
+    "UserNote": {
+      "title": "UserNote",
+      "description": "Cloud-synced backup snapshot of a user's OneNote A4 document.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 180
+        },
+        "sectionName": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "pageCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "sectionName", "pageCount", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile and plan tier."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/UserNote" },
+      "description": "Private A4 note metadata backups owned by the user."
+    }
+  }
+}

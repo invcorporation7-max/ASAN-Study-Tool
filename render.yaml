@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: asan-study-tool
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: NODE_ENV=production node server.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

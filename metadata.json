@@ -1,0 +1,6 @@
+{
+  "name": "ASAN-Study_tool",
+  "description": "Comprehensive study workspace with OneNote-style A4 notebooks, PDF Booklet & Imposition Studio, Infinite Monthly Calendar, Exam Test Timers, Microsecond Stopwatch, Task Manager, and Google Workspace integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

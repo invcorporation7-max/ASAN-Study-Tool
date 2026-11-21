@@ -30,6 +30,7 @@ import type {
   SuperUsersPointsResponse,
 } from '../types';
 import { GA4AnalyticsPanel } from './GA4AnalyticsPanel';
+import { PointsVerificationPanel } from './PointsVerificationPanel';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 type UserFilter = 'all' | 'pro' | 'basic' | 'contributors' | 'admins' | 'google' | 'password';
@@ -514,7 +515,7 @@ export const SuperView: React.FC = () => {
           </div>
 
           {/* All Users & Their Points Directory */}
-          <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-bold text-slate-900">
@@ -867,8 +868,16 @@ export const SuperView: React.FC = () => {
             </form>
           </div>
 
+          {/* Point Awards & Deductions Verification (Verify / Revert / Dismiss) */}
+          <PointsVerificationPanel
+            onReviewed={() => {
+              void loadSuperData();
+              void refreshProfile();
+            }}
+          />
+
           {/* Global Point Transactions Audit Log */}
-          <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-bold text-slate-900">
@@ -883,7 +892,7 @@ export const SuperView: React.FC = () => {
                 value={txFilter}
                 onChange={(e) => setTxFilter(e.target.value)}
                 placeholder="Filter ledger by @user, UID, or reason..."
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs focus:border-violet-500 focus:bg-white focus:outline-none w-64"
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs focus:border-violet-500 focus:bg-white focus:outline-none w-full sm:w-64"
               />
             </div>
 

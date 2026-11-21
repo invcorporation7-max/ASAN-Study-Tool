@@ -922,13 +922,13 @@ export const NotesView: React.FC<NotesViewProps> = ({
               </div>
 
               {/* A4 Sheet Stream (210mm x 297mm proportion) */}
-              <div className="rounded-xl border border-slate-200 bg-slate-100 p-6 space-y-8 overflow-y-auto max-h-[75vh]">
+              <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 sm:p-6 space-y-6 sm:space-y-8 overflow-y-auto max-h-[75vh]">
                 {pages.map((page, pageIdx) => (
                   <div
                     key={page.id}
                     onClick={() => setActivePageIndex(pageIdx)}
                     onPaste={(e) => handlePasteOnCanvas(e, pageIdx)}
-                    className={`mx-auto w-full max-w-[740px] min-h-[1046px] rounded-sm bg-white p-10 shadow-sm border transition-colors flex flex-col justify-between ${
+                    className={`mx-auto w-full max-w-[740px] min-h-[520px] sm:min-h-[820px] lg:min-h-[1046px] rounded-sm bg-white p-4 sm:p-8 lg:p-10 shadow-sm border transition-colors flex flex-col justify-between ${
                       activePageIndex === pageIdx
                         ? 'border-blue-400'
                         : 'border-slate-200'

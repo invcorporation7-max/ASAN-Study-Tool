@@ -4,6 +4,7 @@ export type NavSection =
   | 'tasks'
   | 'notes'
   | 'timers'
+  | 'calculator'
   | 'messages'
   | 'notifications'
   | 'study-materials'
@@ -185,6 +186,12 @@ export interface PointTransactionItem {
   amount: number;
   reason: string;
   category: string;
+  verificationStatus?: 'pending' | 'verified' | 'reverted' | 'dismissed' | string;
+  verifiedByUserId?: number | null;
+  verifiedByLabel?: string;
+  verificationNote?: string;
+  verifiedAt?: string;
+  revertedTransactionId?: number | null;
   createdAt: string;
 }
 
@@ -381,6 +388,18 @@ export interface SuperAuditTransactionItem extends PointTransactionItem {
   username: string;
   displayName: string;
   shortUid: string;
+  currentBalance?: number;
+}
+
+export interface AdminPointTransactionsResponse {
+  summary: {
+    total: number;
+    pending: number;
+    verified: number;
+    reverted: number;
+    dismissed: number;
+  };
+  transactions: SuperAuditTransactionItem[];
 }
 
 export interface SuperUsersPointsResponse {

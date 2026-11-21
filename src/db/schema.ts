@@ -206,6 +206,12 @@ export const pointTransactions = pgTable('point_transactions', {
   amount: integer('amount').notNull(),
   reason: text('reason').notNull(),
   category: text('category').notNull(),
+  verificationStatus: text('verification_status').notNull().default('pending'), // 'pending' | 'verified' | 'reverted' | 'dismissed'
+  verifiedByUserId: integer('verified_by_user_id'),
+  verifiedByLabel: text('verified_by_label').notNull().default(''),
+  verificationNote: text('verification_note').notNull().default(''),
+  verifiedAt: text('verified_at').notNull().default(''),
+  revertedTransactionId: integer('reverted_transaction_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

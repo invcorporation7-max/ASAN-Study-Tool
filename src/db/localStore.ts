@@ -158,6 +158,12 @@ export interface StorePointTransaction {
   amount: number;
   reason: string;
   category: string;
+  verificationStatus?: string;
+  verifiedByUserId?: number | null;
+  verifiedByLabel?: string;
+  verificationNote?: string;
+  verifiedAt?: string;
+  revertedTransactionId?: number | null;
   createdAt: Date;
 }
 
@@ -341,6 +347,10 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
   });
   data.pointTransactions.forEach((pt) => {
     pt.createdAt = toDate(pt.createdAt);
+    if (!pt.verificationStatus) pt.verificationStatus = 'pending';
+    if (pt.verifiedByLabel === undefined) pt.verifiedByLabel = '';
+    if (pt.verificationNote === undefined) pt.verificationNote = '';
+    if (pt.verifiedAt === undefined) pt.verifiedAt = '';
   });
   data.notifications.forEach((nt) => {
     nt.createdAt = toDate(nt.createdAt);

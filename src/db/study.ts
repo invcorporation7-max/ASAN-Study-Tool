@@ -1680,7 +1680,22 @@ export async function getSuperUsersAndPointsLedger() {
       };
     });
 
-    const recentTransactions = allTx.slice(0, 150).map((tx) => {
+    const allTxTyped = allTx as {
+      id: number;
+      userId: number;
+      amount: number;
+      reason: string;
+      category: string;
+      verificationStatus?: string;
+      verifiedByUserId?: number | null;
+      verifiedByLabel?: string;
+      verificationNote?: string;
+      verifiedAt?: string;
+      revertedTransactionId?: number | null;
+      createdAt: Date | string;
+    }[];
+
+    const recentTransactions = allTxTyped.slice(0, 150).map((tx) => {
       const u = userMap.get(tx.userId);
       return {
         id: tx.id,
@@ -1688,6 +1703,12 @@ export async function getSuperUsersAndPointsLedger() {
         amount: tx.amount,
         reason: tx.reason,
         category: tx.category,
+        verificationStatus: tx.verificationStatus || 'pending',
+        verifiedByUserId: tx.verifiedByUserId ?? null,
+        verifiedByLabel: tx.verifiedByLabel || '',
+        verificationNote: tx.verificationNote || '',
+        verifiedAt: tx.verifiedAt || '',
+        revertedTransactionId: tx.revertedTransactionId ?? null,
         createdAt:
           tx.createdAt instanceof Date
             ? tx.createdAt.toISOString()
@@ -1696,6 +1717,7 @@ export async function getSuperUsersAndPointsLedger() {
         username: u?.username || `user_${tx.userId}`,
         displayName: u?.displayName || 'Unknown User',
         shortUid: u?.shortUid || '',
+        currentBalance: u?.points ?? 0,
       };
     });
 
@@ -1748,6 +1770,330 @@ export async function getSuperUsersAndPointsLedger() {
       store.notePages,
       store.tasks
     );
+  }
+}
+
+export async function listPointTransactionsForAdmin() {
+  const buildResponse = (
+    allUsers: ReturnType<typeof sanitizeUserForClient>[],
+    allTx: {
+      id: number;
+      userId: number;
+      amount: number;
+      reason: string;
+      category: string;
+      verificationStatus?: string;
+      verifiedByUserId?: number | null;
+      verifiedByLabel?: string;
+      verificationNote?: string;
+      verifiedAt?: string;
+      revertedTransactionId?: number | null;
+      createdAt: Date | string;
+    }[]
+  ) => {
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+    let pending = 0;
+    let verified = 0;
+    let reverted = 0;
+    let dismissed = 0;
+
+    const transactions = allTx.slice(0, 250).map((tx) => {
+      const status = tx.verificationStatus || 'pending';
+      if (status === 'verified') verified += 1;
+      else if (status === 'reverted') reverted += 1;
+      else if (status === 'dismissed') dismissed += 1;
+      else pending += 1;
+
+      const u = userMap.get(tx.userId);
+      return {
+        id: tx.id,
+        userId: tx.userId,
+        amount: tx.amount,
+        reason: tx.reason,
+        category: tx.category,
+        verificationStatus: status,
+        verifiedByUserId: tx.verifiedByUserId ?? null,
+        verifiedByLabel: tx.verifiedByLabel || '',
+        verificationNote: tx.verificationNote || '',
+        verifiedAt: tx.verifiedAt || '',
+        revertedTransactionId: tx.revertedTransactionId ?? null,
+        createdAt:
+          tx.createdAt instanceof Date ? tx.createdAt.toISOString() : String(tx.createdAt),
+        userEmail: u?.email || '',
+        username: u?.username || `user_${tx.userId}`,
+        displayName: u?.displayName || 'Unknown User',
+        shortUid: u?.shortUid || '',
+        currentBalance: u?.points ?? 0,
+      };
+    });
+
+    return {
+      summary: {
+        total: transactions.length,
+        pending,
+        verified,
+        reverted,
+        dismissed,
+      },
+      transactions,
+    };
+  };
+
+  try {
+    const [allUsers, allTx] = await Promise.all([
+      db.select().from(users),
+      db.select().from(pointTransactions).orderBy(desc(pointTransactions.createdAt)),
+    ]);
+    return buildResponse(
+      allUsers.map((u) => sanitizeUserForClient(u)),
+      allTx
+    );
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const sortedTx = [...store.pointTransactions].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+    return buildResponse(
+      store.users.map((u) => sanitizeUserForClient(u)),
+      sortedTx
+    );
+  }
+}
+
+export async function reviewPointTransaction(params: {
+  reviewerId: number;
+  reviewerEmail: string;
+  reviewerUsername: string;
+  reviewerShortUid: string;
+  reviewerRole: string;
+  transactionId: number;
+  action: 'verify' | 'revert' | 'dismiss';
+  note?: string;
+}) {
+  const reviewerLabel = `${params.reviewerRole === 'super' ? 'Super' : 'Admin'} (@${
+    params.reviewerUsername || params.reviewerEmail
+  }${params.reviewerShortUid ? ` · ${params.reviewerShortUid}` : ''})`;
+  const nowIso = new Date().toISOString();
+  const cleanNote = (params.note || '').trim().slice(0, 300);
+
+  if ((params.action === 'revert' || params.action === 'dismiss') && !cleanNote) {
+    throw new Error('Please enter a justification note when reverting or dismissing a transaction.');
+  }
+
+  try {
+    const [tx] = await db
+      .select()
+      .from(pointTransactions)
+      .where(eq(pointTransactions.id, params.transactionId))
+      .limit(1);
+    if (!tx) throw new Error('Point transaction not found.');
+    if (tx.category === 'admin_reversal') {
+      throw new Error('Admin reversal entries cannot be reverted again.');
+    }
+    if (
+      (params.action === 'revert' || params.action === 'dismiss') &&
+      (tx.verificationStatus === 'reverted' || tx.verificationStatus === 'dismissed')
+    ) {
+      throw new Error(`This transaction has already been ${tx.verificationStatus}.`);
+    }
+
+    if (params.action === 'verify') {
+      const [updated] = await db
+        .update(pointTransactions)
+        .set({
+          verificationStatus: 'verified',
+          verifiedByUserId: params.reviewerId,
+          verifiedByLabel: reviewerLabel,
+          verificationNote: cleanNote || 'Verified by Admin',
+          verifiedAt: nowIso,
+        })
+        .where(eq(pointTransactions.id, tx.id))
+        .returning();
+      return { transaction: updated, reversedDelta: 0 };
+    }
+
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, tx.userId))
+      .limit(1);
+    if (!targetUser) throw new Error('Associated user account not found.');
+
+    const currentBalance = targetUser.points || 0;
+    const requestedDelta = -tx.amount;
+    const nextBalance = Math.max(0, currentBalance + requestedDelta);
+    const appliedDelta = nextBalance - currentBalance;
+    const targetStatus = params.action === 'dismiss' ? 'dismissed' : 'reverted';
+
+    await db
+      .update(users)
+      .set({ points: nextBalance, updatedAt: new Date() })
+      .where(eq(users.id, targetUser.id));
+
+    const [updatedTx] = await db
+      .update(pointTransactions)
+      .set({
+        verificationStatus: targetStatus,
+        verifiedByUserId: params.reviewerId,
+        verifiedByLabel: reviewerLabel,
+        verificationNote: cleanNote,
+        verifiedAt: nowIso,
+      })
+      .where(eq(pointTransactions.id, tx.id))
+      .returning();
+
+    const reversalReason = `Admin ${targetStatus} Tx #${tx.id} (${tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts · "${tx.reason}"): ${cleanNote}`;
+    const [reversalEntry] = await db
+      .insert(pointTransactions)
+      .values({
+        userId: targetUser.id,
+        amount: appliedDelta,
+        reason: reversalReason.slice(0, 320),
+        category: 'admin_reversal',
+        verificationStatus: 'verified',
+        verifiedByUserId: params.reviewerId,
+        verifiedByLabel: reviewerLabel,
+        verificationNote: cleanNote,
+        verifiedAt: nowIso,
+        revertedTransactionId: tx.id,
+      })
+      .returning();
+
+    const signDelta = appliedDelta >= 0 ? `+${appliedDelta}` : `${appliedDelta}`;
+    const mailSubject = `Admin ${targetStatus === 'dismissed' ? 'Dismissed' : 'Reverted'} Point Transaction (${signDelta} pts)`;
+    const mailBody = `Hello ${targetUser.displayName},\n\n${reviewerLabel} reviewed and ${targetStatus} your point transaction #${tx.id}.\n\nOriginal Transaction: ${tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts (${tx.reason})\nBalance Adjustment Applied: ${signDelta} pts\nUpdated Balance: ${nextBalance} pts\nAdmin Justification: ${cleanNote}`;
+
+    await Promise.all([
+      db.insert(userMessages).values({
+        senderId: params.reviewerId,
+        recipientId: targetUser.id,
+        senderEmail: params.reviewerEmail,
+        senderUsername: params.reviewerUsername,
+        recipientEmail: targetUser.email,
+        recipientUsername: targetUser.username,
+        visibility: 'direct',
+        isAdminMail: true,
+        recipientSummary: `@${targetUser.username || targetUser.email}`,
+        subject: mailSubject,
+        body: mailBody,
+      }),
+      db.insert(notifications).values({
+        userId: targetUser.id,
+        senderId: params.reviewerId,
+        senderLabel: reviewerLabel,
+        title: mailSubject,
+        message: `${signDelta} pts adjustment (${cleanNote})`,
+        type: 'points',
+      }),
+    ]);
+
+    return {
+      transaction: updatedTx,
+      reversalEntry,
+      reversedDelta: appliedDelta,
+      newBalance: nextBalance,
+    };
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const tx = store.pointTransactions.find((t) => t.id === params.transactionId);
+    if (!tx) throw new Error('Point transaction not found.');
+    if (tx.category === 'admin_reversal') {
+      throw new Error('Admin reversal entries cannot be reverted again.');
+    }
+    if (
+      (params.action === 'revert' || params.action === 'dismiss') &&
+      (tx.verificationStatus === 'reverted' || tx.verificationStatus === 'dismissed')
+    ) {
+      throw new Error(`This transaction has already been ${tx.verificationStatus}.`);
+    }
+
+    if (params.action === 'verify') {
+      tx.verificationStatus = 'verified';
+      tx.verifiedByUserId = params.reviewerId;
+      tx.verifiedByLabel = reviewerLabel;
+      tx.verificationNote = cleanNote || 'Verified by Admin';
+      tx.verifiedAt = nowIso;
+      persistLocalStore();
+      return { transaction: tx, reversedDelta: 0 };
+    }
+
+    const targetUser = store.users.find((u) => u.id === tx.userId);
+    if (!targetUser) throw new Error('Associated user account not found.');
+
+    const currentBalance = targetUser.points || 0;
+    const requestedDelta = -tx.amount;
+    const nextBalance = Math.max(0, currentBalance + requestedDelta);
+    const appliedDelta = nextBalance - currentBalance;
+    const targetStatus = params.action === 'dismiss' ? 'dismissed' : 'reverted';
+
+    targetUser.points = nextBalance;
+    targetUser.updatedAt = new Date();
+    tx.verificationStatus = targetStatus;
+    tx.verifiedByUserId = params.reviewerId;
+    tx.verifiedByLabel = reviewerLabel;
+    tx.verificationNote = cleanNote;
+    tx.verifiedAt = nowIso;
+
+    const reversalReason = `Admin ${targetStatus} Tx #${tx.id} (${tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts · "${tx.reason}"): ${cleanNote}`;
+    const reversalEntry = {
+      id: nextSeq('pointTransactions'),
+      userId: targetUser.id,
+      amount: appliedDelta,
+      reason: reversalReason.slice(0, 320),
+      category: 'admin_reversal',
+      verificationStatus: 'verified',
+      verifiedByUserId: params.reviewerId,
+      verifiedByLabel: reviewerLabel,
+      verificationNote: cleanNote,
+      verifiedAt: nowIso,
+      revertedTransactionId: tx.id,
+      createdAt: new Date(),
+    };
+    store.pointTransactions.unshift(reversalEntry);
+
+    const signDelta = appliedDelta >= 0 ? `+${appliedDelta}` : `${appliedDelta}`;
+    const mailSubject = `Admin ${targetStatus === 'dismissed' ? 'Dismissed' : 'Reverted'} Point Transaction (${signDelta} pts)`;
+    const mailBody = `Hello ${targetUser.displayName},\n\n${reviewerLabel} reviewed and ${targetStatus} your point transaction #${tx.id}.\n\nOriginal Transaction: ${tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts (${tx.reason})\nBalance Adjustment Applied: ${signDelta} pts\nUpdated Balance: ${nextBalance} pts\nAdmin Justification: ${cleanNote}`;
+
+    store.userMessages.unshift({
+      id: nextSeq('userMessages'),
+      senderId: params.reviewerId,
+      recipientId: targetUser.id,
+      senderEmail: params.reviewerEmail,
+      senderUsername: params.reviewerUsername,
+      recipientEmail: targetUser.email,
+      recipientUsername: targetUser.username,
+      visibility: 'direct',
+      isAdminMail: true,
+      recipientSummary: `@${targetUser.username || targetUser.email}`,
+      subject: mailSubject,
+      body: mailBody,
+      attachmentTitle: '',
+      attachmentNoteId: null,
+      isRead: false,
+      createdAt: new Date(),
+    });
+    store.notifications.unshift({
+      id: nextSeq('notifications'),
+      userId: targetUser.id,
+      senderId: params.reviewerId,
+      senderLabel: reviewerLabel,
+      title: mailSubject,
+      message: `${signDelta} pts adjustment (${cleanNote})`,
+      type: 'points',
+      isRead: false,
+      createdAt: new Date(),
+    });
+
+    persistLocalStore();
+    return {
+      transaction: tx,
+      reversalEntry,
+      reversedDelta: appliedDelta,
+      newBalance: nextBalance,
+    };
   }
 }
 

@@ -1979,6 +1979,100 @@ export async function handleInbuiltApiRequest<T>(
     } as T;
   }
 
+  if (path === '/api/admin/point-transactions' && method === 'GET') {
+    if (!isElevated) throw new Error('Forbidden');
+    const userMap = new Map(store.users.map((u) => [u.id, u]));
+    let pending = 0;
+    let verified = 0;
+    let reverted = 0;
+    let dismissed = 0;
+    const transactions = [...store.pointTransactions].slice(0, 250).map((tx) => {
+      const status = tx.verificationStatus || 'pending';
+      if (status === 'verified') verified += 1;
+      else if (status === 'reverted') reverted += 1;
+      else if (status === 'dismissed') dismissed += 1;
+      else pending += 1;
+      const u = userMap.get(tx.userId);
+      return {
+        ...tx,
+        verificationStatus: status,
+        verifiedByLabel: tx.verifiedByLabel || '',
+        verificationNote: tx.verificationNote || '',
+        verifiedAt: tx.verifiedAt || '',
+        userEmail: u?.email || '',
+        username: u?.username || `user_${tx.userId}`,
+        displayName: u?.displayName || 'Unknown User',
+        shortUid: u?.shortUid || '',
+        currentBalance: u?.points ?? 0,
+      };
+    });
+    return {
+      summary: { total: transactions.length, pending, verified, reverted, dismissed },
+      transactions,
+    } as T;
+  }
+
+  const txReviewMatch = path.match(/^\/api\/admin\/point-transactions\/(\d+)\/review$/);
+  if (txReviewMatch && method === 'POST') {
+    if (!isElevated) throw new Error('Forbidden');
+    const txId = Number(txReviewMatch[1]);
+    const action = body.action as 'verify' | 'revert' | 'dismiss';
+    const cleanNote = String(body.note || '').trim().slice(0, 300);
+    const tx = store.pointTransactions.find((t) => t.id === txId);
+    if (!tx) throw new Error('Point transaction not found.');
+    if (tx.category === 'admin_reversal') {
+      throw new Error('Admin reversal entries cannot be reverted again.');
+    }
+    if ((action === 'revert' || action === 'dismiss') && !cleanNote) {
+      throw new Error('Please enter a justification note when reverting or dismissing.');
+    }
+    if (
+      (action === 'revert' || action === 'dismiss') &&
+      (tx.verificationStatus === 'reverted' || tx.verificationStatus === 'dismissed')
+    ) {
+      throw new Error(`This transaction has already been ${tx.verificationStatus}.`);
+    }
+    const reviewerLabel = `${isSuper ? 'Super' : 'Admin'} (@${user.username || user.email})`;
+    const nowIso = new Date().toISOString();
+    if (action === 'verify') {
+      tx.verificationStatus = 'verified';
+      tx.verifiedByUserId = user.id;
+      tx.verifiedByLabel = reviewerLabel;
+      tx.verificationNote = cleanNote || 'Verified by Admin';
+      tx.verifiedAt = nowIso;
+      saveStore(store);
+      return { transaction: tx, reversedDelta: 0 } as T;
+    }
+    const targetUser = store.users.find((u) => u.id === tx.userId);
+    if (!targetUser) throw new Error('Associated user account not found.');
+    const curBal = targetUser.points || 0;
+    const nextBal = Math.max(0, curBal - tx.amount);
+    const appliedDelta = nextBal - curBal;
+    const targetStatus = action === 'dismiss' ? 'dismissed' : 'reverted';
+    targetUser.points = nextBal;
+    tx.verificationStatus = targetStatus;
+    tx.verifiedByUserId = user.id;
+    tx.verifiedByLabel = reviewerLabel;
+    tx.verificationNote = cleanNote;
+    tx.verifiedAt = nowIso;
+    store.pointTransactions.unshift({
+      id: nextId(store, 'pointTransactions'),
+      userId: targetUser.id,
+      amount: appliedDelta,
+      reason: `Admin ${targetStatus} Tx #${tx.id} (${tx.reason}): ${cleanNote}`,
+      category: 'admin_reversal',
+      verificationStatus: 'verified',
+      verifiedByUserId: user.id,
+      verifiedByLabel: reviewerLabel,
+      verificationNote: cleanNote,
+      verifiedAt: nowIso,
+      revertedTransactionId: tx.id,
+      createdAt: nowIso,
+    });
+    saveStore(store);
+    return { transaction: tx, reversedDelta: appliedDelta, newBalance: nextBal } as T;
+  }
+
   if (path === '/api/super/users-points' && method === 'GET') {
     if (!isSuper) throw new Error('Forbidden');
     const userMap = new Map(store.users.map((u) => [u.id, u]));
@@ -2015,10 +2109,15 @@ export async function handleInbuiltApiRequest<T>(
       const u = userMap.get(tx.userId);
       return {
         ...tx,
+        verificationStatus: tx.verificationStatus || 'pending',
+        verifiedByLabel: tx.verifiedByLabel || '',
+        verificationNote: tx.verificationNote || '',
+        verifiedAt: tx.verifiedAt || '',
         userEmail: u?.email || '',
         username: u?.username || `user_${tx.userId}`,
         displayName: u?.displayName || 'Unknown User',
         shortUid: u?.shortUid || '',
+        currentBalance: u?.points ?? 0,
       };
     });
     return {

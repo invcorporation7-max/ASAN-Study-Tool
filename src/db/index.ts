@@ -334,8 +334,21 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             amount INTEGER NOT NULL,
             reason TEXT NOT NULL,
             category TEXT NOT NULL,
+            verification_status TEXT NOT NULL DEFAULT 'pending',
+            verified_by_user_id INTEGER,
+            verified_by_label TEXT NOT NULL DEFAULT '',
+            verification_note TEXT NOT NULL DEFAULT '',
+            verified_at TEXT NOT NULL DEFAULT '',
+            reverted_transaction_id INTEGER,
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'pending';
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS verified_by_user_id INTEGER;
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS verified_by_label TEXT NOT NULL DEFAULT '';
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS verification_note TEXT NOT NULL DEFAULT '';
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS verified_at TEXT NOT NULL DEFAULT '';
+          ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS reverted_transaction_id INTEGER;
 
           CREATE TABLE IF NOT EXISTS notifications (
             id SERIAL PRIMARY KEY,

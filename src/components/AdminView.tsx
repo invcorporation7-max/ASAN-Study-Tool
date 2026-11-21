@@ -37,6 +37,7 @@ import type {
 } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 import { GA4AnalyticsPanel } from './GA4AnalyticsPanel';
+import { PointsVerificationPanel } from './PointsVerificationPanel';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 interface AdminOverviewResponse {
@@ -650,6 +651,14 @@ export const AdminView: React.FC = () => {
             subtitle="Live website traffic, active users, engagement, top study pages, devices & countries from Google Analytics 4."
           />
 
+          {/* Admin Verification Queue for ALL Point Award & Deduction Transactions */}
+          <PointsVerificationPanel
+            onReviewed={() => {
+              void loadOverview();
+              void refreshProfile();
+            }}
+          />
+
           {/* SUPER / DEVELOPER MODE SECTION (Strictly invcorporation7@gmail.com) */}
           {isSuper && (
             <div className="rounded-xl border-2 border-violet-200 bg-violet-50/30 p-6 space-y-5">
@@ -1040,7 +1049,7 @@ export const AdminView: React.FC = () => {
           </div>
 
           {/* Contributor & User Oversight */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
             <h2 className="font-display text-base font-semibold text-slate-900">
               Contributor Oversight &amp; User Directory ({data.users.length})
             </h2>

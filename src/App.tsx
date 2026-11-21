@@ -3,6 +3,7 @@ import {
   ArrowRightLeft,
   Bell,
   BookOpen,
+  Calculator,
   Calendar,
   CheckCircle2,
   CheckSquare,
@@ -32,6 +33,7 @@ import {
 import { AdminView } from './components/AdminView';
 import { AuthGate } from './components/AuthGate';
 import { CalendarView } from './components/CalendarView';
+import { CasioFx82MsView } from './components/CasioFx82MsView';
 import { ContributorConsoleView } from './components/ContributorConsoleView';
 import { DashboardView } from './components/DashboardView';
 import {
@@ -84,6 +86,7 @@ const PRIMARY_NAV: {
   { id: 'tasks', label: 'My Tasks', icon: CheckSquare },
   { id: 'notes', label: 'My Notes', icon: BookOpen },
   { id: 'timers', label: 'Timers', icon: Clock },
+  { id: 'calculator', label: 'fx-82MS Calc', icon: Calculator },
   { id: 'messages', label: 'Tool Mail', icon: MessageSquare },
   { id: 'study-materials', label: 'Study Material Notes', icon: FolderOpen },
   { id: 'subscriptions', label: 'Subscriptions', icon: Sparkles },
@@ -110,6 +113,7 @@ const SECTION_LABELS: Record<NavSection, string> = {
   tasks: 'My Tasks',
   notes: 'My Notes',
   timers: 'Timers',
+  calculator: 'fx-82MS Calc',
   messages: 'Tool Mail',
   'study-materials': 'Study Material Notes',
   'contributor-console': "Contributors' Console",
@@ -826,7 +830,7 @@ const MainShell: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex overflow-x-hidden">
       {/* Desktop Sidebar (256px) */}
       <aside className="no-print hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
         {renderSidebarContent()}
@@ -846,7 +850,7 @@ const MainShell: React.FC = () => {
       {/* Main Content Shell */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Top Navbar: Breadcrumb | Advanced Search | Notifications Bell + Switch/Plan CTA */}
-        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-3">
+        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 sm:py-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -873,7 +877,7 @@ const MainShell: React.FC = () => {
           </div>
 
           {/* Center Advanced Global Search */}
-          <div ref={searchRef} className="relative flex-1 max-w-lg min-w-[220px]">
+          <div ref={searchRef} className="relative flex-1 max-w-lg min-w-0">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
@@ -893,13 +897,13 @@ const MainShell: React.FC = () => {
                     setSearchQuery('');
                   }
                 }}
-                placeholder="Search notes text, tasks, mail, @users, UID, calendar..."
+                placeholder="Search notes, tasks, mail, @users, UID..."
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
               />
             </div>
 
             {searchOpen && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 right-0 mt-1.5 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-40">
+              <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:left-0 sm:right-0 sm:top-full mt-1.5 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-40">
                 <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px]">
                   {(
                     [
@@ -984,7 +988,7 @@ const MainShell: React.FC = () => {
               </button>
 
               {bellOpen && (
-                <div className="absolute right-0 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg z-40 overflow-hidden">
+                <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full mt-2 sm:w-80 rounded-xl border border-slate-200 bg-white shadow-lg z-40 overflow-hidden">
                   <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
                     <span className="text-xs font-semibold text-slate-900">
                       Notifications
@@ -1095,7 +1099,7 @@ const MainShell: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-6 lg:p-8 max-w-[1440px] w-full mx-auto">
+        <main className="flex-1 p-3 sm:p-5 lg:p-8 max-w-[1440px] w-full mx-auto">
           {dataError && (
             <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
               {dataError}
@@ -1155,6 +1159,7 @@ const MainShell: React.FC = () => {
                   onRefresh={loadAllStudyData}
                 />
               )}
+              {section === 'calculator' && <CasioFx82MsView />}
               {section === 'messages' && (
                 <MessagesView
                   notePages={notePages}

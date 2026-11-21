@@ -78,9 +78,11 @@ import {
   hasActiveMaterialAccess,
   listAllContributorAssetsForMasterSync,
   listContributorWorkspace,
+  listPointTransactionsForAdmin,
   listStudyMaterials,
   markNotificationRead,
   markToolMessageRead,
+  reviewPointTransaction,
   sendNotification,
   sendToolUserMessage,
   updateContributorFileDrive,
@@ -1480,6 +1482,59 @@ async function startServer() {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'Failed to update weekly stipend',
         });
+      }
+    }
+  );
+
+  app.get('/api/admin/point-transactions', requireAuth, requireAdmin, async (_req: AuthRequest, res) => {
+    try {
+      const data = await listPointTransactionsForAdmin();
+      res.json(data);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load point transactions',
+      });
+    }
+  });
+
+  app.post(
+    '/api/admin/point-transactions/:id/review',
+    requireAuth,
+    requireAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const transactionId = Number(req.params.id);
+        if (!Number.isFinite(transactionId)) {
+          return res.status(400).json({ error: 'Invalid transaction ID.' });
+        }
+        const rawAction = req.body?.action;
+        const action =
+          rawAction === 'revert'
+            ? 'revert'
+            : rawAction === 'dismiss'
+              ? 'dismiss'
+              : rawAction === 'verify'
+                ? 'verify'
+                : null;
+        if (!action) {
+          return res.status(400).json({ error: 'Action must be verify, revert, or dismiss.' });
+        }
+        const note = typeof req.body?.note === 'string' ? req.body.note : '';
+        const result = await reviewPointTransaction({
+          reviewerId: req.dbUser!.id,
+          reviewerEmail: req.dbUser!.email,
+          reviewerUsername: req.dbUser!.username,
+          reviewerShortUid: req.dbUser!.shortUid,
+          reviewerRole: req.dbUser!.role,
+          transactionId,
+          action,
+          note,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to review point transaction';
+        const status = msg.includes('not found') ? 404 : msg.includes('already') || msg.includes('cannot') || msg.includes('Please enter') ? 400 : 500;
+        res.status(status).json({ error: msg });
       }
     }
   );

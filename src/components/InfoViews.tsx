@@ -621,6 +621,37 @@ export const AboutCreatorsView: React.FC = () => {
           </div>
         )}
       </div>
+      {/* About Site & Release Tag v1.6 */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">
+              About Site · Version <span className="font-mono text-blue-700">v1.6</span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              Current production build tag &amp; release highlights for ASAN-Study_tool.
+            </p>
+          </div>
+          <span className="font-mono text-xs font-bold text-slate-800">
+            Release v1.6
+          </span>
+        </div>
+
+        <ul className="space-y-2 text-xs text-slate-600 leading-relaxed list-disc pl-5">
+          <li>
+            <strong>Casio fx-82MS Scientific Calculator Simulator:</strong> Authentic 2nd edition S-V.P.A.M. dual-line calculator with SHIFT &amp; ALPHA keys, COMP/SD/REG modes, CLR resets, persistent variables (A–F, X, Y, M), and 20-step session replay history erased upon power OFF.
+          </li>
+          <li>
+            <strong>Admin Point Transaction Verification:</strong> Admins and Super can verify, revert, or dismiss every point award and deduction with automatic balance reversal and Tool Mail audit notices.
+          </li>
+          <li>
+            <strong>PDF Studio Enhancements:</strong> Interactive image crop &amp; 90° rotation, multi-select &amp; group image drag/reorder controls, Single Page vs. Scroll All view modes, sheet jump bar, and responsive Fit zoom.
+          </li>
+          <li>
+            <strong>Mobile &amp; Tablet UI Formatting:</strong> Responsive top bar search &amp; notification popovers, adaptive A4 note sheets, and clean touch layouts across 375px phones, tablets, and desktops.
+          </li>
+        </ul>
+      </div>
     </div>
   );
 };

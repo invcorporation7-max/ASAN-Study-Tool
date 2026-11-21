@@ -759,6 +759,12 @@ export async function handleInbuiltApiRequest<T>(
     return { status: 'ok', mode: 'inbuilt' } as T;
   }
 
+  if (path === '/api/analytics/config') {
+    return {
+      measurementId: (import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefined)?.trim() || '',
+    } as T;
+  }
+
   if (path === '/api/credits' && method === 'GET') {
     const contributors = store.users
       .filter((u) => u.role === 'contributor' && u.contributorApproved)
@@ -1944,6 +1950,91 @@ export async function handleInbuiltApiRequest<T>(
     store.settings.contributorWeeklyPoints = clean;
     saveStore(store);
     return { contributorWeeklyPoints: clean } as T;
+  }
+
+  if (path.startsWith('/api/admin/google-analytics') && method === 'GET') {
+    if (!isElevated) throw new Error('Forbidden');
+    const measurementId = (import.meta.env.VITE_GA_MEASUREMENT_ID as string | undefined)?.trim() || '';
+    return {
+      configured: false,
+      trackingConfigured: Boolean(measurementId),
+      measurementId,
+      range: path.includes('range=7d') ? '7d' : path.includes('range=90d') ? '90d' : '28d',
+      fetchedAt: new Date().toISOString(),
+      reason: 'GA4 Data API reporting runs via the Express backend with GA4_PROPERTY_ID and GA4_SERVICE_ACCOUNT_JSON.',
+      realtimeActiveUsers: 0,
+      overview: {
+        activeUsers: 0,
+        newUsers: 0,
+        sessions: 0,
+        engagedSessions: 0,
+        pageViews: 0,
+        engagementRate: 0,
+        avgSessionDurationSec: 0,
+      },
+      daily: [],
+      topPages: [],
+      devices: [],
+      countries: [],
+    } as T;
+  }
+
+  if (path === '/api/super/users-points' && method === 'GET') {
+    if (!isSuper) throw new Error('Forbidden');
+    const userMap = new Map(store.users.map((u) => [u.id, u]));
+    let totalPointsEarned = 0;
+    let totalPointsSpent = 0;
+    const stats = new Map<number, { earned: number; spent: number; count: number }>();
+    for (const tx of store.pointTransactions) {
+      const cur = stats.get(tx.userId) || { earned: 0, spent: 0, count: 0 };
+      cur.count += 1;
+      if (tx.amount > 0) {
+        cur.earned += tx.amount;
+        totalPointsEarned += tx.amount;
+      } else if (tx.amount < 0) {
+        cur.spent += Math.abs(tx.amount);
+        totalPointsSpent += Math.abs(tx.amount);
+      }
+      stats.set(tx.userId, cur);
+    }
+    const enrichedUsers = [...store.users]
+      .sort((a, b) => (b.points || 0) - (a.points || 0))
+      .map((u) => {
+        const st = stats.get(u.id) || { earned: 0, spent: 0, count: 0 };
+        return {
+          ...sanitizeUser(u),
+          pointsEarned: st.earned,
+          pointsSpent: st.spent,
+          txCount: st.count,
+          materialsCount: store.studyMaterials.filter((m) => m.uploaderId === u.id).length,
+          notesCount: store.notePages.filter((n) => n.userId === u.id).length,
+          tasksCount: store.tasks.filter((t) => t.userId === u.id).length,
+        };
+      });
+    const recentTransactions = [...store.pointTransactions].slice(0, 150).map((tx) => {
+      const u = userMap.get(tx.userId);
+      return {
+        ...tx,
+        userEmail: u?.email || '',
+        username: u?.username || `user_${tx.userId}`,
+        displayName: u?.displayName || 'Unknown User',
+        shortUid: u?.shortUid || '',
+      };
+    });
+    return {
+      summary: {
+        totalUsers: enrichedUsers.length,
+        totalPointsCirculating: enrichedUsers.reduce((s, u) => s + (u.points || 0), 0),
+        totalPointsEarned,
+        totalPointsSpent,
+        proUsers: enrichedUsers.filter((u) => u.plan === 'pro').length,
+        basicUsers: enrichedUsers.filter((u) => u.plan !== 'pro').length,
+        approvedContributors: enrichedUsers.filter((u) => u.role === 'contributor' && u.contributorApproved).length,
+        contributorWeeklyPoints: store.settings.contributorWeeklyPoints,
+      },
+      users: enrichedUsers,
+      recentTransactions,
+    } as T;
   }
 
   if (path === '/api/super/master-sync-queue' && method === 'GET') {

@@ -1616,6 +1616,141 @@ export async function getAdminAnalytics() {
   }
 }
 
+export async function getSuperUsersAndPointsLedger() {
+  const contributorWeeklyPoints = await getContributorWeeklyPoints();
+
+  const buildPayload = (
+    allUsers: ReturnType<typeof sanitizeUserForClient>[],
+    allTx: {
+      id: number;
+      userId: number;
+      amount: number;
+      reason: string;
+      category: string;
+      createdAt: Date | string;
+    }[],
+    allMaterials: { uploaderId: number }[],
+    allNotes: { userId: number }[],
+    allTasks: { userId: number }[]
+  ) => {
+    const userMap = new Map(allUsers.map((u) => [u.id, u]));
+    const txStats = new Map<
+      number,
+      { earned: number; spent: number; count: number }
+    >();
+    let totalPointsEarned = 0;
+    let totalPointsSpent = 0;
+
+    for (const tx of allTx) {
+      const cur = txStats.get(tx.userId) || { earned: 0, spent: 0, count: 0 };
+      cur.count += 1;
+      if (tx.amount > 0) {
+        cur.earned += tx.amount;
+        totalPointsEarned += tx.amount;
+      } else if (tx.amount < 0) {
+        cur.spent += Math.abs(tx.amount);
+        totalPointsSpent += Math.abs(tx.amount);
+      }
+      txStats.set(tx.userId, cur);
+    }
+
+    const materialCounts = new Map<number, number>();
+    for (const m of allMaterials) {
+      materialCounts.set(m.uploaderId, (materialCounts.get(m.uploaderId) || 0) + 1);
+    }
+    const noteCounts = new Map<number, number>();
+    for (const n of allNotes) {
+      noteCounts.set(n.userId, (noteCounts.get(n.userId) || 0) + 1);
+    }
+    const taskCounts = new Map<number, number>();
+    for (const t of allTasks) {
+      taskCounts.set(t.userId, (taskCounts.get(t.userId) || 0) + 1);
+    }
+
+    const enrichedUsers = allUsers.map((u) => {
+      const st = txStats.get(u.id) || { earned: 0, spent: 0, count: 0 };
+      return {
+        ...u,
+        pointsEarned: st.earned,
+        pointsSpent: st.spent,
+        txCount: st.count,
+        materialsCount: materialCounts.get(u.id) || 0,
+        notesCount: noteCounts.get(u.id) || 0,
+        tasksCount: taskCounts.get(u.id) || 0,
+      };
+    });
+
+    const recentTransactions = allTx.slice(0, 150).map((tx) => {
+      const u = userMap.get(tx.userId);
+      return {
+        id: tx.id,
+        userId: tx.userId,
+        amount: tx.amount,
+        reason: tx.reason,
+        category: tx.category,
+        createdAt:
+          tx.createdAt instanceof Date
+            ? tx.createdAt.toISOString()
+            : String(tx.createdAt),
+        userEmail: u?.email || '',
+        username: u?.username || `user_${tx.userId}`,
+        displayName: u?.displayName || 'Unknown User',
+        shortUid: u?.shortUid || '',
+      };
+    });
+
+    return {
+      summary: {
+        totalUsers: enrichedUsers.length,
+        totalPointsCirculating: enrichedUsers.reduce((s, u) => s + (u.points || 0), 0),
+        totalPointsEarned,
+        totalPointsSpent,
+        proUsers: enrichedUsers.filter((u) => u.plan === 'pro').length,
+        basicUsers: enrichedUsers.filter((u) => u.plan !== 'pro').length,
+        approvedContributors: enrichedUsers.filter(
+          (u) => u.role === 'contributor' && u.contributorApproved
+        ).length,
+        contributorWeeklyPoints,
+      },
+      users: enrichedUsers,
+      recentTransactions,
+    };
+  };
+
+  try {
+    const [allUsers, allTx, allMaterials, allNotes, allTasks] = await Promise.all([
+      db.select().from(users).orderBy(desc(users.points)),
+      db.select().from(pointTransactions).orderBy(desc(pointTransactions.createdAt)),
+      db.select({ uploaderId: studyMaterials.uploaderId }).from(studyMaterials),
+      db.select({ userId: notePages.userId }).from(notePages),
+      db.select({ userId: tasks.userId }).from(tasks),
+    ]);
+    return buildPayload(
+      allUsers.map((u) => sanitizeUserForClient(u)),
+      allTx,
+      allMaterials,
+      allNotes,
+      allTasks
+    );
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const sortedUsers = [...store.users]
+      .sort((a, b) => (b.points || 0) - (a.points || 0))
+      .map((u) => sanitizeUserForClient(u));
+    const sortedTx = [...store.pointTransactions].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+    return buildPayload(
+      sortedUsers,
+      sortedTx,
+      store.studyMaterials,
+      store.notePages,
+      store.tasks
+    );
+  }
+}
+
 // --- CONTRIBUTORS' CONSOLE (Nested Subfolders & Files + ASAN-Master-Folder Tracking) ---
 export async function listContributorWorkspace(userId: number) {
   try {

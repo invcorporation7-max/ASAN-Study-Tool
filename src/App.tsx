@@ -9,6 +9,7 @@ import {
   Clock,
   Cloud,
   CreditCard,
+  Crown,
   FolderOpen,
   FolderUp,
   Globe,
@@ -48,11 +49,13 @@ import { ProGateCard } from './components/ProGateCard';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallBanner';
 import { StudyMaterialView } from './components/StudyMaterialView';
 import { SubscriptionsView } from './components/SubscriptionsView';
+import { SuperView } from './components/SuperView';
 import { TasksView } from './components/TasksView';
 import { TimersView } from './components/TimersView';
 import { UserAvatarBadge } from './components/UserAvatarBadge';
 import { WorkspaceView } from './components/WorkspaceView';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { initGoogleAnalytics, trackGa4PageView } from './lib/analytics';
 import { apiFetch } from './lib/api';
 import { loadGuestWorkspace } from './lib/guestStore';
 import type {
@@ -113,6 +116,7 @@ const SECTION_LABELS: Record<NavSection, string> = {
   subscriptions: 'Subscriptions',
   notifications: 'Notifications',
   admin: 'Admin Console',
+  super: 'Super Console',
   'pdf-tool': 'PDF Tool',
   workspace: 'Google Workspace',
   spectra: 'Spectra AI',
@@ -213,12 +217,31 @@ const MainShell: React.FC = () => {
   useEffect(() => {
     if (section === 'workspace' && !isWorkspaceEnabled) {
       setSection('dashboard');
+    } else if (section === 'super' && !isSuper) {
+      setSection('dashboard');
     } else if (section === 'admin' && !isAdmin) {
       setSection('dashboard');
     } else if (section === 'contributor-console' && !isApprovedContributor) {
       setSection('dashboard');
     }
-  }, [section, isWorkspaceEnabled, isAdmin, isApprovedContributor]);
+  }, [section, isWorkspaceEnabled, isSuper, isAdmin, isApprovedContributor]);
+
+  // Initialize Google Analytics 4 and record SPA section views
+  const initialSectionRef = useRef(section);
+  initialSectionRef.current = section;
+
+  useEffect(() => {
+    void initGoogleAnalytics().then((id) => {
+      if (id) {
+        const cur = initialSectionRef.current;
+        trackGa4PageView(cur, `ASAN-Study_tool — ${SECTION_LABELS[cur]}`);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    trackGa4PageView(section, `ASAN-Study_tool — ${SECTION_LABELS[section]}`);
+  }, [section]);
 
   const loadAllStudyData = useCallback(async () => {
     if (isGuest) {
@@ -316,6 +339,7 @@ const MainShell: React.FC = () => {
     const results: SearchResultItem[] = [];
 
     (Object.keys(SECTION_LABELS) as NavSection[]).forEach((secId) => {
+      if (secId === 'super' && !isSuper) return;
       if (secId === 'admin' && !isAdmin) return;
       if (secId === 'contributor-console' && !isApprovedContributor) return;
       if (secId === 'workspace' && !isWorkspaceEnabled) return;
@@ -522,6 +546,7 @@ const MainShell: React.FC = () => {
     return results;
   }, [
     searchQuery,
+    isSuper,
     isAdmin,
     isApprovedContributor,
     isWorkspaceEnabled,
@@ -644,6 +669,30 @@ const MainShell: React.FC = () => {
             </button>
           )}
 
+          {isSuper && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('super')}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                section === 'super'
+                  ? 'bg-violet-50 text-violet-900'
+                  : 'text-slate-700 hover:bg-violet-50/70 hover:text-violet-900'
+              }`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Crown
+                  className={`h-4 w-4 shrink-0 ${
+                    section === 'super' ? 'text-violet-700' : 'text-violet-600'
+                  }`}
+                />
+                <span className="truncate">Super Console</span>
+              </span>
+              <span className="text-[10px] font-bold text-rose-600">
+                SUPER
+              </span>
+            </button>
+          )}
+
           {isAdmin && (
             <button
               type="button"
@@ -660,15 +709,8 @@ const MainShell: React.FC = () => {
                     section === 'admin' ? 'text-amber-700' : 'text-amber-600'
                   }`}
                 />
-                <span className="truncate">
-                  {isSuper ? 'Super Console' : 'Admin Console'}
-                </span>
+                <span className="truncate">Admin Console</span>
               </span>
-              {isSuper && (
-                <span className="text-[10px] font-bold text-rose-600">
-                  DEV
-                </span>
-              )}
             </button>
           )}
         </nav>
@@ -1125,6 +1167,7 @@ const MainShell: React.FC = () => {
               {section === 'notifications' && (
                 <NotificationsView onCountChange={setUnreadNotifCount} />
               )}
+              {section === 'super' && isSuper && <SuperView />}
               {section === 'admin' && <AdminView />}
               {section === 'pdf-tool' &&
                 (isProOrAdmin ? (

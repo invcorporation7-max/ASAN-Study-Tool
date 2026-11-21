@@ -13,6 +13,7 @@ export type NavSection =
   | 'workspace'
   | 'spectra'
   | 'admin'
+  | 'super'
   | 'more'
   | 'plans'
   | 'about'
@@ -323,3 +324,77 @@ export interface StudyLogItem {
   durationSeconds: number;
   createdAt: string;
 }
+
+export interface GA4ReportResponse {
+  configured: boolean;
+  trackingConfigured: boolean;
+  measurementId: string;
+  propertyId?: string;
+  range: '7d' | '28d' | '90d';
+  fetchedAt: string;
+  cached?: boolean;
+  reason?: string;
+  realtimeActiveUsers: number;
+  overview: {
+    activeUsers: number;
+    newUsers: number;
+    sessions: number;
+    engagedSessions: number;
+    pageViews: number;
+    engagementRate: number;
+    avgSessionDurationSec: number;
+  };
+  daily: {
+    date: string;
+    activeUsers: number;
+    sessions: number;
+    pageViews: number;
+  }[];
+  topPages: {
+    path: string;
+    title: string;
+    pageViews: number;
+    activeUsers: number;
+  }[];
+  devices: {
+    device: string;
+    activeUsers: number;
+    sessions: number;
+  }[];
+  countries: {
+    country: string;
+    activeUsers: number;
+  }[];
+}
+
+export interface SuperUserPointRow extends DbUser {
+  pointsEarned: number;
+  pointsSpent: number;
+  txCount: number;
+  materialsCount: number;
+  notesCount: number;
+  tasksCount: number;
+}
+
+export interface SuperAuditTransactionItem extends PointTransactionItem {
+  userEmail: string;
+  username: string;
+  displayName: string;
+  shortUid: string;
+}
+
+export interface SuperUsersPointsResponse {
+  summary: {
+    totalUsers: number;
+    totalPointsCirculating: number;
+    totalPointsEarned: number;
+    totalPointsSpent: number;
+    proUsers: number;
+    basicUsers: number;
+    approvedContributors: number;
+    contributorWeeklyPoints: number;
+  };
+  users: SuperUserPointRow[];
+  recentTransactions: SuperAuditTransactionItem[];
+}
+

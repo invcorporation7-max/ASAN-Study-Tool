@@ -36,6 +36,7 @@ import type {
   StudyMaterialItem,
 } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { GA4AnalyticsPanel } from './GA4AnalyticsPanel';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 interface AdminOverviewResponse {
@@ -642,6 +643,12 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Live Google Analytics (GA4) Admin Reporting */}
+          <GA4AnalyticsPanel
+            title="Google Analytics (GA4) — Admin Reporting"
+            subtitle="Live website traffic, active users, engagement, top study pages, devices & countries from Google Analytics 4."
+          />
 
           {/* SUPER / DEVELOPER MODE SECTION (Strictly invcorporation7@gmail.com) */}
           {isSuper && (

@@ -14,6 +14,7 @@ import {
 } from './src/middleware/auth.ts';
 import { ensureDatabaseSchema, getDatabaseStatus } from './src/db/index.ts';
 import { CONSTANT_ADMIN_LICENSE_KEY, UPLOADS_DIR } from './src/db/localStore.ts';
+import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
 import {
   authorizeAdminEmail,
   generateProLicenseKey,
@@ -64,6 +65,7 @@ import {
   getContributorFileById,
   getNotificationsForUser,
   getStudyMaterialById,
+  getSuperUsersAndPointsLedger,
   getUserCalendarEvents,
   getUserExamBlueprints,
   getUserExams,
@@ -149,6 +151,18 @@ async function startServer() {
       auth: {
         sessionSecretConfigured: Boolean(process.env.SESSION_SECRET?.trim()),
       },
+      analytics: {
+        ga4MeasurementConfigured: Boolean(getPublicMeasurementId()),
+        ga4ReportingConfigured: Boolean(
+          process.env.GA4_PROPERTY_ID?.trim() && process.env.GA4_SERVICE_ACCOUNT_JSON?.trim()
+        ),
+      },
+    });
+  });
+
+  app.get('/api/analytics/config', (_req, res) => {
+    res.json({
+      measurementId: getPublicMeasurementId(),
     });
   });
 
@@ -1469,6 +1483,30 @@ async function startServer() {
       }
     }
   );
+
+  app.get('/api/admin/google-analytics', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const range = typeof req.query.range === 'string' ? req.query.range : '28d';
+      const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+      const report = await fetchGa4Report(range, refresh);
+      res.json(report);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to fetch GA4 analytics report',
+      });
+    }
+  });
+
+  app.get('/api/super/users-points', requireAuth, requireSuper, async (_req: AuthRequest, res) => {
+    try {
+      const data = await getSuperUsersAndPointsLedger();
+      res.json(data);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load Super users and points ledger',
+      });
+    }
+  });
 
   app.get('/api/super/master-sync-queue', requireAuth, requireSuper, async (_req: AuthRequest, res) => {
     try {

@@ -91,7 +91,10 @@ async function verifyFirebaseViaRest(idToken: string): Promise<{
   name?: string;
   picture?: string;
 } | null> {
-  const apiKey = (firebaseConfig as { apiKey?: string }).apiKey;
+  const apiKey =
+    process.env.FIREBASE_WEB_API_KEY?.trim() ||
+    process.env.VITE_FIREBASE_API_KEY?.trim() ||
+    (firebaseConfig as { apiKey?: string }).apiKey;
   if (!apiKey || !idToken) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 8000);

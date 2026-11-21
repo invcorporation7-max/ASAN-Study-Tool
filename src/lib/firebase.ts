@@ -12,12 +12,18 @@ import {
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+const rawCfg = firebaseConfig as Record<string, string | undefined>;
+const envBrowserKey = (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined)?.trim();
+const effectiveFirebaseConfig = {
+  ...firebaseConfig,
+  ...(envBrowserKey ? { apiKey: envBrowserKey } : {}),
+};
+
+const app = initializeApp(effectiveFirebaseConfig);
 export const auth = getAuth(app);
 
-const cfg = firebaseConfig as Record<string, string | undefined>;
-export const db = cfg.firestoreDatabaseId
-  ? getFirestore(app, cfg.firestoreDatabaseId)
+export const db = rawCfg.firestoreDatabaseId
+  ? getFirestore(app, rawCfg.firestoreDatabaseId)
   : getFirestore(app);
 
 // Workspace scopes are ONLY requested on-demand when the user explicitly opts in

@@ -50,6 +50,7 @@ export const users = pgTable('users', {
   spectraUrl: text('spectra_url').notNull().default('https://www.khanacademy.org'),
   driveFolderId: text('drive_folder_id').notNull().default(''),
   scheduleSheetId: text('schedule_sheet_id').notNull().default(''),
+  workspacePermissions: text('workspace_permissions').notNull().default(''),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -237,6 +238,7 @@ export const studyMaterials = pgTable('study_materials', {
   title: text('title').notNull(),
   subject: text('subject').notNull().default('General'),
   category: text('category').notNull().default('study_notes'), // 'question_paper' | 'study_notes' | 'booklet' | 'archive'
+  description: text('description').notNull().default(''),
   fileName: text('file_name').notNull(),
   storedFileName: text('stored_file_name').notNull(),
   mimeType: text('mime_type').notNull().default('application/octet-stream'),

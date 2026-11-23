@@ -26,6 +26,7 @@ import type {
   ContributorFileItem,
   ContributorFolderItem,
   LicenseKeyItem,
+  PointRewardsConfig,
   SuperUserPointRow,
   SuperUsersPointsResponse,
 } from '../types';
@@ -66,21 +67,37 @@ export const SuperView: React.FC = () => {
   const [superActionReason, setSuperActionReason] = useState('');
 
   const [weeklyStipendInput, setWeeklyStipendInput] = useState('120');
+  const [pointRewards, setPointRewards] = useState<PointRewardsConfig>({
+    noteCreate: 0,
+    calendarStudyEvent: 5,
+    questionPaperUpload: 75,
+    studyMaterialUpload: 0,
+    examTimer30Min: 10,
+    contributorWeekly: 120,
+  });
+  const [savingRewards, setSavingRewards] = useState(false);
   const [syncingMaster, setSyncingMaster] = useState(false);
 
   const loadSuperData = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [superRes, adminRes] = await Promise.all([
+      const [superRes, adminRes, rewardsRes] = await Promise.all([
         apiFetch<SuperUsersPointsResponse>('/api/super/users-points'),
         apiFetch<{ licenseKeys?: LicenseKeyItem[] }>('/api/admin/overview').catch(() => ({
           licenseKeys: [],
+        })),
+        apiFetch<{ rewards?: PointRewardsConfig }>('/api/point-rewards').catch(() => ({
+          rewards: undefined,
         })),
       ]);
       setLedger(superRes);
       setLicenseKeys(adminRes.licenseKeys || []);
       setWeeklyStipendInput(String(superRes.summary.contributorWeeklyPoints));
+      if (rewardsRes.rewards) {
+        setPointRewards(rewardsRes.rewards);
+        setWeeklyStipendInput(String(rewardsRes.rewards.contributorWeekly));
+      }
       if (superRes.users.length > 0) {
         setPointsUserId((prev) => prev || String(superRes.users[0].id));
         setActionUserId((prev) => prev || String(superRes.users[0].id));
@@ -259,6 +276,29 @@ export const SuperView: React.FC = () => {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to update weekly stipend');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSavePointRewards = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingRewards(true);
+    setStatusMsg(null);
+    setErrorMsg(null);
+    try {
+      const res = await apiFetch<{ rewards: PointRewardsConfig }>('/api/super/point-rewards', {
+        method: 'POST',
+        body: JSON.stringify(pointRewards),
+      });
+      if (res.rewards) {
+        setPointRewards(res.rewards);
+        setWeeklyStipendInput(String(res.rewards.contributorWeekly));
+      }
+      setStatusMsg('Updated action point rewards across all study activities.');
+      await loadSuperData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to update action point rewards');
+    } finally {
+      setSavingRewards(false);
     }
   };
 
@@ -867,6 +907,89 @@ export const SuperView: React.FC = () => {
               </button>
             </form>
           </div>
+
+          {/* Configure Action Point Rewards */}
+          <form
+            onSubmit={handleSavePointRewards}
+            className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-slate-900">
+                  Configure Action Point Rewards
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Control how many points signed-in users earn when adding study notes, calendar events, question papers, study materials, or completing exam timers.
+                </p>
+              </div>
+              <button
+                type="submit"
+                disabled={savingRewards}
+                className="rounded-lg bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60"
+              >
+                {savingRewards ? 'Saving Rewards...' : 'Save Action Point Rewards'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+              {(
+                [
+                  {
+                    key: 'noteCreate',
+                    label: 'Study Note Document Created',
+                    hint: 'Awarded per new verified A4 document created',
+                  },
+                  {
+                    key: 'calendarStudyEvent',
+                    label: 'Calendar Study / Exam Event',
+                    hint: 'Awarded for verified study/exam calendar entries',
+                  },
+                  {
+                    key: 'questionPaperUpload',
+                    label: 'Question Paper Upload',
+                    hint: 'Awarded per Question Paper uploaded in Study Materials',
+                  },
+                  {
+                    key: 'studyMaterialUpload',
+                    label: 'Contributor Study Material Upload',
+                    hint: 'Awarded for Study Notes, Booklets & Archives uploads',
+                  },
+                  {
+                    key: 'examTimer30Min',
+                    label: 'Exam Timer Completed (per 30 mins)',
+                    hint: 'Awarded per 30-minute block completed in Test Timer',
+                  },
+                  {
+                    key: 'contributorWeekly',
+                    label: 'Contributor Weekly Sunday Stipend',
+                    hint: 'Weekly Sunday reward for approved Contributors',
+                  },
+                ] as const
+              ).map((field) => (
+                <label
+                  key={field.key}
+                  className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-1.5"
+                >
+                  <div className="font-semibold text-slate-900">{field.label}</div>
+                  <div className="text-[11px] text-slate-500">{field.hint}</div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    required
+                    value={pointRewards[field.key]}
+                    onChange={(e) =>
+                      setPointRewards((prev) => ({
+                        ...prev,
+                        [field.key]: Math.max(0, Math.min(100000, Math.round(Number(e.target.value) || 0))),
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 tabular-nums focus:border-violet-500 focus:outline-none"
+                  />
+                </label>
+              ))}
+            </div>
+          </form>
 
           {/* Point Awards & Deductions Verification (Verify / Revert / Dismiss) */}
           <PointsVerificationPanel

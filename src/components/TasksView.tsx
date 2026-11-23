@@ -26,6 +26,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    workspacePermissions,
     isEffectiveProOrAdmin,
     workspaceToken,
     connectWorkspace,
@@ -228,7 +229,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
 
         {isWorkspaceEnabled && (
           <div className="flex flex-wrap items-center gap-2">
-            {!isGuest && (
+            {!isGuest && workspacePermissions.driveSync && (
               <button
                 type="button"
                 onClick={handleBackupTxtToDrive}
@@ -240,15 +241,21 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
               </button>
             )}
             {isProOrAdmin ? (
-              <button
-                type="button"
-                onClick={handleExportToSheets}
-                disabled={sheetExporting || tasks.length === 0}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap shrink-0"
-              >
-                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                {sheetExporting ? 'Exporting...' : 'Export to Google Sheets'}
-              </button>
+              workspacePermissions.sheetsSync ? (
+                <button
+                  type="button"
+                  onClick={handleExportToSheets}
+                  disabled={sheetExporting || tasks.length === 0}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap shrink-0"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  {sheetExporting ? 'Exporting...' : 'Export to Google Sheets'}
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 whitespace-nowrap shrink-0">
+                  Sheets sync off (View Plans)
+                </div>
+              )
             ) : (
               <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 whitespace-nowrap shrink-0">
                 <Lock className="h-3.5 w-3.5" />

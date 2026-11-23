@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { A4PageContent } from './schema.ts';
+import type { PointRewardsConfig } from '../types.ts';
 
 export const ADMIN_OWNER_EMAIL = 'invcorporation7@gmail.com';
 export const CONSTANT_ADMIN_LICENSE_KEY = 'ADM9ASAN';
@@ -30,6 +31,7 @@ export interface StoreUser {
   spectraUrl: string;
   driveFolderId: string;
   scheduleSheetId: string;
+  workspacePermissions?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -187,6 +189,7 @@ export interface StoreStudyMaterial {
   title: string;
   subject: string;
   category: string;
+  description?: string;
   fileName: string;
   storedFileName: string;
   mimeType: string;
@@ -269,6 +272,7 @@ interface LocalStoreData {
   seq: Record<string, number>;
   settings: {
     contributorWeeklyPoints: number;
+    pointRewards?: PointRewardsConfig;
   };
   users: StoreUser[];
   tasks: StoreTask[];
@@ -357,6 +361,7 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
   });
   data.studyMaterials.forEach((sm) => {
     sm.createdAt = toDate(sm.createdAt);
+    if (sm.description === undefined) sm.description = '';
     if (!sm.pageCount || sm.pageCount < 1) sm.pageCount = 1;
     if (!sm.hourlyRentCost || sm.hourlyRentCost < 5) sm.hourlyRentCost = 10;
     if (!sm.buyCost || sm.buyCost < 5) sm.buyCost = 40;

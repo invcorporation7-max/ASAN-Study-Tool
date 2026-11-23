@@ -45,7 +45,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   events,
   exams,
 }) => {
-  const { dbUser, workspaceToken, connectWorkspace, updateProfile } = useAuth();
+  const { dbUser, workspaceToken, workspacePermissions, connectWorkspace, updateProfile } =
+    useAuth();
+  const anyPermEnabled =
+    workspacePermissions.driveSync ||
+    workspacePermissions.sheetsSync ||
+    workspacePermissions.meetRooms ||
+    workspacePermissions.docsExport;
 
   const [driveFiles, setDriveFiles] = useState<DriveFileItem[]>([]);
   const [folderInfo, setFolderInfo] = useState<{
@@ -88,6 +94,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleConnectAndLoadFolder = async () => {
+    if (!workspacePermissions.driveSync) {
+      setStatusMsg('Google Drive Folder Sync is disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -109,6 +119,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleUploadToAppFolder = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!workspacePermissions.driveSync) {
+      setStatusMsg('Google Drive Folder Sync is disabled in View Plans → Workspace Permissions.');
+      e.target.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     setBusy(true);
@@ -148,6 +163,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleCreateDoc = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!workspacePermissions.docsExport) {
+      setStatusMsg('Google Docs export is disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -167,6 +186,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleSyncScheduleSheet = async () => {
+    if (!workspacePermissions.sheetsSync) {
+      setStatusMsg('Google Sheets sync is disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -216,6 +239,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleSyncMasterExams = async () => {
+    if (!workspacePermissions.sheetsSync) {
+      setStatusMsg('Google Sheets sync is disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -238,6 +265,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleExportTasksSheet = async () => {
+    if (!workspacePermissions.sheetsSync) {
+      setStatusMsg('Google Sheets sync is disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -262,6 +293,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   };
 
   const handleCreateMeet = async () => {
+    if (!workspacePermissions.meetRooms) {
+      setStatusMsg('Google Meet study rooms are disabled in View Plans → Workspace Permissions.');
+      return;
+    }
     setBusy(true);
     setStatusMsg(null);
     try {
@@ -298,8 +333,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           <button
             type="button"
             onClick={handleConnectAndLoadFolder}
-            disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap shrink-0"
+            disabled={busy || !anyPermEnabled}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Connect Google Drive &amp; Workspace
@@ -311,6 +346,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           </div>
         )}
       </div>
+
+      {(!workspacePermissions.driveSync ||
+        !workspacePermissions.sheetsSync ||
+        !workspacePermissions.meetRooms ||
+        !workspacePermissions.docsExport) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-900">
+          One or more Google Workspace functions are turned off under <strong>View Plans → Google Workspace Function Permissions</strong>. Re-enable them anytime in View Plans.
+        </div>
+      )}
 
       {!workspaceToken && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 flex items-start gap-3 text-xs text-slate-600">
@@ -345,25 +389,31 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                <Upload className="h-3.5 w-3.5" />
-                Upload
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleUploadToAppFolder}
-                  disabled={busy}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={handleConnectAndLoadFolder}
-                disabled={busy}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-                Open App Folder
-              </button>
+              {workspacePermissions.driveSync ? (
+                <>
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={handleUploadToAppFolder}
+                      disabled={busy}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleConnectAndLoadFolder}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Open App Folder
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+              )}
             </div>
           </div>
 
@@ -436,30 +486,36 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSyncScheduleSheet}
-                  disabled={busy}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  Sync Schedule
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSyncMasterExams}
-                  disabled={busy}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-                >
-                  Sync Master Exams
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportTasksSheet}
-                  disabled={busy}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                >
-                  Export Tasks ({tasks.length})
-                </button>
+                {workspacePermissions.sheetsSync ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSyncScheduleSheet}
+                      disabled={busy}
+                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      Sync Schedule
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncMasterExams}
+                      disabled={busy}
+                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                    >
+                      Sync Master Exams
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportTasksSheet}
+                      disabled={busy}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      Export Tasks ({tasks.length})
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+                )}
               </div>
             </div>
             <p className="text-xs text-slate-500">
@@ -486,14 +542,18 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   Google Meet Study Room
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={handleCreateMeet}
-                disabled={busy}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Create Meet Room
-              </button>
+              {workspacePermissions.meetRooms ? (
+                <button
+                  type="button"
+                  onClick={handleCreateMeet}
+                  disabled={busy}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Create Meet Room
+                </button>
+              ) : (
+                <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+              )}
             </div>
             {meetRoom ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-xs space-y-1">
@@ -545,10 +605,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <div className="flex items-center justify-between">
               <button
                 type="submit"
-                disabled={busy}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                disabled={busy || !workspacePermissions.docsExport}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                Create Doc
+                {workspacePermissions.docsExport ? 'Create Doc' : 'Docs Export Disabled in View Plans'}
               </button>
               {createdDocUrl && (
                 <a

@@ -18,6 +18,7 @@ import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
 import {
   authorizeAdminEmail,
   generateProLicenseKey,
+  getPointRewardsConfig,
   getPointTransactions,
   getUserLicenseKeys,
   listPublicCreditsContributors,
@@ -31,6 +32,7 @@ import {
   setContributorStatus,
   setContributorWeeklyPoints,
   setPasswordForUser,
+  setPointRewardsConfig,
   superAdjustUserPoints,
   superTerminateOrCancel,
   updateUserPlan,
@@ -130,7 +132,7 @@ async function startServer() {
     );
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-material-title, x-material-subject, x-material-category, x-file-name, x-mime-type, x-page-count, x-hourly-rent-cost, x-buy-cost, x-folder-id, x-folder-path'
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-material-title, x-material-subject, x-material-category, x-material-description, x-file-name, x-mime-type, x-page-count, x-hourly-rent-cost, x-buy-cost, x-folder-id, x-folder-path'
     );
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
@@ -168,11 +170,23 @@ async function startServer() {
     });
   });
 
+  app.get('/api/point-rewards', async (_req, res) => {
+    try {
+      const config = await getPointRewardsConfig();
+      res.json(config);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load point rewards configuration',
+      });
+    }
+  });
+
   // Streaming binary upload route for large Study Material Notes & Question Papers (before express.json)
   app.post('/api/study-materials/upload', requireAuth, async (req: AuthRequest, res) => {
     const title = safeHeaderDecode(req.headers['x-material-title'], 'Untitled Material').slice(0, 180);
     const subject = safeHeaderDecode(req.headers['x-material-subject'], 'General').slice(0, 80);
     const category = safeHeaderDecode(req.headers['x-material-category'], 'study_notes').slice(0, 40);
+    const description = safeHeaderDecode(req.headers['x-material-description'], '').slice(0, 1000);
     const originalFileName = path
       .basename(safeHeaderDecode(req.headers['x-file-name'], 'study-material.pdf'))
       .replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -190,7 +204,7 @@ async function startServer() {
       });
     }
 
-    // Non-contributor users may upload question papers (+75 pts); big study notes require Contributor, Admin, or Super
+    // Non-contributor users may upload question papers; big study notes require Contributor, Admin, or Super
     const isPrivileged =
       req.dbUser?.role === 'admin' ||
       req.dbUser?.role === 'super' ||
@@ -199,7 +213,7 @@ async function startServer() {
     if (category !== 'question_paper' && !isPrivileged) {
       return res.status(403).json({
         error:
-          'Study Material Notes uploads are restricted to approved Contributors & Admins. Apply in Study Material Notes or upload a Question Paper (+75 pts).',
+          'Study Material Notes uploads are restricted to approved Contributors & Admins. Apply in Study Material Notes or upload a Question Paper.',
       });
     }
 
@@ -257,6 +271,7 @@ async function startServer() {
             title,
             subject,
             category,
+            description,
             fileName: originalFileName,
             storedFileName,
             mimeType,
@@ -444,7 +459,25 @@ async function startServer() {
         driveFolderId,
         scheduleSheetId,
         viewPlanMode,
+        workspacePermissions,
       } = req.body || {};
+      const parsedWorkspacePerms =
+        workspacePermissions && typeof workspacePermissions === 'object'
+          ? {
+              ...(typeof workspacePermissions.driveSync === 'boolean'
+                ? { driveSync: workspacePermissions.driveSync }
+                : {}),
+              ...(typeof workspacePermissions.docsExport === 'boolean'
+                ? { docsExport: workspacePermissions.docsExport }
+                : {}),
+              ...(typeof workspacePermissions.sheetsSync === 'boolean'
+                ? { sheetsSync: workspacePermissions.sheetsSync }
+                : {}),
+              ...(typeof workspacePermissions.meetRooms === 'boolean'
+                ? { meetRooms: workspacePermissions.meetRooms }
+                : {}),
+            }
+          : undefined;
       const updated = await updateUserProfile(req.dbUser!.id, {
         displayName:
           typeof displayName === 'string' ? displayName.slice(0, 120) : undefined,
@@ -459,6 +492,7 @@ async function startServer() {
             : undefined,
         viewPlanMode:
           viewPlanMode === 'basic' || viewPlanMode === 'auto' ? viewPlanMode : undefined,
+        workspacePermissions: parsedWorkspacePerms,
       });
       res.json({
         ...sanitizeUserForClient(updated),
@@ -1215,9 +1249,9 @@ async function startServer() {
       const updated = await requestContributorRole(req.dbUser!.id, note);
       res.json(updated ? sanitizeUserForClient(updated) : updated);
     } catch (error: unknown) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to apply as contributor',
-      });
+      const msg = error instanceof Error ? error.message : 'Failed to apply as contributor';
+      const status = msg.includes('already') ? 400 : 500;
+      res.status(status).json({ error: msg });
     }
   });
 
@@ -1481,6 +1515,22 @@ async function startServer() {
       } catch (error: unknown) {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'Failed to update weekly stipend',
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/super/point-rewards',
+    requireAuth,
+    requireSuper,
+    async (req: AuthRequest, res) => {
+      try {
+        const config = await setPointRewardsConfig(req.body || {});
+        res.json(config);
+      } catch (error: unknown) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'Failed to update point rewards configuration',
         });
       }
     }

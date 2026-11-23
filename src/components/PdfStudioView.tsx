@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
   ArrowDown,
   ArrowUp,
+  Camera,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -14,6 +17,7 @@ import {
   GripVertical,
   Layers,
   Printer,
+  RefreshCw,
   RotateCw,
   Share2,
   Sparkles,
@@ -30,15 +34,51 @@ import {
   shareOrDownloadPdf,
 } from '../lib/pdfGenerator';
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
 function makeSlotId(): string {
   return `slot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function nextStandardLabel(existing: PdfSlotItem[]): string {
-  const num = existing.filter((p) => p.kind !== 'cover' && p.kind !== 'back').length;
-  const sheet = Math.floor(num / 2) + 1;
-  const side = num % 2 === 0 ? 'A' : 'B';
+function isPaddingBlankSlot(slot: PdfSlotItem): boolean {
+  return slot.kind === 'blank' && slot.label.trim().toLowerCase() === 'blank';
+}
+
+function formatStandardLabel(idx: number, perSide: PagesPerSideOption): string {
+  if (perSide === 1) return String(idx + 1);
+  if (perSide === 2) {
+    const sheet = Math.floor(idx / 2) + 1;
+    const side = idx % 2 === 0 ? 'A' : 'B';
+    return `${sheet}${side}`;
+  }
+  const sheet = Math.floor(idx / 4) + 1;
+  const side = (['A', 'B', 'C', 'D'] as const)[idx % 4];
   return `${sheet}${side}`;
+}
+
+function renumberPagesForLayout(
+  list: PdfSlotItem[],
+  perSide: PagesPerSideOption
+): PdfSlotItem[] {
+  let standardIdx = 0;
+  return list.map((item) => {
+    if (item.kind === 'cover') return { ...item, label: '0X' };
+    if (item.kind === 'back') return { ...item, label: 'XX' };
+    if (isPaddingBlankSlot(item)) return { ...item, label: 'Blank' };
+    const nextLabel = formatStandardLabel(standardIdx, perSide);
+    standardIdx += 1;
+    return { ...item, label: nextLabel };
+  });
+}
+
+function nextStandardLabel(
+  existing: PdfSlotItem[],
+  perSide: PagesPerSideOption = 2
+): string {
+  const num = existing.filter(
+    (p) => p.kind !== 'cover' && p.kind !== 'back' && !isPaddingBlankSlot(p)
+  ).length;
+  return formatStandardLabel(num, perSide);
 }
 
 function getPageTextCapacity(pagesPerSide: PagesPerSideOption): number {
@@ -165,6 +205,17 @@ export const PdfStudioView: React.FC = () => {
   const [pdfTitle, setPdfTitle] = useState('ASAN_A4_Booklet');
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importingFiles, setImportingFiles] = useState(false);
+  const [autoRenumber, setAutoRenumber] = useState(true);
+
+  // Camera Capture Modal State
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [capturedShots, setCapturedShots] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Interactive Image Crop & Rotate Modal State
   const [cropSlotId, setCropSlotId] = useState<string | null>(null);
@@ -230,25 +281,34 @@ export const PdfStudioView: React.FC = () => {
     [sheets.length, viewMode]
   );
 
+  const applyAutoRenumber = useCallback(
+    (list: PdfSlotItem[], targetPerSide: PagesPerSideOption = pagesPerSide): PdfSlotItem[] =>
+      autoRenumber ? renumberPagesForLayout(list, targetPerSide) : list,
+    [autoRenumber, pagesPerSide]
+  );
+
   const insertNewSlots = useCallback(
     (newSlots: PdfSlotItem[]) => {
       setPages((prev) => {
+        let next: PdfSlotItem[];
         if (insertPosition === 'beginning') {
-          return [...newSlots, ...prev];
-        }
-        if (insertPosition === 'after' && selectedSlotId) {
+          next = [...newSlots, ...prev];
+        } else if (insertPosition === 'after' && selectedSlotId) {
           const idx = prev.findIndex((p) => p.id === selectedSlotId);
-          if (idx >= 0) {
-            return [...prev.slice(0, idx + 1), ...newSlots, ...prev.slice(idx + 1)];
-          }
+          next =
+            idx >= 0
+              ? [...prev.slice(0, idx + 1), ...newSlots, ...prev.slice(idx + 1)]
+              : [...prev, ...newSlots];
+        } else {
+          next = [...prev, ...newSlots];
         }
-        return [...prev, ...newSlots];
+        return applyAutoRenumber(next);
       });
       if (newSlots[0]) {
         setSelectedSlotId(newSlots[0].id);
       }
     },
-    [insertPosition, selectedSlotId]
+    [applyAutoRenumber, insertPosition, selectedSlotId]
   );
 
   const handleAddImageFile = useCallback(
@@ -258,21 +318,25 @@ export const PdfStudioView: React.FC = () => {
         if (typeof reader.result === 'string') {
           const id = makeSlotId();
           setPages((prev) => {
-            const label = nextStandardLabel(prev);
+            const label = nextStandardLabel(prev, pagesPerSide);
             const item: PdfSlotItem = {
               id,
               label,
               kind: 'image',
               imageDataUrl: reader.result as string,
             };
-            if (insertPosition === 'beginning') return [item, ...prev];
-            if (insertPosition === 'after' && selectedSlotId) {
+            let next: PdfSlotItem[];
+            if (insertPosition === 'beginning') next = [item, ...prev];
+            else if (insertPosition === 'after' && selectedSlotId) {
               const idx = prev.findIndex((p) => p.id === selectedSlotId);
-              if (idx >= 0) {
-                return [...prev.slice(0, idx + 1), item, ...prev.slice(idx + 1)];
-              }
+              next =
+                idx >= 0
+                  ? [...prev.slice(0, idx + 1), item, ...prev.slice(idx + 1)]
+                  : [...prev, item];
+            } else {
+              next = [...prev, item];
             }
-            return [...prev, item];
+            return applyAutoRenumber(next);
           });
           setSelectedSlotId(id);
           setStatusMsg(`Added image "${file.name}".`);
@@ -280,8 +344,160 @@ export const PdfStudioView: React.FC = () => {
       };
       reader.readAsDataURL(file);
     },
-    [insertPosition, selectedSlotId]
+    [applyAutoRenumber, insertPosition, pagesPerSide, selectedSlotId]
   );
+
+  const handleImportPdfFile = useCallback(
+    async (file: File) => {
+      setImportingFiles(true);
+      setStatusMsg(`Importing pages from "${file.name}"...`);
+      try {
+        const buffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: buffer });
+        const pdf = await loadingTask.promise;
+        const total = pdf.numPages;
+        const importedSlots: PdfSlotItem[] = [];
+
+        for (let pageNum = 1; pageNum <= total; pageNum++) {
+          setStatusMsg(`Rendering "${file.name}" page ${pageNum} of ${total}...`);
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.8 });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(viewport.width));
+          canvas.height = Math.max(1, Math.round(viewport.height));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) continue;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+          importedSlots.push({
+            id: makeSlotId(),
+            label: formatStandardLabel(pageNum - 1, pagesPerSide),
+            kind: 'image',
+            imageDataUrl,
+          });
+        }
+
+        await pdf.cleanup();
+        await loadingTask.destroy();
+        if (importedSlots.length > 0) {
+          insertNewSlots(importedSlots);
+          setStatusMsg(
+            `Imported ${importedSlots.length} page(s) from "${file.name}".`
+          );
+        } else {
+          setStatusMsg(`No renderable pages found in "${file.name}".`);
+        }
+      } catch (err) {
+        setStatusMsg(
+          err instanceof Error
+            ? `Failed to import PDF "${file.name}": ${err.message}`
+            : `Failed to import PDF "${file.name}".`
+        );
+      } finally {
+        setImportingFiles(false);
+      }
+    },
+    [insertNewSlots, pagesPerSide]
+  );
+
+  const handleImportedFiles = useCallback(
+    async (fileList: File[]) => {
+      for (const file of fileList) {
+        if (
+          file.type === 'application/pdf' ||
+          file.name.toLowerCase().endsWith('.pdf')
+        ) {
+          await handleImportPdfFile(file);
+        } else if (file.type.startsWith('image/')) {
+          handleAddImageFile(file);
+        }
+      }
+    },
+    [handleAddImageFile, handleImportPdfFile]
+  );
+
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cameraOpen) {
+      stopCameraStream();
+      return;
+    }
+
+    let cancelled = false;
+    const startCamera = async () => {
+      setCameraError(null);
+      stopCameraStream();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError(
+          'Live browser camera is unavailable here. Use "Device Camera / Photo" below.'
+        );
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: cameraFacing },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+      } catch {
+        setCameraError(
+          'Camera permission denied or unavailable. Use "Device Camera / Photo" below.'
+        );
+      }
+    };
+
+    void startCamera();
+    return () => {
+      cancelled = true;
+      stopCameraStream();
+    };
+  }, [cameraFacing, cameraOpen, stopCameraStream]);
+
+  const handleSnapCameraPhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const shotNum = capturedShots + 1;
+    insertNewSlots([
+      {
+        id: makeSlotId(),
+        label: nextStandardLabel(pages, pagesPerSide),
+        kind: 'image',
+        imageDataUrl: dataUrl,
+      },
+    ]);
+    setCapturedShots(shotNum);
+    setStatusMsg(`Captured photo #${shotNum} from camera.`);
+  };
 
   const handleAddTextSlots = useCallback(
     (rawText: string) => {
@@ -377,13 +593,12 @@ export const PdfStudioView: React.FC = () => {
   const handleDropFiles = (e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files || []);
-    files.forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        handleAddImageFile(file);
-      }
-    });
+    if (files.length > 0) {
+      void handleImportedFiles(files);
+      return;
+    }
     const droppedText = e.dataTransfer.getData('text/plain');
-    if (files.length === 0 && droppedText && droppedText.trim()) {
+    if (droppedText && droppedText.trim()) {
       handleAddTextSlots(droppedText);
     }
   };
@@ -397,6 +612,7 @@ export const PdfStudioView: React.FC = () => {
       const ordered = [...covers, ...middle, ...backs];
       const multiple = pagesPerSide === 1 ? 1 : pagesPerSide === 2 ? 4 : 8;
       const remainder = ordered.length % multiple;
+      let arranged = ordered;
       if (remainder !== 0) {
         const needed = multiple - remainder;
         const blanks: PdfSlotItem[] = Array.from({ length: needed }, () => ({
@@ -404,14 +620,22 @@ export const PdfStudioView: React.FC = () => {
           label: 'Blank',
           kind: 'blank',
         }));
-        if (backs.length > 0) {
-          return [...covers, ...middle, ...blanks, ...backs];
-        }
-        return [...ordered, ...blanks];
+        arranged =
+          backs.length > 0
+            ? [...covers, ...middle, ...blanks, ...backs]
+            : [...ordered, ...blanks];
       }
-      return ordered;
+      return renumberPagesForLayout(arranged, pagesPerSide);
     });
-    setStatusMsg('Autocorrected cover/back ordering and booklet page padding.');
+    setStatusMsg(
+      `Autocorrected cover/back order, booklet padding, and ${
+        pagesPerSide === 1
+          ? '1, 2, 3...'
+          : pagesPerSide === 2
+            ? '1A, 1B, 2A, 2B...'
+            : '1A–1D, 2A–2D...'
+      } page numbering.`
+    );
   };
 
   const movePage = (index: number, dir: -1 | 1) => {
@@ -421,7 +645,7 @@ export const PdfStudioView: React.FC = () => {
       const copy = [...prev];
       const [moved] = copy.splice(index, 1);
       copy.splice(target, 0, moved);
-      return copy;
+      return applyAutoRenumber(copy);
     });
   };
 
@@ -462,27 +686,27 @@ export const PdfStudioView: React.FC = () => {
       if (selectedItems.length === 0) return prev;
 
       if (direction === 'top') {
-        return [...selectedItems, ...remainingItems];
+        return applyAutoRenumber([...selectedItems, ...remainingItems]);
       }
       if (direction === 'bottom') {
-        return [...remainingItems, ...selectedItems];
+        return applyAutoRenumber([...remainingItems, ...selectedItems]);
       }
 
       if (direction === 'up') {
         const firstIdx = prev.findIndex((p) => checkedIds.has(p.id));
         if (firstIdx <= 0) {
           // Compact group cleanly to top even if non-contiguous
-          return [...selectedItems, ...remainingItems];
+          return applyAutoRenumber([...selectedItems, ...remainingItems]);
         }
         // Find item immediately before the first selected item
         const anchorId = prev[firstIdx - 1].id;
         const anchorPosInRemaining = remainingItems.findIndex((p) => p.id === anchorId);
         const insertAt = Math.max(0, anchorPosInRemaining);
-        return [
+        return applyAutoRenumber([
           ...remainingItems.slice(0, insertAt),
           ...selectedItems,
           ...remainingItems.slice(insertAt),
-        ];
+        ]);
       }
 
       // direction === 'down'
@@ -494,18 +718,22 @@ export const PdfStudioView: React.FC = () => {
         }
       }
       if (lastIdx === -1 || lastIdx >= prev.length - 1) {
-        return [...remainingItems, ...selectedItems];
+        return applyAutoRenumber([...remainingItems, ...selectedItems]);
       }
       const afterId = prev[lastIdx + 1].id;
       const afterPosInRemaining = remainingItems.findIndex((p) => p.id === afterId);
       const insertAt = afterPosInRemaining >= 0 ? afterPosInRemaining + 1 : remainingItems.length;
-      return [
+      return applyAutoRenumber([
         ...remainingItems.slice(0, insertAt),
         ...selectedItems,
         ...remainingItems.slice(insertAt),
-      ];
+      ]);
     });
-    setStatusMsg(`Reordered ${checkedIds.size} grouped item(s).`);
+    setStatusMsg(
+      `Reordered ${checkedIds.size} grouped item(s)${
+        autoRenumber ? ' and updated page numbers' : ''
+      }.`
+    );
   };
 
   const handleGroupDropOnSlot = (targetSlotId: string) => {
@@ -534,11 +762,11 @@ export const PdfStudioView: React.FC = () => {
       if (targetIdxInRemaining < 0) return prev;
       const insertIdx =
         draggedOldIdx < targetOldIdx ? targetIdxInRemaining + 1 : targetIdxInRemaining;
-      return [
+      return applyAutoRenumber([
         ...remaining.slice(0, insertIdx),
         ...movingItems,
         ...remaining.slice(insertIdx),
-      ];
+      ]);
     });
 
     setStatusMsg(
@@ -906,31 +1134,61 @@ export const PdfStudioView: React.FC = () => {
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={handlePasteButtonClick}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
               >
-                <ClipboardPaste className="h-3.5 w-3.5" />
-                Paste (Ctrl+V)
+                <ClipboardPaste className="h-3.5 w-3.5 shrink-0" />
+                <span>Paste</span>
               </button>
               <button
                 type="button"
+                disabled={importingFiles}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
               >
-                <FolderOpen className="h-3.5 w-3.5 text-amber-500" />
-                Choose Files
+                <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span>{importingFiles ? 'Importing...' : 'Images / PDF'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCapturedShots(0);
+                  setCameraOpen(true);
+                }}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+              >
+                <Camera className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <span>Camera</span>
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 multiple
                 className="hidden"
                 onChange={(e) => {
-                  Array.from(e.target.files || []).forEach(handleAddImageFile);
+                  const files = Array.from(e.target.files || []);
+                  if (files.length > 0) {
+                    void handleImportedFiles(files);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={nativeCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (files.length > 0) {
+                    void handleImportedFiles(files);
+                  }
                   e.target.value = '';
                 }}
               />
@@ -941,7 +1199,7 @@ export const PdfStudioView: React.FC = () => {
               onDrop={handleDropFiles}
               className="rounded-lg border border-dashed border-blue-400 bg-blue-50/40 px-3 py-3 text-center text-xs text-blue-700"
             >
-              Press <strong>Ctrl + V</strong> or drag images / text here
+              Press <strong>Ctrl + V</strong>, snap with <strong>Camera</strong>, or drag whole <strong>.pdf</strong> / images / text here
             </div>
 
             <div className="grid grid-cols-3 gap-1.5">
@@ -958,7 +1216,11 @@ export const PdfStudioView: React.FC = () => {
                 type="button"
                 onClick={() =>
                   insertNewSlots([
-                    { id: makeSlotId(), label: nextStandardLabel(pages), kind: 'blank' },
+                    {
+                      id: makeSlotId(),
+                      label: nextStandardLabel(pages, pagesPerSide),
+                      kind: 'blank',
+                    },
                   ])
                 }
                 className="rounded border border-blue-300 bg-white py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
@@ -1014,16 +1276,45 @@ export const PdfStudioView: React.FC = () => {
           {/* Pages List with Group Reordering, Image Cropping & Autocorrect */}
           <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-800 tabular-nums">
-                Pages ({pages.length})
-              </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-800 tabular-nums">
+                  Pages ({pages.length})
+                </span>
+                <label className="inline-flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoRenumber}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setAutoRenumber(next);
+                      if (next) {
+                        setPages((prev) => renumberPagesForLayout(prev, pagesPerSide));
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded text-blue-600"
+                  />
+                  Auto-number
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={selectAllImages}
                   className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
                 >
                   Select Images
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPages((prev) => renumberPagesForLayout(prev, pagesPerSide));
+                    setStatusMsg('Renumbered pages to match sheet layout.');
+                  }}
+                  title="Renumber pages sequentially for selected layout"
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <RefreshCw className="h-3 w-3 text-blue-600" />
+                  Renumber
                 </button>
                 <button
                   type="button"
@@ -1083,7 +1374,9 @@ export const PdfStudioView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setPages((prev) => prev.filter((p) => !checkedIds.has(p.id)));
+                      setPages((prev) =>
+                        applyAutoRenumber(prev.filter((p) => !checkedIds.has(p.id)))
+                      );
                       setCheckedIds(new Set());
                     }}
                     className="ml-auto rounded border border-red-200 bg-white px-2 py-1 font-medium text-red-600 hover:bg-red-50"
@@ -1206,17 +1499,19 @@ export const PdfStudioView: React.FC = () => {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setPages((prev) => prev.filter((p) => p.id !== slot.id));
+                        setPages((prev) =>
+                          applyAutoRenumber(prev.filter((p) => p.id !== slot.id))
+                        );
                         setCheckedIds((prev) => {
                           const next = new Set(prev);
                           next.delete(slot.id);
                           return next;
                         });
                       }}
-                      className="p-0.5 text-red-500 hover:text-red-700"
+                      className="p-1 text-red-500 hover:text-red-700"
                       aria-label="Remove page"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 );
@@ -1279,14 +1574,22 @@ export const PdfStudioView: React.FC = () => {
               </label>
               <select
                 value={pagesPerSide}
-                onChange={(e) =>
-                  setPagesPerSide(Number(e.target.value) as PagesPerSideOption)
-                }
+                onChange={(e) => {
+                  const nextPerSide = Number(e.target.value) as PagesPerSideOption;
+                  setPagesPerSide(nextPerSide);
+                  setRenderedOptions((prev) => ({
+                    ...prev,
+                    pagesPerSide: nextPerSide,
+                  }));
+                  if (autoRenumber) {
+                    setPages((prev) => renumberPagesForLayout(prev, nextPerSide));
+                  }
+                }}
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
               >
-                <option value={2}>2 Pages per side (Half A4 Booklet)</option>
-                <option value={4}>4 Pages per side (Quarter A4 Booklet)</option>
-                <option value={1}>1 Page per side (Full A4)</option>
+                <option value={2}>2 Pages per side (Half A4: 1A, 1B, 2A, 2B)</option>
+                <option value={4}>4 Pages per side (Quarter A4: 1A–1D, 2A–2D)</option>
+                <option value={1}>1 Page per side (Full A4: 1, 2, 3, 4)</option>
               </select>
             </div>
 
@@ -1499,7 +1802,7 @@ export const PdfStudioView: React.FC = () => {
                                     e.stopPropagation();
                                     openCropModal(slot);
                                   }}
-                                  className="no-print absolute top-2 right-2 hidden group-hover:inline-flex items-center gap-1 rounded bg-slate-900/80 px-2 py-1 text-[11px] font-medium text-white hover:bg-slate-900"
+                                  className="no-print absolute top-2 right-2 inline-flex sm:hidden sm:group-hover:inline-flex items-center gap-1 rounded bg-slate-900/85 px-2 py-1 text-[11px] font-medium text-white hover:bg-slate-900"
                                 >
                                   <Crop className="h-3 w-3" />
                                   Crop
@@ -1634,7 +1937,7 @@ export const PdfStudioView: React.FC = () => {
                   <div
                     onPointerDown={(e) => handleCropPointerDown('se', e)}
                     title="Drag corner to resize crop area"
-                    className="absolute -bottom-2 -right-2 h-5 w-5 rounded-full border-2 border-white bg-amber-500 cursor-nwse-resize shadow"
+                    className="absolute -bottom-3 -right-3 h-7 w-7 rounded-full border-2 border-white bg-amber-500 cursor-nwse-resize shadow-md"
                   />
                 </div>
               </div>
@@ -1715,6 +2018,100 @@ export const PdfStudioView: React.FC = () => {
               >
                 {cropBusy ? 'Applying...' : 'Apply Crop'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Camera Scan Modal */}
+      {cameraOpen && (
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-3 sm:p-6">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 text-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Camera className="h-4 w-4 text-emerald-400" />
+                <span>Camera Page Scan</span>
+                {capturedShots > 0 && (
+                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[11px] font-medium text-emerald-300 tabular-nums">
+                    {capturedShots} captured
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCameraOpen(false)}
+                aria-label="Close camera modal"
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 bg-black flex items-center justify-center p-3 min-h-[260px]">
+              {cameraError ? (
+                <div className="max-w-sm text-center space-y-3 p-4">
+                  <p className="text-xs text-slate-300 leading-relaxed">{cameraError}</p>
+                  <button
+                    type="button"
+                    onClick={() => nativeCameraInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Device Camera / Photo
+                  </button>
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="max-h-[55vh] w-full rounded-lg object-contain bg-black"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-950/70 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCameraFacing((prev) =>
+                      prev === 'environment' ? 'user' : 'environment'
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Flip Camera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nativeCameraInputRef.current?.click()}
+                  className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                >
+                  Native Photo
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(cameraError)}
+                  onClick={handleSnapCameraPhoto}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Snap Page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCameraOpen(false)}
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>

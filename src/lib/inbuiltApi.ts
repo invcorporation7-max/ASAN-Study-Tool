@@ -87,6 +87,67 @@ const ADMIN_OWNER_EMAIL = 'invcorporation7@gmail.com';
 const CONSTANT_ADMIN_LICENSE_KEY = 'ADM9ASAN';
 const DEFAULT_WEEKLY_CONTRIB_PTS = 120;
 
+import type { PointRewardsConfig, WorkspacePermissionsConfig } from '../types';
+
+const DEFAULT_POINT_REWARDS: PointRewardsConfig = {
+  noteCreate: 0,
+  calendarStudyEvent: 5,
+  questionPaperUpload: 75,
+  studyMaterialUpload: 0,
+  examTimer30Min: 10,
+  contributorWeekly: DEFAULT_WEEKLY_CONTRIB_PTS,
+};
+
+const DEFAULT_WORKSPACE_PERMS: WorkspacePermissionsConfig = {
+  driveSync: true,
+  docsExport: true,
+  sheetsSync: true,
+  meetRooms: true,
+};
+
+function parseWorkspacePerms(raw?: string | WorkspacePermissionsConfig): WorkspacePermissionsConfig {
+  if (!raw) return { ...DEFAULT_WORKSPACE_PERMS };
+  if (typeof raw === 'object') {
+    return {
+      driveSync: raw.driveSync !== false,
+      docsExport: raw.docsExport !== false,
+      sheetsSync: raw.sheetsSync !== false,
+      meetRooms: raw.meetRooms !== false,
+    };
+  }
+  try {
+    const p = JSON.parse(raw) as Partial<WorkspacePermissionsConfig>;
+    return {
+      driveSync: p.driveSync !== false,
+      docsExport: p.docsExport !== false,
+      sheetsSync: p.sheetsSync !== false,
+      meetRooms: p.meetRooms !== false,
+    };
+  } catch {
+    return { ...DEFAULT_WORKSPACE_PERMS };
+  }
+}
+
+function cleanReward(v: unknown, fallback: number): number {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100000, n));
+}
+
+function getStoreRewards(store: InbuiltStore): PointRewardsConfig {
+  const r = store.settings.pointRewards;
+  const wk = cleanReward(store.settings.contributorWeeklyPoints, DEFAULT_WEEKLY_CONTRIB_PTS);
+  if (!r) return { ...DEFAULT_POINT_REWARDS, contributorWeekly: wk };
+  return {
+    noteCreate: cleanReward(r.noteCreate, DEFAULT_POINT_REWARDS.noteCreate),
+    calendarStudyEvent: cleanReward(r.calendarStudyEvent, DEFAULT_POINT_REWARDS.calendarStudyEvent),
+    questionPaperUpload: cleanReward(r.questionPaperUpload, DEFAULT_POINT_REWARDS.questionPaperUpload),
+    studyMaterialUpload: cleanReward(r.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
+    examTimer30Min: cleanReward(r.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
+    contributorWeekly: cleanReward(r.contributorWeekly, wk),
+  };
+}
+
 interface InbuiltUser {
   id: number;
   uid: string;
@@ -112,6 +173,7 @@ interface InbuiltUser {
   spectraUrl: string;
   driveFolderId: string;
   scheduleSheetId: string;
+  workspacePermissions?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -120,6 +182,7 @@ interface InbuiltStore {
   seq: Record<string, number>;
   settings: {
     contributorWeeklyPoints: number;
+    pointRewards?: PointRewardsConfig;
   };
   users: InbuiltUser[];
   tasks: any[];
@@ -143,7 +206,10 @@ interface InbuiltStore {
 function emptyStore(): InbuiltStore {
   return {
     seq: {},
-    settings: { contributorWeeklyPoints: DEFAULT_WEEKLY_CONTRIB_PTS },
+    settings: {
+      contributorWeeklyPoints: DEFAULT_WEEKLY_CONTRIB_PTS,
+      pointRewards: { ...DEFAULT_POINT_REWARDS },
+    },
     users: [],
     tasks: [],
     calendarEvents: [],
@@ -173,14 +239,18 @@ function loadStore(): InbuiltStore {
       return fresh;
     }
     const parsed = JSON.parse(raw) as Partial<InbuiltStore>;
+    const wk =
+      typeof parsed.settings?.contributorWeeklyPoints === 'number'
+        ? parsed.settings.contributorWeeklyPoints
+        : DEFAULT_WEEKLY_CONTRIB_PTS;
     const merged: InbuiltStore = {
       ...emptyStore(),
       ...parsed,
       settings: {
-        contributorWeeklyPoints:
-          typeof parsed.settings?.contributorWeeklyPoints === 'number'
-            ? parsed.settings.contributorWeeklyPoints
-            : DEFAULT_WEEKLY_CONTRIB_PTS,
+        contributorWeeklyPoints: wk,
+        pointRewards: parsed.settings?.pointRewards
+          ? { ...DEFAULT_POINT_REWARDS, ...parsed.settings.pointRewards, contributorWeekly: cleanReward(parsed.settings.pointRewards.contributorWeekly, wk) }
+          : { ...DEFAULT_POINT_REWARDS, contributorWeekly: wk },
       },
     };
     merged.users.forEach((u) => {
@@ -314,11 +384,12 @@ async function verifyPasswordClient(password: string, stored: string): Promise<b
 }
 
 function sanitizeUser(u: InbuiltUser, authModeOverride?: string) {
-  const { passwordHash, ...rest } = u;
+  const { passwordHash, workspacePermissions, ...rest } = u;
   return {
     ...rest,
     authMode: authModeOverride || u.authMode || 'google',
     hasPassword: Boolean(passwordHash),
+    workspacePermissions: parseWorkspacePerms(workspacePermissions),
   };
 }
 
@@ -765,6 +836,10 @@ export async function handleInbuiltApiRequest<T>(
     } as T;
   }
 
+  if (path === '/api/point-rewards' && method === 'GET') {
+    return getStoreRewards(store) as T;
+  }
+
   if (path === '/api/credits' && method === 'GET') {
     const contributors = store.users
       .filter((u) => u.role === 'contributor' && u.contributorApproved)
@@ -955,6 +1030,18 @@ export async function handleInbuiltApiRequest<T>(
       if (typeof body.scheduleSheetId === 'string') user.scheduleSheetId = body.scheduleSheetId.slice(0, 160);
       if (body.viewPlanMode === 'basic' || body.viewPlanMode === 'auto') {
         user.viewPlanMode = body.viewPlanMode;
+      }
+      if (body.workspacePermissions && typeof body.workspacePermissions === 'object') {
+        const mergedPerms = {
+          ...parseWorkspacePerms(user.workspacePermissions),
+          ...body.workspacePermissions,
+        };
+        user.workspacePermissions = JSON.stringify({
+          driveSync: mergedPerms.driveSync !== false,
+          docsExport: mergedPerms.docsExport !== false,
+          sheetsSync: mergedPerms.sheetsSync !== false,
+          meetRooms: mergedPerms.meetRooms !== false,
+        });
       }
       user.updatedAt = new Date().toISOString();
       saveStore(store);
@@ -1181,7 +1268,8 @@ export async function handleInbuiltApiRequest<T>(
     }
     if (method === 'POST') {
       const studyVerified = isStudyRelatedEvent(String(body.title || ''), body.category, body.notes);
-      const pointsAwarded = studyVerified ? 5 : 0;
+      const rewards = getStoreRewards(store);
+      const pointsAwarded = studyVerified ? rewards.calendarStudyEvent : 0;
       const created = {
         id: nextId(store, 'calendarEvents'),
         userId: user.id,
@@ -1241,19 +1329,27 @@ export async function handleInbuiltApiRequest<T>(
   }
   if (path === '/api/note-pages' && method === 'POST') {
     const now = new Date().toISOString();
+    const title = String(body.title || 'Untitled Note');
+    const sectionName = String(body.sectionName || 'General');
+    const rewards = getStoreRewards(store);
+    const studyVerified = isStudyRelatedEvent(title, sectionName);
+    const pointsAwarded = studyVerified && rewards.noteCreate > 0 ? rewards.noteCreate : 0;
     const created = {
       id: nextId(store, 'notePages'),
       userId: user.id,
       notebookId: Number(body.notebookId),
-      sectionName: String(body.sectionName || 'General'),
-      title: String(body.title || 'Untitled Note'),
+      sectionName,
+      title,
       pagesData: Array.isArray(body.pagesData) ? body.pagesData : [],
       createdAt: now,
       updatedAt: now,
     };
     store.notePages.unshift(created);
+    if (pointsAwarded > 0) {
+      awardPointsLocal(store, user, pointsAwarded, `Study A4 Note: ${title}`, 'note_create');
+    }
     saveStore(store);
-    return created as T;
+    return { ...created, pointsAwarded } as T;
   }
   if (path.startsWith('/api/note-pages/')) {
     const id = Number(path.split('/').pop());
@@ -1319,7 +1415,8 @@ export async function handleInbuiltApiRequest<T>(
       const dur = Math.max(0, Math.round(Number(body.durationSeconds) || 0));
       const isExamMode = body.mode === 'test_timer' || body.mode === 'exam_timer';
       const blocks = Math.floor(dur / 1800);
-      const pointsAwarded = isExamMode ? blocks * 10 : 0;
+      const rewards = getStoreRewards(store);
+      const pointsAwarded = isExamMode ? blocks * rewards.examTimer30Min : 0;
       const created = {
         id: nextId(store, 'studyLogs'),
         userId: user.id,
@@ -1537,8 +1634,9 @@ export async function handleInbuiltApiRequest<T>(
     if (user.points < totalCost) throw new Error(`Insufficient points. Need ${totalCost} pts.`);
     awardPointsLocal(store, user, -totalCost, `${accessType === 'buy' ? 'Purchased' : 'Rented'} "${item.title}"`, accessType === 'buy' ? 'material_buy' : 'material_rent');
     const uploader = store.users.find((u) => u.id === item.uploaderId);
-    if (uploader) {
-      awardPointsLocal(store, uploader, Math.max(1, Math.round(totalCost * 0.5)), `Royalty: ${item.title}`, 'material_sale');
+    const royalty = Math.min(totalCost, Math.max(0, Math.round((totalCost * 0.7) / 10) * 10));
+    if (uploader && royalty > 0) {
+      awardPointsLocal(store, uploader, royalty, `Royalty: ${item.title}`, 'material_sale');
     }
     const purchase = {
       id: nextId(store, 'materialPurchases'),
@@ -1583,6 +1681,12 @@ export async function handleInbuiltApiRequest<T>(
 
   // --- CONTRIBUTOR REQUEST ---
   if (path === '/api/contributor/request' && method === 'POST') {
+    if (user.contributorApproved) {
+      throw new Error('Your account is already an approved Contributor.');
+    }
+    if (user.contributorRequested) {
+      throw new Error('Your Contributor approval request is already pending Admin review.');
+    }
     const cleanNote = String(body.message || body.note || '').trim().slice(0, 800);
     user.contributorRequested = true;
     user.updatedAt = new Date().toISOString();
@@ -1948,8 +2052,26 @@ export async function handleInbuiltApiRequest<T>(
     if (!isSuper) throw new Error('Forbidden');
     const clean = Math.max(0, Math.min(100000, Math.round(Number(body.points) || 0)));
     store.settings.contributorWeeklyPoints = clean;
+    store.settings.pointRewards = { ...getStoreRewards(store), contributorWeekly: clean };
     saveStore(store);
     return { contributorWeeklyPoints: clean } as T;
+  }
+
+  if (path === '/api/super/point-rewards' && method === 'POST') {
+    if (!isSuper) throw new Error('Forbidden');
+    const cur = getStoreRewards(store);
+    const next: PointRewardsConfig = {
+      noteCreate: body.noteCreate !== undefined ? cleanReward(body.noteCreate, cur.noteCreate) : cur.noteCreate,
+      calendarStudyEvent: body.calendarStudyEvent !== undefined ? cleanReward(body.calendarStudyEvent, cur.calendarStudyEvent) : cur.calendarStudyEvent,
+      questionPaperUpload: body.questionPaperUpload !== undefined ? cleanReward(body.questionPaperUpload, cur.questionPaperUpload) : cur.questionPaperUpload,
+      studyMaterialUpload: body.studyMaterialUpload !== undefined ? cleanReward(body.studyMaterialUpload, cur.studyMaterialUpload) : cur.studyMaterialUpload,
+      examTimer30Min: body.examTimer30Min !== undefined ? cleanReward(body.examTimer30Min, cur.examTimer30Min) : cur.examTimer30Min,
+      contributorWeekly: body.contributorWeekly !== undefined ? cleanReward(body.contributorWeekly, cur.contributorWeekly) : cur.contributorWeekly,
+    };
+    store.settings.pointRewards = next;
+    store.settings.contributorWeeklyPoints = next.contributorWeekly;
+    saveStore(store);
+    return next as T;
   }
 
   if (path.startsWith('/api/admin/google-analytics') && method === 'GET') {
@@ -2225,6 +2347,7 @@ export async function inbuiltUploadStudyMaterial<T>(
     title: string;
     subject: string;
     category: string;
+    description?: string;
     pageCount?: number;
     hourlyRentCost: number;
     buyCost?: number;
@@ -2238,7 +2361,11 @@ export async function inbuiltUploadStudyMaterial<T>(
   const hourly = Math.max(5, Math.min(100, Math.round(metadata.hourlyRentCost)));
   const buy =
     metadata.buyCost && metadata.buyCost >= 5 ? Math.round(metadata.buyCost) : Math.max(hourly, hourly * 4);
-  const pointsAwarded = metadata.category === 'question_paper' ? 75 : 0;
+  const rewards = getStoreRewards(store);
+  const pointsAwarded =
+    metadata.category === 'question_paper'
+      ? rewards.questionPaperUpload
+      : rewards.studyMaterialUpload;
   const material = {
     id: nextId(store, 'studyMaterials'),
     uploaderId: user.id,
@@ -2247,6 +2374,7 @@ export async function inbuiltUploadStudyMaterial<T>(
     title: metadata.title,
     subject: metadata.subject,
     category: metadata.category,
+    description: String(metadata.description || '').trim().slice(0, 1000),
     fileName: file.name,
     storedFileName,
     mimeType: file.type || 'application/octet-stream',
@@ -2261,7 +2389,15 @@ export async function inbuiltUploadStudyMaterial<T>(
   };
   store.studyMaterials.unshift(material);
   if (pointsAwarded > 0) {
-    awardPointsLocal(store, user, pointsAwarded, `Uploaded Question Paper: ${metadata.title}`, 'question_paper');
+    awardPointsLocal(
+      store,
+      user,
+      pointsAwarded,
+      metadata.category === 'question_paper'
+        ? `Uploaded Question Paper: ${metadata.title}`
+        : `Uploaded Study Material: ${metadata.title}`,
+      metadata.category === 'question_paper' ? 'question_paper' : 'study_material'
+    );
   }
   saveStore(store);
   return { material, pointsAwarded } as T;

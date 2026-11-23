@@ -15,11 +15,18 @@ import {
 import { useAuth } from '../context/AuthContext';
 import {
   apiFetch,
+  apiPublicFetch,
   ensureAppDriveFolder,
   fetchPublicCredits,
   saveJsonToDriveFolder,
 } from '../lib/api';
-import type { ContactMessageItem, CreditContributorItem, NavSection } from '../types';
+import type {
+  ContactMessageItem,
+  CreditContributorItem,
+  NavSection,
+  PointRewardsConfig,
+  WorkspacePermissionsConfig,
+} from '../types';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 export const SpectraView: React.FC = () => {
@@ -163,11 +170,14 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
   const {
     dbUser,
     isGuest,
+    isWorkspaceEnabled,
     effectivePlan,
     setViewPlanMode,
     signIn,
     switchPlanAdmin,
     refreshProfile,
+    workspacePermissions,
+    updateWorkspacePermissions,
   } = useAuth();
   const currentPlan = effectivePlan;
   const isAdmin = !isGuest && (dbUser?.role === 'admin' || dbUser?.role === 'super');
@@ -179,6 +189,55 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
   const [redeeming, setRedeeming] = useState(false);
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
+  const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
+  const [rewards, setRewards] = useState<PointRewardsConfig>({
+    noteCreate: 0,
+    calendarStudyEvent: 5,
+    questionPaperUpload: 75,
+    studyMaterialUpload: 0,
+    examTimer30Min: 10,
+    contributorWeekly: 120,
+  });
+
+  useEffect(() => {
+    let active = true;
+    apiPublicFetch<{ rewards?: PointRewardsConfig }>('/api/point-rewards')
+      .then((res) => {
+        if (active && res?.rewards) {
+          setRewards(res.rewards);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleToggleWorkspacePerm = async (
+    key: keyof WorkspacePermissionsConfig,
+    nextVal: boolean
+  ) => {
+    setPermBusyKey(key);
+    try {
+      await updateWorkspacePermissions({ [key]: nextVal });
+    } finally {
+      setPermBusyKey(null);
+    }
+  };
+
+  const handleSetAllWorkspacePerms = async (enabled: boolean) => {
+    setPermBusyKey('all');
+    try {
+      await updateWorkspacePermissions({
+        driveSync: enabled,
+        docsExport: enabled,
+        sheetsSync: enabled,
+        meetRooms: enabled,
+      });
+    } finally {
+      setPermBusyKey(null);
+    }
+  };
 
   const handleRedeemKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +282,9 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       features: [
         'Unlimited A4 PDF notes & unlimited tasks + Exam Master Cards view',
         'Optional ASAN-user-content Drive folder for .txt tasks & notes backup',
-        '500 initial points + earn points (+75 paper, +10/30m exam timer, +5 study calendar)',
+        `500 initial points + earn points (+${rewards.questionPaperUpload} paper, +${rewards.examTimer30Min}/30m exam timer, +${rewards.calendarStudyEvent} study calendar${
+          rewards.noteCreate > 0 ? `, +${rewards.noteCreate} note` : ''
+        })`,
         'Tool Mail (@username, 5-char UID, multi-recipient, Self, Public)',
         'Excludes Spectra AI, PDF Booklet Tool & Google Sheets Workspace',
       ],
@@ -456,6 +517,102 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         </form>
       )}
 
+      {/* Google Workspace Function Permissions */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">
+              Google Workspace Function Permissions
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Enable or disable individual Google Workspace actions across Notes, Tasks, Calendar, Study Materials, and Contact.
+              {!isWorkspaceEnabled && (
+                <span className="text-amber-700 font-medium">
+                  {' '}
+                  (Active only when signed in with Google; preferences are saved to your account/browser.)
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={permBusyKey !== null}
+              onClick={() => void handleSetAllWorkspacePerms(true)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              Enable All
+            </button>
+            <button
+              type="button"
+              disabled={permBusyKey !== null}
+              onClick={() => void handleSetAllWorkspacePerms(false)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Disable All
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {(
+            [
+              {
+                key: 'driveSync',
+                title: 'Google Drive Folder & File Sync',
+                desc: 'Upload PDFs, backup .txt tasks/notes, and mirror files into ASAN-user-content.',
+              },
+              {
+                key: 'docsExport',
+                title: 'Google Docs Export',
+                desc: 'Export A4 study notes and summaries as Google Docs inside ASAN-user-content.',
+              },
+              {
+                key: 'sheetsSync',
+                title: 'Google Sheets Sync (Schedule / Master / Tasks)',
+                desc: 'Push or pull Calendar schedules, Tasks tables, and master -> test_dates sheets.',
+              },
+              {
+                key: 'meetRooms',
+                title: 'Google Meet Study Rooms',
+                desc: 'Create instant Google Meet study links from Workspace or Calendar events.',
+              },
+            ] as const
+          ).map((item) => {
+            const enabled = workspacePermissions[item.key];
+            return (
+              <label
+                key={item.key}
+                className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 cursor-pointer hover:border-slate-300"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-900">{item.title}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">{item.desc}</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enabled}
+                  disabled={permBusyKey !== null}
+                  onClick={() => void handleToggleWorkspacePerm(item.key, !enabled)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+                    enabled
+                      ? 'border-blue-600 bg-blue-600'
+                      : 'border-slate-300 bg-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      enabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Extra Responsibilities: Contributor & Hand-Selected Admin */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
@@ -463,7 +620,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
             Extra Role · Study Material Contributors
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
-            Contributors upload large Study Material Notes into the server storage pool (3 GB+ usable, mirrored to <code className="font-mono">ASAN-user-content</code>). Approved contributors receive <strong>+120 points every week (starting Sunday)</strong> as long as Admins are satisfied with their work.
+            Contributors upload large Study Material Notes into the server storage pool (3 GB+ usable, mirrored to <code className="font-mono">ASAN-user-content</code>). Approved contributors receive <strong>+{rewards.contributorWeekly} points every week (starting Sunday)</strong> as long as Admins are satisfied with their work.
           </p>
         </div>
 
@@ -639,16 +796,19 @@ export const AboutCreatorsView: React.FC = () => {
 
         <ul className="space-y-2 text-xs text-slate-600 leading-relaxed list-disc pl-5">
           <li>
-            <strong>Casio fx-82MS Scientific Calculator Simulator:</strong> Authentic 2nd edition S-V.P.A.M. dual-line calculator with SHIFT &amp; ALPHA keys, COMP/SD/REG modes, CLR resets, persistent variables (A–F, X, Y, M), and 20-step session replay history erased upon power OFF.
+            <strong>Casio fx-82MS Scientific Calculator Simulator:</strong> Authentic 2nd edition S-V.P.A.M. dual-line calculator with SHIFT &amp; ALPHA keys, COMP/SD/REG modes, CLR resets, persistent variables (A–F, X, Y, M), token-aware DEL key, combinatorics syntax validation, and 20-step session replay history erased upon power OFF.
           </li>
           <li>
-            <strong>Admin Point Transaction Verification:</strong> Admins and Super can verify, revert, or dismiss every point award and deduction with automatic balance reversal and Tool Mail audit notices.
+            <strong>Admin Transaction Verification &amp; Super Action Point Control:</strong> Admins and Super can verify, revert, or dismiss every point transaction, while Super can configure point rewards across Notes, Calendar events, Question Papers, Study Materials, and Exam Timers.
           </li>
           <li>
-            <strong>PDF Studio Enhancements:</strong> Interactive image crop &amp; 90° rotation, multi-select &amp; group image drag/reorder controls, Single Page vs. Scroll All view modes, sheet jump bar, and responsive Fit zoom.
+            <strong>PDF Studio Enhancements:</strong> Whole PDF file import into page slots, live Camera capture (with mobile fallback), Auto-renumbering (<code className="font-mono">1..4</code>, <code className="font-mono">1A/1B</code>, <code className="font-mono">1A-1D</code>) on move/group-reorder/Autocorrect, interactive crop &amp; 90° rotation, and Single Page vs. Scroll All views.
           </li>
           <li>
-            <strong>Mobile &amp; Tablet UI Formatting:</strong> Responsive top bar search &amp; notification popovers, adaptive A4 note sheets, and clean touch layouts across 375px phones, tablets, and desktops.
+            <strong>Custom Sidebar &amp; Study Material Economy:</strong> Hand-pick and pin any tools from the All Apps catalog, toggle individual Google Workspace permissions under View Plans, attach optional descriptions on Study Materials, and credit 70% royalty (rounded to nearest 10) to uploaders.
+          </li>
+          <li>
+            <strong>Mobile, Tablet &amp; Offline PWA Formatting:</strong> Responsive navigation across 375px phones, tablets, and desktops with offline-capable Netlify &amp; PWABuilder compatibility.
           </li>
         </ul>
       </div>
@@ -661,6 +821,7 @@ export const ContactView: React.FC = () => {
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    workspacePermissions,
     isEffectiveProOrAdmin,
     signIn,
     workspaceToken,
@@ -778,7 +939,7 @@ export const ContactView: React.FC = () => {
           </p>
         </div>
 
-        {history.length > 0 && isWorkspaceEnabled && (
+        {history.length > 0 && isWorkspaceEnabled && workspacePermissions.driveSync && (
           <button
             type="button"
             onClick={handleBackupContactDrive}

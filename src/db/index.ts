@@ -197,12 +197,14 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             spectra_url TEXT NOT NULL DEFAULT 'https://www.khanacademy.org',
             drive_folder_id TEXT NOT NULL DEFAULT '',
             schedule_sheet_id TEXT NOT NULL DEFAULT '',
+            workspace_permissions TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
 
           ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
           ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_mode TEXT NOT NULL DEFAULT 'google';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_permissions TEXT NOT NULL DEFAULT '';
 
           CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
@@ -370,6 +372,7 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             title TEXT NOT NULL,
             subject TEXT NOT NULL DEFAULT 'General',
             category TEXT NOT NULL DEFAULT 'study_notes',
+            description TEXT NOT NULL DEFAULT '',
             file_name TEXT NOT NULL,
             stored_file_name TEXT NOT NULL,
             mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
@@ -382,6 +385,8 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             status TEXT NOT NULL DEFAULT 'approved',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          ALTER TABLE study_materials ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
 
           CREATE TABLE IF NOT EXISTS material_purchases (
             id SERIAL PRIMARY KEY,

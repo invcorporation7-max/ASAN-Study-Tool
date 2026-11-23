@@ -21,15 +21,69 @@ import {
   users,
 } from './schema.ts';
 
+import type { PointRewardsConfig, WorkspacePermissionsConfig } from '../types.ts';
+
 export const DEFAULT_CONTRIBUTOR_WEEKLY_POINTS = 120;
 
+export const DEFAULT_POINT_REWARDS: PointRewardsConfig = {
+  noteCreate: 0,
+  calendarStudyEvent: 5,
+  questionPaperUpload: 75,
+  studyMaterialUpload: 0,
+  examTimer30Min: 10,
+  contributorWeekly: DEFAULT_CONTRIBUTOR_WEEKLY_POINTS,
+};
+
+export const DEFAULT_WORKSPACE_PERMISSIONS: WorkspacePermissionsConfig = {
+  driveSync: true,
+  docsExport: true,
+  sheetsSync: true,
+  meetRooms: true,
+};
+
+export function parseWorkspacePermissions(
+  raw: string | WorkspacePermissionsConfig | null | undefined
+): WorkspacePermissionsConfig {
+  if (!raw) return { ...DEFAULT_WORKSPACE_PERMISSIONS };
+  if (typeof raw === 'object') {
+    return {
+      driveSync: raw.driveSync !== false,
+      docsExport: raw.docsExport !== false,
+      sheetsSync: raw.sheetsSync !== false,
+      meetRooms: raw.meetRooms !== false,
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<WorkspacePermissionsConfig>;
+    return {
+      driveSync: parsed.driveSync !== false,
+      docsExport: parsed.docsExport !== false,
+      sheetsSync: parsed.sheetsSync !== false,
+      meetRooms: parsed.meetRooms !== false,
+    };
+  } catch {
+    return { ...DEFAULT_WORKSPACE_PERMISSIONS };
+  }
+}
+
 export function sanitizeUserForClient<
-  T extends { id: number; passwordHash?: string | null; hasPassword?: boolean }
->(user: T): Omit<T, 'passwordHash'> & { hasPassword: boolean } {
-  const { passwordHash, ...rest } = user;
+  T extends {
+    id: number;
+    passwordHash?: string | null;
+    hasPassword?: boolean;
+    workspacePermissions?: string | WorkspacePermissionsConfig | null;
+  }
+>(
+  user: T
+): Omit<T, 'passwordHash' | 'workspacePermissions'> & {
+  hasPassword: boolean;
+  workspacePermissions: WorkspacePermissionsConfig;
+} {
+  const { passwordHash, workspacePermissions, ...rest } = user;
   return {
     ...rest,
     hasPassword: Boolean(user.hasPassword || (passwordHash && passwordHash.length > 0)),
+    workspacePermissions: parseWorkspacePermissions(workspacePermissions),
   };
 }
 
@@ -53,45 +107,130 @@ export function verifyPassword(password: string, storedHash: string): boolean {
   }
 }
 
-export async function getContributorWeeklyPoints(): Promise<number> {
+function cleanRewardInt(val: unknown, fallback: number): number {
+  const n = Math.round(Number(val));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100000, n));
+}
+
+export async function getPointRewardsConfig(): Promise<PointRewardsConfig> {
   try {
-    const [row] = await db
-      .select()
-      .from(appSettings)
-      .where(eq(appSettings.key, 'contributor_weekly_points'))
-      .limit(1);
-    const val = Number(row?.value);
-    if (Number.isFinite(val) && val >= 0) return Math.round(val);
-    return DEFAULT_CONTRIBUTOR_WEEKLY_POINTS;
+    const rows = await db.select().from(appSettings);
+    const rewardsRow = rows.find((r) => r.key === 'point_rewards_config');
+    const weeklyRow = rows.find((r) => r.key === 'contributor_weekly_points');
+    const fallbackWeekly =
+      weeklyRow && Number.isFinite(Number(weeklyRow.value))
+        ? cleanRewardInt(weeklyRow.value, DEFAULT_CONTRIBUTOR_WEEKLY_POINTS)
+        : DEFAULT_CONTRIBUTOR_WEEKLY_POINTS;
+    if (!rewardsRow?.value) {
+      return { ...DEFAULT_POINT_REWARDS, contributorWeekly: fallbackWeekly };
+    }
+    const parsed = JSON.parse(rewardsRow.value) as Partial<PointRewardsConfig>;
+    return {
+      noteCreate: cleanRewardInt(parsed.noteCreate, DEFAULT_POINT_REWARDS.noteCreate),
+      calendarStudyEvent: cleanRewardInt(parsed.calendarStudyEvent, DEFAULT_POINT_REWARDS.calendarStudyEvent),
+      questionPaperUpload: cleanRewardInt(parsed.questionPaperUpload, DEFAULT_POINT_REWARDS.questionPaperUpload),
+      studyMaterialUpload: cleanRewardInt(parsed.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
+      examTimer30Min: cleanRewardInt(parsed.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
+      contributorWeekly: cleanRewardInt(parsed.contributorWeekly, fallbackWeekly),
+    };
   } catch (error) {
-    if (!isDbUnavailableError(error)) return DEFAULT_CONTRIBUTOR_WEEKLY_POINTS;
-    const val = getLocalStore().settings?.contributorWeeklyPoints;
-    return typeof val === 'number' && val >= 0 ? Math.round(val) : DEFAULT_CONTRIBUTOR_WEEKLY_POINTS;
+    if (!isDbUnavailableError(error)) {
+      return { ...DEFAULT_POINT_REWARDS };
+    }
+    const settings = getLocalStore().settings;
+    const saved = settings?.pointRewards;
+    const fallbackWeekly =
+      typeof settings?.contributorWeeklyPoints === 'number'
+        ? cleanRewardInt(settings.contributorWeeklyPoints, DEFAULT_CONTRIBUTOR_WEEKLY_POINTS)
+        : DEFAULT_CONTRIBUTOR_WEEKLY_POINTS;
+    if (!saved) {
+      return { ...DEFAULT_POINT_REWARDS, contributorWeekly: fallbackWeekly };
+    }
+    return {
+      noteCreate: cleanRewardInt(saved.noteCreate, DEFAULT_POINT_REWARDS.noteCreate),
+      calendarStudyEvent: cleanRewardInt(saved.calendarStudyEvent, DEFAULT_POINT_REWARDS.calendarStudyEvent),
+      questionPaperUpload: cleanRewardInt(saved.questionPaperUpload, DEFAULT_POINT_REWARDS.questionPaperUpload),
+      studyMaterialUpload: cleanRewardInt(saved.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
+      examTimer30Min: cleanRewardInt(saved.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
+      contributorWeekly: cleanRewardInt(saved.contributorWeekly, fallbackWeekly),
+    };
   }
 }
 
-export async function setContributorWeeklyPoints(points: number): Promise<number> {
-  const clean = Math.max(0, Math.min(100000, Math.round(Number(points) || 0)));
+export async function setPointRewardsConfig(
+  updates: Partial<PointRewardsConfig>
+): Promise<PointRewardsConfig> {
+  const current = await getPointRewardsConfig();
+  const next: PointRewardsConfig = {
+    noteCreate: updates.noteCreate !== undefined ? cleanRewardInt(updates.noteCreate, current.noteCreate) : current.noteCreate,
+    calendarStudyEvent:
+      updates.calendarStudyEvent !== undefined
+        ? cleanRewardInt(updates.calendarStudyEvent, current.calendarStudyEvent)
+        : current.calendarStudyEvent,
+    questionPaperUpload:
+      updates.questionPaperUpload !== undefined
+        ? cleanRewardInt(updates.questionPaperUpload, current.questionPaperUpload)
+        : current.questionPaperUpload,
+    studyMaterialUpload:
+      updates.studyMaterialUpload !== undefined
+        ? cleanRewardInt(updates.studyMaterialUpload, current.studyMaterialUpload)
+        : current.studyMaterialUpload,
+    examTimer30Min:
+      updates.examTimer30Min !== undefined
+        ? cleanRewardInt(updates.examTimer30Min, current.examTimer30Min)
+        : current.examTimer30Min,
+    contributorWeekly:
+      updates.contributorWeekly !== undefined
+        ? cleanRewardInt(updates.contributorWeekly, current.contributorWeekly)
+        : current.contributorWeekly,
+  };
   try {
+    const now = new Date();
+    await db
+      .insert(appSettings)
+      .values({
+        key: 'point_rewards_config',
+        value: JSON.stringify(next),
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: JSON.stringify(next), updatedAt: now },
+      });
     await db
       .insert(appSettings)
       .values({
         key: 'contributor_weekly_points',
-        value: String(clean),
-        updatedAt: new Date(),
+        value: String(next.contributorWeekly),
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: appSettings.key,
-        set: { value: String(clean), updatedAt: new Date() },
+        set: { value: String(next.contributorWeekly), updatedAt: now },
       });
-    return clean;
+    return next;
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
     const store = getLocalStore();
-    store.settings = { ...(store.settings || {}), contributorWeeklyPoints: clean };
+    store.settings = {
+      ...(store.settings || {}),
+      contributorWeeklyPoints: next.contributorWeekly,
+      pointRewards: next,
+    };
     persistLocalStore();
-    return clean;
+    return next;
   }
+}
+
+export async function getContributorWeeklyPoints(): Promise<number> {
+  const cfg = await getPointRewardsConfig();
+  return cfg.contributorWeekly;
+}
+
+export async function setContributorWeeklyPoints(points: number): Promise<number> {
+  const updated = await setPointRewardsConfig({ contributorWeekly: points });
+  return updated.contributorWeekly;
 }
 
 export function getSundayWeekKey(date = new Date()): string {
@@ -753,6 +892,7 @@ export async function getOrCreateUser(
         spectraUrl: 'https://www.khanacademy.org',
         driveFolderId: '',
         scheduleSheetId: '',
+        workspacePermissions: '',
         createdAt: now,
         updatedAt: now,
       };
@@ -835,6 +975,7 @@ export async function updateUserProfile(
     driveFolderId?: string;
     scheduleSheetId?: string;
     viewPlanMode?: 'auto' | 'basic';
+    workspacePermissions?: Partial<WorkspacePermissionsConfig>;
   }
 ) {
   let cleanUsername: string | undefined;
@@ -859,6 +1000,24 @@ export async function updateUserProfile(
         throw new Error(`Username "@${cleanUsername}" is already taken.`);
       }
     }
+    let nextWorkspacePermJson: string | undefined;
+    if (updates.workspacePermissions !== undefined) {
+      const [currentUser] = await db
+        .select({ workspacePermissions: users.workspacePermissions })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const merged = {
+        ...parseWorkspacePermissions(currentUser?.workspacePermissions),
+        ...updates.workspacePermissions,
+      };
+      nextWorkspacePermJson = JSON.stringify({
+        driveSync: merged.driveSync !== false,
+        docsExport: merged.docsExport !== false,
+        sheetsSync: merged.sheetsSync !== false,
+        meetRooms: merged.meetRooms !== false,
+      });
+    }
     const [updated] = await db
       .update(users)
       .set({
@@ -868,6 +1027,7 @@ export async function updateUserProfile(
         ...(updates.driveFolderId !== undefined ? { driveFolderId: updates.driveFolderId } : {}),
         ...(updates.scheduleSheetId !== undefined ? { scheduleSheetId: updates.scheduleSheetId } : {}),
         ...(updates.viewPlanMode !== undefined ? { viewPlanMode: updates.viewPlanMode } : {}),
+        ...(nextWorkspacePermJson !== undefined ? { workspacePermissions: nextWorkspacePermJson } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId))
@@ -892,6 +1052,18 @@ export async function updateUserProfile(
     if (updates.driveFolderId !== undefined) user.driveFolderId = updates.driveFolderId;
     if (updates.scheduleSheetId !== undefined) user.scheduleSheetId = updates.scheduleSheetId;
     if (updates.viewPlanMode !== undefined) user.viewPlanMode = updates.viewPlanMode;
+    if (updates.workspacePermissions !== undefined) {
+      const merged = {
+        ...parseWorkspacePermissions(user.workspacePermissions),
+        ...updates.workspacePermissions,
+      };
+      user.workspacePermissions = JSON.stringify({
+        driveSync: merged.driveSync !== false,
+        docsExport: merged.docsExport !== false,
+        sheetsSync: merged.sheetsSync !== false,
+        meetRooms: merged.meetRooms !== false,
+      });
+    }
     user.updatedAt = new Date();
     persistLocalStore();
     return user;
@@ -1511,6 +1683,15 @@ export async function getUserLicenseKeys(userId: number, email: string) {
 export async function requestContributorRole(userId: number, note?: string) {
   const cleanNote = (note || '').trim().slice(0, 800);
   try {
+    const [existing] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!existing) throw new Error('User not found.');
+    if (existing.contributorApproved) {
+      throw new Error('Your account is already an approved Contributor.');
+    }
+    if (existing.contributorRequested) {
+      throw new Error('Your Contributor approval request is already pending Admin review.');
+    }
+
     const [updated] = await db
       .update(users)
       .set({ contributorRequested: true, updatedAt: new Date() })
@@ -1560,6 +1741,12 @@ export async function requestContributorRole(userId: number, note?: string) {
     const store = getLocalStore();
     const u = store.users.find((x) => x.id === userId);
     if (!u) throw new Error('User not found.');
+    if (u.contributorApproved) {
+      throw new Error('Your account is already an approved Contributor.');
+    }
+    if (u.contributorRequested) {
+      throw new Error('Your Contributor approval request is already pending Admin review.');
+    }
     u.contributorRequested = true;
     u.updatedAt = new Date();
 
@@ -1978,6 +2165,7 @@ export async function registerPasswordUser(params: {
       spectraUrl: 'https://www.khanacademy.org',
       driveFolderId: '',
       scheduleSheetId: '',
+      workspacePermissions: '',
       createdAt: now,
       updatedAt: now,
     };

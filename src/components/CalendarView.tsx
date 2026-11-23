@@ -14,13 +14,19 @@ import {
 import { useAuth } from '../context/AuthContext';
 import {
   apiFetch,
+  apiPublicFetch,
   createGoogleMeetRoom,
   ensureAppDriveFolder,
   pullScheduleFromGoogleSheet,
   syncScheduleToGoogleSheet,
 } from '../lib/api';
 import { guestCreateEvent, guestDeleteEvent } from '../lib/guestStore';
-import type { CalendarEventItem, ExamScheduleItem, StudyTask } from '../types';
+import type {
+  CalendarEventItem,
+  ExamScheduleItem,
+  PointRewardsConfig,
+  StudyTask,
+} from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ExamMasterCards } from './ExamMasterCards';
 
@@ -76,6 +82,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    workspacePermissions,
     isEffectiveProOrAdmin,
     refreshProfile,
     workspaceToken,
@@ -83,8 +90,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     updateProfile,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
+  const [studyEventPts, setStudyEventPts] = useState(5);
   const [calendarSubView, setCalendarSubView] = useState<'calendar' | 'exam-master'>('calendar');
   const [deleteEventTarget, setDeleteEventTarget] = useState<CalendarEventItem | null>(null);
+
+  useEffect(() => {
+    apiPublicFetch<PointRewardsConfig>('/api/point-rewards')
+      .then((r) => {
+        if (typeof r?.calendarStudyEvent === 'number') setStudyEventPts(r.calendarStudyEvent);
+      })
+      .catch(() => {});
+  }, []);
 
   const now = new Date();
   const initialCenter: MonthKey = { year: now.getFullYear(), month: now.getMonth() };
@@ -263,7 +279,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           category,
           notes,
         });
-        setEventRewardMsg('Saved locally (Sign in to earn +5 points per study event).');
+        setEventRewardMsg(
+          `Saved locally (Sign in to earn +${studyEventPts} points per study event).`
+        );
       } else {
         const res = await apiFetch<{
           event: CalendarEventItem;
@@ -283,7 +301,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         setEventRewardMsg(
           res.pointsAwarded > 0
             ? `Study event verified — +${res.pointsAwarded} points awarded!`
-            : 'Event saved (0 points — only verified study/exam events earn +5 pts).'
+            : `Event saved (0 points — only verified study/exam events earn +${studyEventPts} pts).`
         );
         await refreshProfile();
       }
@@ -528,8 +546,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </form>
       </div>
 
-      {/* Google Sheets Schedule Sync Bar (only shown for Google Auth accounts) */}
-      {isWorkspaceEnabled && (
+      {/* Google Sheets Schedule Sync Bar (only shown when enabled for Google Auth accounts) */}
+      {isWorkspaceEnabled && !workspacePermissions.sheetsSync && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-2.5 text-xs text-slate-500">
+          Google Sheets schedule sync is disabled in View Plans → Google Workspace Function Permissions.
+        </div>
+      )}
+      {isWorkspaceEnabled && workspacePermissions.sheetsSync && (
         <>
           <div className="rounded-xl border border-slate-200 bg-white px-5 py-3.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2.5 text-xs text-slate-600">
@@ -814,8 +837,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
 
           <form onSubmit={handleAddEvent} className="space-y-3 border-t border-slate-100 pt-4">
-            <h4 className="text-sm font-semibold text-slate-900">
-              Schedule Study Event (+5 pts if study-verified)
+            <h4 className="text-sm font-semibold text-slate-900 tabular-nums">
+              Schedule Study Event (+{studyEventPts} pts if study-verified)
             </h4>
             <input
               type="text"
@@ -837,9 +860,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 onChange={(e) => setCategory(e.target.value)}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               >
-                <option value="study">Study Block (+5 pts)</option>
-                <option value="exam">Mock Exam (+5 pts)</option>
-                <option value="deadline">Study Deadline (+5 pts)</option>
+                <option value="study">Study Block (+{studyEventPts} pts)</option>
+                <option value="exam">Mock Exam (+{studyEventPts} pts)</option>
+                <option value="deadline">Study Deadline (+{studyEventPts} pts)</option>
                 <option value="meeting">Study Group</option>
                 <option value="personal">Personal / Other (0 pts)</option>
               </select>
@@ -851,7 +874,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               placeholder="Optional notes or syllabus chapters..."
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
-            {isWorkspaceEnabled && isProOrAdmin && (
+            {isWorkspaceEnabled && isProOrAdmin && workspacePermissions.meetRooms && (
               <div className="flex items-center gap-2">
                 <input
                   type="url"

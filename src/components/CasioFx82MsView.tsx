@@ -297,6 +297,79 @@ const FUNC_NAMES = [
   'Rnd',
 ];
 
+const MULTI_CHAR_DELETE_TOKENS = [
+  'sinh⁻¹(',
+  'cosh⁻¹(',
+  'tanh⁻¹(',
+  'sin⁻¹(',
+  'cos⁻¹(',
+  'tan⁻¹(',
+  'sinh⁻¹',
+  'cosh⁻¹',
+  'tanh⁻¹',
+  'sin⁻¹',
+  'cos⁻¹',
+  'tan⁻¹',
+  'sinh(',
+  'cosh(',
+  'tanh(',
+  'Pol(',
+  'Rec(',
+  'Rnd(',
+  'sin(',
+  'cos(',
+  'tan(',
+  'log(',
+  '³√(',
+  'ln(',
+  '√(',
+  '×10^',
+  'Ran#',
+  'Ans',
+  '10^',
+  'e^',
+  'sinh',
+  'cosh',
+  'tanh',
+  'Pol',
+  'Rec',
+  'Rnd',
+  'sin',
+  'cos',
+  'tan',
+  'log',
+  'ln',
+  '³√',
+  'ˣ√',
+  '⁻¹',
+  '√',
+];
+
+function getTokenSpansForDelete(expr: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let i = 0;
+  while (i < expr.length) {
+    let matched: string | undefined;
+    for (const tok of MULTI_CHAR_DELETE_TOKENS) {
+      if (tok === '10^' && i > 0 && /[0-9.]/.test(expr[i - 1])) {
+        continue;
+      }
+      if (expr.startsWith(tok, i)) {
+        matched = tok;
+        break;
+      }
+    }
+    if (matched) {
+      spans.push({ start: i, end: i + matched.length });
+      i += matched.length;
+    } else {
+      spans.push({ start: i, end: i + 1 });
+      i += 1;
+    }
+  }
+  return spans;
+}
+
 function tokenizeExpression(input: string): Token[] {
   const s = input.replace(/\s+/g, '');
   const tokens: Token[] = [];
@@ -375,14 +448,15 @@ function tokenizeExpression(input: string): Token[] {
       continue;
     }
 
-    if (ch === 'π' || ch === 'e' || (ch >= 'A' && ch <= 'F') || ch === 'X' || ch === 'Y' || ch === 'M') {
-      tokens.push({ type: 'ident', value: ch });
+    // Check nPr/nCr symbols before variable letters A..F so 'C' (var) never collides with 'ᴄ' (nCr)
+    if (ch === 'ᴘ' || ch === 'P' || ch === 'ᴄ') {
+      tokens.push({ type: 'op', value: ch === 'ᴄ' ? 'C' : 'P' });
       i += 1;
       continue;
     }
 
-    if (ch === 'P' || ch === 'C') {
-      tokens.push({ type: 'op', value: ch });
+    if (ch === 'π' || ch === 'e' || (ch >= 'A' && ch <= 'F') || ch === 'X' || ch === 'Y' || ch === 'M') {
+      tokens.push({ type: 'ident', value: ch });
       i += 1;
       continue;
     }
@@ -1313,6 +1387,13 @@ export const CasioFx82MsView: React.FC = () => {
         return;
       }
 
+      if (errorText && (dir === 'left' || dir === 'right')) {
+        setErrorText(null);
+        setJustEvaluated(false);
+        setCursorPos(dir === 'left' ? expr.length : 0);
+        return;
+      }
+
       if (dir === 'up') {
         if (history.length === 0) return;
         const nextIdx =
@@ -1349,7 +1430,7 @@ export const CasioFx82MsView: React.FC = () => {
         setCursorPos((p) => (p < expr.length ? p + 1 : 0));
       }
     },
-    [calcMode, expr.length, history, historyIdx, isOn, menu, renderNumberOutput]
+    [calcMode, errorText, expr.length, history, historyIdx, isOn, menu, renderNumberOutput]
   );
 
   const handleDigit = (d: number) => {
@@ -1401,6 +1482,14 @@ export const CasioFx82MsView: React.FC = () => {
       return;
     }
     if (cursorPos <= 0 || expr.length === 0) return;
+    const spans = getTokenSpansForDelete(expr);
+    const targetSpan = spans.find((sp) => sp.start < cursorPos && cursorPos <= sp.end);
+    if (targetSpan) {
+      const next = expr.slice(0, targetSpan.start) + expr.slice(targetSpan.end);
+      setExpr(next);
+      setCursorPos(targetSpan.start);
+      return;
+    }
     const next = expr.slice(0, cursorPos - 1) + expr.slice(cursorPos);
     setExpr(next);
     setCursorPos(cursorPos - 1);
@@ -1906,7 +1995,7 @@ export const CasioFx82MsView: React.FC = () => {
                 mainLabel="nCr"
                 onClick={() => {
                   if (!isOn) return;
-                  insertToken(shift ? 'P' : 'C', true);
+                  insertToken(shift ? 'ᴘ' : 'ᴄ', true);
                   clearModifiers();
                 }}
               />

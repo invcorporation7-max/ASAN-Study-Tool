@@ -1,5 +1,6 @@
 export type NavSection =
   | 'dashboard'
+  | 'all-apps'
   | 'calendar'
   | 'tasks'
   | 'notes'
@@ -19,6 +20,22 @@ export type NavSection =
   | 'plans'
   | 'about'
   | 'contact';
+
+export interface WorkspacePermissionsConfig {
+  driveSync: boolean;
+  docsExport: boolean;
+  sheetsSync: boolean;
+  meetRooms: boolean;
+}
+
+export interface PointRewardsConfig {
+  noteCreate: number;
+  calendarStudyEvent: number;
+  questionPaperUpload: number;
+  studyMaterialUpload: number;
+  examTimer30Min: number;
+  contributorWeekly: number;
+}
 
 export interface DbUser {
   id: number;
@@ -45,6 +62,7 @@ export interface DbUser {
   spectraUrl: string;
   driveFolderId: string;
   scheduleSheetId: string;
+  workspacePermissions?: WorkspacePermissionsConfig;
   createdAt?: string;
 }
 
@@ -215,6 +233,7 @@ export interface StudyMaterialItem {
   title: string;
   subject: string;
   category: 'question_paper' | 'study_notes' | 'booklet' | 'archive' | string;
+  description?: string;
   fileName: string;
   storedFileName: string;
   mimeType: string;
@@ -303,6 +322,7 @@ export interface StudyNotePage {
   sectionName: string;
   title: string;
   pagesData: A4PageItem[];
+  pointsAwarded?: number;
   createdAt: string;
   updatedAt: string;
 }

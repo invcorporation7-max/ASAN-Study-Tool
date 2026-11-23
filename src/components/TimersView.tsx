@@ -14,7 +14,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/api';
+import { apiFetch, apiPublicFetch } from '../lib/api';
 import {
   guestCreateExam,
   guestCreateStudyLog,
@@ -28,7 +28,7 @@ import {
   playPhaseStartBell,
   playPreStartWarningAlarm,
 } from '../lib/audioAlarms';
-import type { ExamScheduleItem, StudyLogItem } from '../types';
+import type { ExamScheduleItem, PointRewardsConfig, StudyLogItem } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface TimersViewProps {
@@ -107,6 +107,15 @@ export const TimersView: React.FC<TimersViewProps> = ({
 }) => {
   const { isGuest, isEffectiveProOrAdmin, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<TimerTab>('test');
+  const [examTimer30MinPts, setExamTimer30MinPts] = useState(10);
+
+  useEffect(() => {
+    apiPublicFetch<PointRewardsConfig>('/api/point-rewards')
+      .then((r) => {
+        if (typeof r?.examTimer30Min === 'number') setExamTimer30MinPts(r.examTimer30Min);
+      })
+      .catch(() => {});
+  }, []);
 
   // --- TEST TIMER FORM STATE ---
   const [subject, setSubject] = useState('Physics');
@@ -486,7 +495,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
             }).then(async (res) => {
               if (res?.pointsAwarded && res.pointsAwarded > 0) {
                 setExamLogBanner(
-                  `Exam Concluded — +${res.pointsAwarded} points awarded (+10 pts per 30 mins of exam timer)!`
+                  `Exam Concluded — +${res.pointsAwarded} points awarded (+${examTimer30MinPts} pts per 30 mins of exam timer)!`
                 );
               }
               await Promise.all([onRefresh(), refreshProfile()]);
@@ -500,7 +509,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
     }, 250);
 
     return () => window.clearInterval(interval);
-  }, [activeExam, isGuest, onRefresh, refreshProfile]);
+  }, [activeExam, examTimer30MinPts, isGuest, onRefresh, refreshProfile]);
 
   const startExamSession = (params: {
     id?: number;
@@ -1062,8 +1071,8 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   <p className="text-xs text-slate-400">
                     Runs continuously even if closed. Active exams enter fullscreen &amp; pause if exited.
                   </p>
-                  <p className="pt-2 text-[11px] text-amber-300/90">
-                    Signed-in users earn +10 points per 30 minutes completed in Exam Timer.
+                  <p className="pt-2 text-[11px] text-amber-300/90 tabular-nums">
+                    Signed-in users earn +{examTimer30MinPts} points per 30 minutes completed in Exam Timer.
                   </p>
                 </div>
               ) : (

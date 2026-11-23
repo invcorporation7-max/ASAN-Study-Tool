@@ -231,6 +231,7 @@ export async function uploadStudyMaterialBinary<T>(
     title: string;
     subject: string;
     category: string;
+    description?: string;
     pageCount?: number;
     hourlyRentCost: number;
     buyCost?: number;
@@ -258,6 +259,7 @@ export async function uploadStudyMaterialBinary<T>(
           'x-material-title': encodeURIComponent(metadata.title),
           'x-material-subject': encodeURIComponent(metadata.subject),
           'x-material-category': encodeURIComponent(metadata.category),
+          'x-material-description': encodeURIComponent(metadata.description || ''),
           'x-file-name': encodeURIComponent(file.name),
           'x-mime-type': encodeURIComponent(file.type || 'application/octet-stream'),
           'x-page-count': String(Math.max(1, Math.round(metadata.pageCount || 1))),

@@ -23,11 +23,43 @@ import {
   logout,
   subscribeAuth,
 } from '../lib/firebase';
-import type { DbUser, SavedAccountEntry } from '../types';
+import type { DbUser, SavedAccountEntry, WorkspacePermissionsConfig } from '../types';
 
 const GUEST_STORAGE_KEY = 'asan_guest_free_mode';
 const SAVED_ACCOUNTS_KEY = 'asan_saved_accounts_v1';
 const PERM_PROMPT_DISMISSED_PREFIX = 'asan_perm_prompt_dismissed_';
+const WORKSPACE_PERMS_KEY = 'asan_workspace_perms_v1';
+
+const DEFAULT_WORKSPACE_PERMISSIONS: WorkspacePermissionsConfig = {
+  driveSync: true,
+  docsExport: true,
+  sheetsSync: true,
+  meetRooms: true,
+};
+
+function loadWorkspacePermissions(): WorkspacePermissionsConfig {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_PERMS_KEY);
+    if (!raw) return { ...DEFAULT_WORKSPACE_PERMISSIONS };
+    const parsed = JSON.parse(raw) as Partial<WorkspacePermissionsConfig>;
+    return {
+      driveSync: typeof parsed.driveSync === 'boolean' ? parsed.driveSync : true,
+      docsExport: typeof parsed.docsExport === 'boolean' ? parsed.docsExport : true,
+      sheetsSync: typeof parsed.sheetsSync === 'boolean' ? parsed.sheetsSync : true,
+      meetRooms: typeof parsed.meetRooms === 'boolean' ? parsed.meetRooms : true,
+    };
+  } catch {
+    return { ...DEFAULT_WORKSPACE_PERMISSIONS };
+  }
+}
+
+function saveWorkspacePermissions(perms: WorkspacePermissionsConfig) {
+  try {
+    localStorage.setItem(WORKSPACE_PERMS_KEY, JSON.stringify(perms));
+  } catch {
+    // ignore
+  }
+}
 
 export type PermissionStep = 'drive' | 'workspace' | null;
 
@@ -76,7 +108,10 @@ interface AuthContextValue {
     driveFolderId?: string;
     scheduleSheetId?: string;
     viewPlanMode?: 'auto' | 'basic';
+    workspacePermissions?: WorkspacePermissionsConfig;
   }) => Promise<void>;
+  workspacePermissions: WorkspacePermissionsConfig;
+  updateWorkspacePermissions: (patch: Partial<WorkspacePermissionsConfig>) => Promise<void>;
   setViewPlanMode: (mode: 'auto' | 'basic') => Promise<void>;
   switchPlanAdmin: (plan: 'basic' | 'pro') => Promise<void>;
 }
@@ -122,6 +157,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     loadSavedAccounts()
   );
   const [prefillIdentifier, setPrefillIdentifier] = useState('');
+  const [localWorkspacePerms, setLocalWorkspacePerms] = useState<WorkspacePermissionsConfig>(() =>
+    loadWorkspacePermissions()
+  );
 
   const recordSavedAccount = useCallback(
     (profile: DbUser, mode: 'google' | 'password', pwdToken?: string | null) => {
@@ -510,6 +548,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       driveFolderId?: string;
       scheduleSheetId?: string;
       viewPlanMode?: 'auto' | 'basic';
+      workspacePermissions?: WorkspacePermissionsConfig;
     }) => {
       try {
         const updated = await apiFetch<DbUser>('/api/me', {
@@ -657,6 +696,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     dbUser?.viewPlanMode !== 'basic' &&
     (dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super');
 
+  const workspacePermissions: WorkspacePermissionsConfig =
+    !isGuest && dbUser?.workspacePermissions
+      ? {
+          ...DEFAULT_WORKSPACE_PERMISSIONS,
+          ...dbUser.workspacePermissions,
+        }
+      : localWorkspacePerms;
+
+  const updateWorkspacePermissions = useCallback(
+    async (patch: Partial<WorkspacePermissionsConfig>) => {
+      const next: WorkspacePermissionsConfig = {
+        ...workspacePermissions,
+        ...patch,
+      };
+      setLocalWorkspacePerms(next);
+      saveWorkspacePermissions(next);
+      if (!isGuest && dbUser) {
+        await updateProfile({ workspacePermissions: next }).catch(() => {});
+      }
+    },
+    [dbUser, isGuest, updateProfile, workspacePermissions]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -694,6 +756,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         signOutUser,
         refreshProfile,
         updateProfile,
+        workspacePermissions,
+        updateWorkspacePermissions,
         setViewPlanMode,
         switchPlanAdmin,
       }}

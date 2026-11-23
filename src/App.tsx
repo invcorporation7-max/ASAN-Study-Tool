@@ -18,12 +18,15 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  LayoutGrid,
   LogIn,
   LogOut,
   Mail,
   Menu,
   MessageSquare,
   MoreHorizontal,
+  Pin,
+  PinOff,
   Search,
   ShieldCheck,
   Sparkles,
@@ -75,27 +78,135 @@ import type {
   ToolUserSummary,
 } from './types';
 
-const PRIMARY_NAV: {
+interface AppCatalogEntry {
   id: NavSection;
   label: string;
+  description: string;
+  category: 'Core Study Workspace' | 'Community & Account' | 'Pro & Extended Tools';
   icon: React.FC<{ className?: string }>;
   proOnly?: boolean;
-}[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'calendar', label: 'Calendar', icon: Calendar },
-  { id: 'tasks', label: 'My Tasks', icon: CheckSquare },
-  { id: 'notes', label: 'My Notes', icon: BookOpen },
-  { id: 'timers', label: 'Timers', icon: Clock },
-  { id: 'calculator', label: 'fx-82MS Calc', icon: Calculator },
-  { id: 'messages', label: 'Tool Mail', icon: MessageSquare },
-  { id: 'study-materials', label: 'Study Material Notes', icon: FolderOpen },
-  { id: 'subscriptions', label: 'Subscriptions', icon: Sparkles },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'pdf-tool', label: 'PDF Tool', icon: Layers, proOnly: true },
-  { id: 'workspace', label: 'Google Workspace', icon: Cloud, proOnly: true },
-  { id: 'spectra', label: 'Spectra AI', icon: Globe, proOnly: true },
-  { id: 'more', label: 'More Features', icon: MoreHorizontal },
+}
+
+const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    description: 'Exam schedules, subject routines, and Google Sheets sync.',
+    category: 'Core Study Workspace',
+    icon: Calendar,
+  },
+  {
+    id: 'tasks',
+    label: 'My Tasks',
+    description: 'Track assignments, Kanban status, priorities, and due dates.',
+    category: 'Core Study Workspace',
+    icon: CheckSquare,
+  },
+  {
+    id: 'notes',
+    label: 'My Notes',
+    description: 'OneNote-style A4 study notebooks with PDF and Google Docs export.',
+    category: 'Core Study Workspace',
+    icon: BookOpen,
+  },
+  {
+    id: 'timers',
+    label: 'Timers',
+    description: 'Exam countdowns, Pomodoro sessions, and focus study logs.',
+    category: 'Core Study Workspace',
+    icon: Clock,
+  },
+  {
+    id: 'calculator',
+    label: 'fx-82MS Calc',
+    description: 'Casio fx-82MS non-programmable scientific calculator simulator.',
+    category: 'Core Study Workspace',
+    icon: Calculator,
+  },
+  {
+    id: 'messages',
+    label: 'Tool Mail',
+    description: 'In-app study mail, attachments, and contributor requests.',
+    category: 'Community & Account',
+    icon: MessageSquare,
+  },
+  {
+    id: 'study-materials',
+    label: 'Study Material Notes',
+    description: 'Upload and unlock student notes & question papers with points.',
+    category: 'Community & Account',
+    icon: FolderOpen,
+  },
+  {
+    id: 'subscriptions',
+    label: 'Subscriptions',
+    description: 'Manage your plan tier, ASAN points balance, and renewals.',
+    category: 'Community & Account',
+    icon: Sparkles,
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'Alerts, points activity updates, and announcements.',
+    category: 'Community & Account',
+    icon: Bell,
+  },
+  {
+    id: 'pdf-tool',
+    label: 'PDF Tool',
+    description: 'A4 booklet imposition, whole PDF import, camera scan & cropping.',
+    category: 'Pro & Extended Tools',
+    icon: Layers,
+    proOnly: true,
+  },
+  {
+    id: 'workspace',
+    label: 'Google Workspace',
+    description: 'Opt-in ASAN Drive folder, Docs export, Sheets sync, and Meet.',
+    category: 'Pro & Extended Tools',
+    icon: Cloud,
+    proOnly: true,
+  },
+  {
+    id: 'spectra',
+    label: 'Spectra AI',
+    description: 'Connect and launch your external Spectra study portal.',
+    category: 'Pro & Extended Tools',
+    icon: Globe,
+    proOnly: true,
+  },
+  {
+    id: 'more',
+    label: 'More Features',
+    description: 'Additional study utilities and quick shortcuts.',
+    category: 'Pro & Extended Tools',
+    icon: MoreHorizontal,
+  },
 ];
+
+const PINNED_APPS_STORAGE_KEY = 'asan_pinned_sidebar_apps_v1';
+const DEFAULT_PINNED_APPS: NavSection[] = [
+  'calendar',
+  'tasks',
+  'notes',
+  'timers',
+  'calculator',
+  'study-materials',
+  'messages',
+];
+
+function loadPinnedApps(): NavSection[] {
+  try {
+    const raw = localStorage.getItem(PINNED_APPS_STORAGE_KEY);
+    if (!raw) return [...DEFAULT_PINNED_APPS];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...DEFAULT_PINNED_APPS];
+    const validIds = new Set(ALL_TOOLS_CATALOG.map((t) => t.id));
+    return parsed.filter((id): id is NavSection => typeof id === 'string' && validIds.has(id as NavSection));
+  } catch {
+    return [...DEFAULT_PINNED_APPS];
+  }
+}
 
 const SECONDARY_NAV: {
   id: NavSection;
@@ -109,6 +220,7 @@ const SECONDARY_NAV: {
 
 const SECTION_LABELS: Record<NavSection, string> = {
   dashboard: 'Dashboard',
+  'all-apps': 'All Apps',
   calendar: 'Calendar',
   tasks: 'My Tasks',
   notes: 'My Notes',
@@ -186,12 +298,21 @@ const MainShell: React.FC = () => {
   const isSignedIn = Boolean(firebaseUser || dbUser);
 
   const [section, setSection] = useState<NavSection>('dashboard');
+  const [pinnedAppIds, setPinnedAppIds] = useState<NavSection[]>(() => loadPinnedApps());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [preselectedMessageNoteId, setPreselectedMessageNoteId] = useState<number | null>(
     null
   );
   const [switchModalOpen, setSwitchModalOpen] = useState(false);
   const [permBusy, setPermBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PINNED_APPS_STORAGE_KEY, JSON.stringify(pinnedAppIds));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [pinnedAppIds]);
 
   // Study Workspace State
   const [tasks, setTasks] = useState<StudyTask[]>([]);
@@ -594,9 +715,16 @@ const MainShell: React.FC = () => {
     setSearchOpen(false);
   };
 
-  const visiblePrimaryNav = PRIMARY_NAV.filter(
+  const availableTools = ALL_TOOLS_CATALOG.filter(
     (item) => isWorkspaceEnabled || item.id !== 'workspace'
   );
+  const pinnedTools = availableTools.filter((item) => pinnedAppIds.includes(item.id));
+
+  const togglePinnedApp = (id: NavSection) => {
+    setPinnedAppIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
 
   const renderSidebarContent = () => (
     <div className="flex h-full flex-col justify-between bg-white border-r border-slate-200 px-4 py-5 overflow-y-auto">
@@ -613,7 +741,55 @@ const MainShell: React.FC = () => {
         </div>
 
         <nav className="space-y-1" aria-label="Main navigation">
-          {visiblePrimaryNav.map((item) => {
+          {/* Always present: Dashboard & All Apps */}
+          <button
+            type="button"
+            onClick={() => handleNavClick('dashboard')}
+            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+              section === 'dashboard'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <LayoutDashboard
+                className={`h-4 w-4 shrink-0 ${
+                  section === 'dashboard' ? 'text-blue-600' : 'text-slate-400'
+                }`}
+              />
+              <span className="truncate">Dashboard</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleNavClick('all-apps')}
+            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+              section === 'all-apps'
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <LayoutGrid
+                className={`h-4 w-4 shrink-0 ${
+                  section === 'all-apps' ? 'text-blue-600' : 'text-slate-400'
+                }`}
+              />
+              <span className="truncate">All Apps</span>
+            </span>
+            <span className="text-[10px] font-medium text-slate-400 tabular-nums">
+              {pinnedTools.length}/{availableTools.length}
+            </span>
+          </button>
+
+          {pinnedTools.length > 0 && (
+            <div className="pt-2 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Pinned Apps
+            </div>
+          )}
+
+          {pinnedTools.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             const locked = Boolean(item.proOnly && !isProOrAdmin);
@@ -1129,6 +1305,136 @@ const MainShell: React.FC = () => {
                   studyLogs={studyLogs}
                   onNavigate={setSection}
                 />
+              )}
+              {section === 'all-apps' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h1 className="font-display text-2xl font-bold text-slate-900">
+                        All Apps &amp; Sidebar Pins
+                      </h1>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Browse every tool in ASAN-Study_tool and hand-select any number of apps to pin to your left sidebar.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-medium text-slate-600 tabular-nums mr-1">
+                        {pinnedTools.length} of {availableTools.length} pinned
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPinnedAppIds([...DEFAULT_PINNED_APPS])}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Reset Default
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPinnedAppIds(availableTools.map((t) => t.id))}
+                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 font-medium text-blue-700 hover:bg-blue-100"
+                      >
+                        Pin All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPinnedAppIds([])}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        Unpin All
+                      </button>
+                    </div>
+                  </div>
+
+                  {(
+                    [
+                      'Core Study Workspace',
+                      'Community & Account',
+                      'Pro & Extended Tools',
+                    ] as const
+                  ).map((category) => {
+                    const groupItems = availableTools.filter((t) => t.category === category);
+                    if (groupItems.length === 0) return null;
+                    return (
+                      <section key={category} className="space-y-3">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          {category}
+                        </h2>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {groupItems.map((tool) => {
+                            const Icon = tool.icon;
+                            const isPinned = pinnedAppIds.includes(tool.id);
+                            const isLocked = Boolean(tool.proOnly && !isProOrAdmin);
+                            return (
+                              <div
+                                key={tool.id}
+                                className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300"
+                              >
+                                <div className="space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-blue-600">
+                                        <Icon className="h-4 w-4" />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="truncate text-sm font-semibold text-slate-900">
+                                          {tool.label}
+                                        </div>
+                                        {tool.proOnly && (
+                                          <div className="text-[11px] font-medium text-slate-400">
+                                            {isLocked ? 'Pro Plan Feature' : 'Pro Unlocked'}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {tool.id === 'notifications' && unreadNotifCount > 0 && (
+                                      <span className="text-xs font-semibold text-blue-600 tabular-nums shrink-0">
+                                        {unreadNotifCount} unread
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs leading-relaxed text-slate-500">
+                                    {tool.description}
+                                  </p>
+                                </div>
+
+                                <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleNavClick(tool.id)}
+                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                                  >
+                                    Open App
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePinnedApp(tool.id)}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                      isPinned
+                                        ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    {isPinned ? (
+                                      <>
+                                        <PinOff className="h-3.5 w-3.5" />
+                                        Pinned
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Pin className="h-3.5 w-3.5" />
+                                        Pin to Sidebar
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
               )}
               {section === 'calendar' && (
                 <CalendarView

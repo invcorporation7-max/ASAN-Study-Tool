@@ -32,6 +32,7 @@ import {
 import {
   awardPoints,
   getContributorWeeklyPoints,
+  getPointRewardsConfig,
   sanitizeUserForClient,
 } from './users.ts';
 
@@ -253,7 +254,8 @@ export async function createCalendarEvent(
   }
 ) {
   const studyVerified = isStudyRelatedEvent(data.title, data.category, data.notes);
-  const pointsAwarded = studyVerified ? 5 : 0;
+  const rewards = await getPointRewardsConfig();
+  const pointsAwarded = studyVerified ? rewards.calendarStudyEvent : 0;
 
   try {
     const [created] = await db
@@ -409,6 +411,10 @@ export async function createNotePage(
     pagesData: A4PageContent[];
   }
 ) {
+  const rewards = await getPointRewardsConfig();
+  const studyVerified = isStudyRelatedEvent(data.title, data.sectionName);
+  const pointsAwarded = studyVerified && rewards.noteCreate > 0 ? rewards.noteCreate : 0;
+
   try {
     const [created] = await db
       .insert(notePages)
@@ -420,7 +426,15 @@ export async function createNotePage(
         pagesData: data.pagesData,
       })
       .returning();
-    return created;
+    if (pointsAwarded > 0) {
+      await awardPoints(
+        userId,
+        pointsAwarded,
+        `Study A4 Note: ${data.title}`,
+        'note_create'
+      );
+    }
+    return { ...created, pointsAwarded };
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
     const store = getLocalStore();
@@ -437,7 +451,15 @@ export async function createNotePage(
     };
     store.notePages.unshift(created);
     persistLocalStore();
-    return created;
+    if (pointsAwarded > 0) {
+      await awardPoints(
+        userId,
+        pointsAwarded,
+        `Study A4 Note: ${data.title}`,
+        'note_create'
+      );
+    }
+    return { ...created, pointsAwarded };
   }
 }
 
@@ -608,7 +630,8 @@ export async function createStudyLog(
 ) {
   const isExamMode = data.mode === 'test_timer' || data.mode === 'exam_timer';
   const blocksOf30Min = Math.floor(Math.max(0, data.durationSeconds) / 1800);
-  const pointsAwarded = isExamMode ? blocksOf30Min * 10 : 0;
+  const rewards = await getPointRewardsConfig();
+  const pointsAwarded = isExamMode ? blocksOf30Min * rewards.examTimer30Min : 0;
 
   try {
     const [created] = await db
@@ -1190,6 +1213,7 @@ export async function createStudyMaterial(data: {
   title: string;
   subject: string;
   category: string;
+  description?: string;
   fileName: string;
   storedFileName: string;
   mimeType: string;
@@ -1207,8 +1231,20 @@ export async function createStudyMaterial(data: {
   const buyCost = Number.isFinite(rawBuy) && rawBuy >= 5
     ? Math.round(rawBuy)
     : Math.max(hourlyRentCost, Math.min(5000, hourlyRentCost * 4));
+  const cleanDescription = (data.description || '').trim().slice(0, 1000);
 
-  const pointsAwarded = data.category === 'question_paper' ? 75 : 0;
+  const rewards = await getPointRewardsConfig();
+  const pointsAwarded =
+    data.category === 'question_paper'
+      ? rewards.questionPaperUpload
+      : rewards.studyMaterialUpload;
+  const awardReason =
+    data.category === 'question_paper'
+      ? `Uploaded Question Paper: ${data.title}`
+      : `Uploaded Study Material: ${data.title}`;
+  const awardCategory =
+    data.category === 'question_paper' ? 'question_paper' : 'study_material';
+
   try {
     const [created] = await db
       .insert(studyMaterials)
@@ -1219,6 +1255,7 @@ export async function createStudyMaterial(data: {
         title: data.title,
         subject: data.subject,
         category: data.category,
+        description: cleanDescription,
         fileName: data.fileName,
         storedFileName: data.storedFileName,
         mimeType: data.mimeType,
@@ -1231,12 +1268,7 @@ export async function createStudyMaterial(data: {
       .returning();
 
     if (pointsAwarded > 0) {
-      await awardPoints(
-        data.uploaderId,
-        pointsAwarded,
-        `Uploaded Question Paper: ${data.title}`,
-        'question_paper'
-      );
+      await awardPoints(data.uploaderId, pointsAwarded, awardReason, awardCategory);
     }
     return { material: created, pointsAwarded };
   } catch (error) {
@@ -1250,6 +1282,7 @@ export async function createStudyMaterial(data: {
       title: data.title,
       subject: data.subject,
       category: data.category,
+      description: cleanDescription,
       fileName: data.fileName,
       storedFileName: data.storedFileName,
       mimeType: data.mimeType,
@@ -1265,12 +1298,7 @@ export async function createStudyMaterial(data: {
     store.studyMaterials.unshift(created);
     persistLocalStore();
     if (pointsAwarded > 0) {
-      await awardPoints(
-        data.uploaderId,
-        pointsAwarded,
-        `Uploaded Question Paper: ${data.title}`,
-        'question_paper'
-      );
+      await awardPoints(data.uploaderId, pointsAwarded, awardReason, awardCategory);
     }
     return { material: created, pointsAwarded };
   }
@@ -1343,13 +1371,15 @@ export async function acquireStudyMaterial(
       accessType === 'buy' ? 'material_buy' : 'material_rent'
     );
 
-    const royalty = Math.max(1, Math.round(totalCost * 0.5));
-    await awardPoints(
-      item.uploaderId,
-      royalty,
-      `Royalty from ${buyer.displayName} (${accessType === 'buy' ? 'Buy' : `${hours}h Rent`}): ${item.title}`,
-      'material_sale'
-    );
+    const royalty = Math.min(totalCost, Math.max(0, Math.round((totalCost * 0.7) / 10) * 10));
+    if (royalty > 0) {
+      await awardPoints(
+        item.uploaderId,
+        royalty,
+        `Royalty from ${buyer.displayName} (${accessType === 'buy' ? 'Buy' : `${hours}h Rent`}): ${item.title}`,
+        'material_sale'
+      );
+    }
 
     const [purchase] = await db
       .insert(materialPurchases)
@@ -1407,13 +1437,15 @@ export async function acquireStudyMaterial(
       accessType === 'buy' ? 'material_buy' : 'material_rent'
     );
 
-    const royalty = Math.max(1, Math.round(totalCost * 0.5));
-    await awardPoints(
-      item.uploaderId,
-      royalty,
-      `Royalty from ${buyer.displayName} (${accessType === 'buy' ? 'Buy' : `${hours}h Rent`}): ${item.title}`,
-      'material_sale'
-    );
+    const royalty = Math.min(totalCost, Math.max(0, Math.round((totalCost * 0.7) / 10) * 10));
+    if (royalty > 0) {
+      await awardPoints(
+        item.uploaderId,
+        royalty,
+        `Royalty from ${buyer.displayName} (${accessType === 'buy' ? 'Buy' : `${hours}h Rent`}): ${item.title}`,
+        'material_sale'
+      );
+    }
 
     const purchase = {
       id: nextSeq('materialPurchases'),

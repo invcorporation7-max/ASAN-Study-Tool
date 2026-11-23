@@ -59,10 +59,12 @@ export const NotesView: React.FC<NotesViewProps> = ({
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    workspacePermissions,
     isEffectiveProOrAdmin,
     workspaceToken,
     connectBasicDrive,
     connectWorkspace,
+    refreshProfile,
     updateProfile,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
@@ -214,6 +216,12 @@ export const NotesView: React.FC<NotesViewProps> = ({
           });
       await onRefresh();
       setSelectedDocId(created.id);
+      if (!isGuest && created.pointsAwarded && created.pointsAwarded > 0) {
+        setStatusMsg(
+          `Created A4 document · +${created.pointsAwarded} points awarded!`
+        );
+        await refreshProfile();
+      }
     } catch (err) {
       setStatusMsg(err instanceof Error ? err.message : 'Failed to create note document');
     }
@@ -614,7 +622,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {!isGuest && (
+          {!isGuest && isWorkspaceEnabled && workspacePermissions.driveSync && (
             <button
               type="button"
               onClick={handleSaveNotesTxtToDrive}
@@ -654,27 +662,27 @@ export const NotesView: React.FC<NotesViewProps> = ({
                 <Download className="h-3.5 w-3.5" />
                 Download PDF
               </button>
-              {isProOrAdmin && isWorkspaceEnabled && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleSaveToDrive}
-                    disabled={exporting}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
-                  >
-                    <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
-                    Save PDF to Drive
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportGoogleDoc}
-                    disabled={exporting}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-blue-600" />
-                    To Docs
-                  </button>
-                </>
+              {isProOrAdmin && isWorkspaceEnabled && workspacePermissions.driveSync && (
+                <button
+                  type="button"
+                  onClick={handleSaveToDrive}
+                  disabled={exporting}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                >
+                  <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
+                  Save PDF to Drive
+                </button>
+              )}
+              {isProOrAdmin && isWorkspaceEnabled && workspacePermissions.docsExport && (
+                <button
+                  type="button"
+                  onClick={handleExportGoogleDoc}
+                  disabled={exporting}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                >
+                  <FileText className="h-3.5 w-3.5 text-blue-600" />
+                  To Docs
+                </button>
               )}
               {!isGuest && onShareViaMessage && (
                 <button

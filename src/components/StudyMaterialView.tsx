@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Award,
   Clock,
@@ -15,13 +15,14 @@ import {
 import { useAuth } from '../context/AuthContext';
 import {
   apiFetch,
+  apiPublicFetch,
   downloadStudyMaterialFile,
   ensureNamedDriveFolder,
   fetchStudyMaterialBlob,
   uploadFileToDriveFolder,
   uploadStudyMaterialBinary,
 } from '../lib/api';
-import type { MaterialPurchaseItem, StudyMaterialItem } from '../types';
+import type { MaterialPurchaseItem, PointRewardsConfig, StudyMaterialItem } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 
 function formatBytes(bytes: number): string {
@@ -62,6 +63,7 @@ export const StudyMaterialView: React.FC = () => {
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    workspacePermissions,
     signIn,
     refreshProfile,
     workspaceToken,
@@ -75,9 +77,19 @@ export const StudyMaterialView: React.FC = () => {
   const [showRequestBox, setShowRequestBox] = useState(false);
   const [requestNote, setRequestNote] = useState('');
   const [requestSending, setRequestSending] = useState(false);
+  const requestLockRef = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [rewards, setRewards] = useState<PointRewardsConfig>({
+    noteCreate: 5,
+    calendarStudyEvent: 5,
+    questionPaperUpload: 75,
+    studyMaterialUpload: 0,
+    examTimer30Min: 10,
+    contributorWeekly: 120,
+  });
 
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [subject, setSubject] = useState('Physics');
   const [category, setCategory] = useState<'question_paper' | 'study_notes' | 'booklet' | 'archive'>(
     'question_paper'
@@ -121,6 +133,11 @@ export const StudyMaterialView: React.FC = () => {
 
   useEffect(() => {
     loadMaterials();
+    apiPublicFetch<PointRewardsConfig>('/api/point-rewards')
+      .then((r) => {
+        if (r && typeof r.questionPaperUpload === 'number') setRewards(r);
+      })
+      .catch(() => {});
   }, [loadMaterials]);
 
   useEffect(() => {
@@ -143,6 +160,10 @@ export const StudyMaterialView: React.FC = () => {
 
   const handleApplyContributor = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (requestLockRef.current || requestSending || contributorRequested || contributorAccess) {
+      return;
+    }
+    requestLockRef.current = true;
     setRequestSending(true);
     setErrorMsg(null);
     setStatusMsg(null);
@@ -151,17 +172,19 @@ export const StudyMaterialView: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({ message: requestNote.trim() }),
       });
+      setContributorRequested(true);
       await refreshProfile();
       await loadMaterials();
       setShowRequestBox(false);
       setRequestNote('');
       setStatusMsg(
-        'Contributor request sent to Admin & Super via Tool Mail! Once approved, you unlock the Contributors Console and weekly stipend.'
+        'Contributor request sent once to Admin & Super via Tool Mail! Duplicate requests are locked while pending.'
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to submit request');
     } finally {
       setRequestSending(false);
+      requestLockRef.current = false;
     }
   };
 
@@ -188,6 +211,7 @@ export const StudyMaterialView: React.FC = () => {
         pointsAwarded: number;
       }>(file, {
         title: title.trim() || file.name,
+        description: description.trim(),
         subject: subject.trim() || 'General',
         category,
         pageCount: cleanPages,
@@ -196,6 +220,7 @@ export const StudyMaterialView: React.FC = () => {
       });
 
       setTitle('');
+      setDescription('');
       setFile(null);
       setPageCount(1);
       setHourlyRentCost(10);
@@ -246,6 +271,10 @@ export const StudyMaterialView: React.FC = () => {
   const handleMirrorToAsanUserContentDrive = async (item: StudyMaterialItem) => {
     if (!isWorkspaceEnabled) {
       setErrorMsg('Google Drive sync is hidden in private Email & Password mode.');
+      return;
+    }
+    if (!workspacePermissions.driveSync) {
+      setErrorMsg('Google Drive sync is disabled under View Plans → Google Workspace Permissions.');
       return;
     }
     setErrorMsg(null);
@@ -299,8 +328,8 @@ export const StudyMaterialView: React.FC = () => {
               <h1 className="font-display text-xl font-bold text-slate-900">
                 Study Material Notes &amp; Question Papers
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Sign in with Google to upload Question Papers (+75 points each), rent or buy repository materials (5–100 pts/hr), or apply to become an approved Contributor (+120 points/week).
+              <p className="mt-1 text-sm text-slate-600 tabular-nums">
+                Sign in with Google to upload Question Papers (+{rewards.questionPaperUpload} points each), rent or buy repository materials (5–100 pts/hr), or apply to become an approved Contributor (+{rewards.contributorWeekly} points/week).
               </p>
             </div>
           </div>
@@ -323,8 +352,8 @@ export const StudyMaterialView: React.FC = () => {
           <h1 className="font-display text-2xl font-bold text-slate-900">
             Study Material Notes &amp; Question Papers
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Upload Question Papers (+75 pts). Rent materials hourly (5–100 pts/hr) or buy permanent access with your points (50% royalty credited to uploader).
+          <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+            Upload whole PDF Question Papers (+{rewards.questionPaperUpload} pts) &amp; Notes{rewards.studyMaterialUpload > 0 ? ` (+${rewards.studyMaterialUpload} pts)` : ''}. Rent hourly (5–100 pts/hr) or buy permanent access (70% royalty rounded to nearest 10 credited to uploader).
           </p>
         </div>
 
@@ -343,8 +372,9 @@ export const StudyMaterialView: React.FC = () => {
           ) : (
             <button
               type="button"
+              disabled={requestSending}
               onClick={() => setShowRequestBox((v) => !v)}
-              className="rounded-lg border border-red-600 bg-white px-3.5 py-1.5 font-medium text-red-600 hover:bg-red-50 whitespace-nowrap shrink-0"
+              className="rounded-lg border border-red-600 bg-white px-3.5 py-1.5 font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 whitespace-nowrap shrink-0"
             >
               Request Admin for Contributor Tag
             </button>
@@ -408,7 +438,7 @@ export const StudyMaterialView: React.FC = () => {
             <h2 className="font-display text-base font-semibold text-slate-900">
               {contributorAccess
                 ? 'Upload Study Material / Question Paper'
-                : 'Upload Question Paper (+75 Points)'}
+                : `Upload Question Paper (+${rewards.questionPaperUpload} Points)`}
             </h2>
           </div>
 
@@ -421,6 +451,20 @@ export const StudyMaterialView: React.FC = () => {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., JEE Adv 2024 Physics Paper 1"
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-600">
+              Description <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <textarea
+              rows={2}
+              maxLength={600}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Topics covered, exam year, syllabus notes, or page breakdown..."
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
             />
           </div>
 
@@ -445,12 +489,20 @@ export const StudyMaterialView: React.FC = () => {
                 }
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               >
-                <option value="question_paper">Question Paper (+75 pts)</option>
+                <option value="question_paper">
+                  Question Paper (+{rewards.questionPaperUpload} pts)
+                </option>
                 {contributorAccess && (
                   <>
-                    <option value="study_notes">Study Material Notes (Large)</option>
-                    <option value="booklet">A4 Revision Booklet</option>
-                    <option value="archive">Complete Subject Archive</option>
+                    <option value="study_notes">
+                      Study Material Notes{rewards.studyMaterialUpload > 0 ? ` (+${rewards.studyMaterialUpload} pts)` : ' (Whole PDF / Large)'}
+                    </option>
+                    <option value="booklet">
+                      A4 Revision Booklet{rewards.studyMaterialUpload > 0 ? ` (+${rewards.studyMaterialUpload} pts)` : ''}
+                    </option>
+                    <option value="archive">
+                      Complete Subject Archive{rewards.studyMaterialUpload > 0 ? ` (+${rewards.studyMaterialUpload} pts)` : ''}
+                    </option>
                   </>
                 )}
               </select>
@@ -507,11 +559,12 @@ export const StudyMaterialView: React.FC = () => {
 
           <div>
             <label className="block text-xs font-medium text-slate-600">
-              Choose File (PDF pages auto-detected, up to 500 MB per upload)
+              Choose Whole PDF or Document (PDF pages auto-detected, up to 500 MB)
             </label>
             <input
               type="file"
               required
+              accept=".pdf,application/pdf,.doc,.docx,.ppt,.pptx,.txt,image/*"
               onChange={(e) => handleSelectFile(e.target.files?.[0] || null)}
               className="mt-1 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
             />
@@ -531,8 +584,12 @@ export const StudyMaterialView: React.FC = () => {
             {uploading
               ? 'Streaming Upload...'
               : category === 'question_paper'
-                ? 'Upload & Earn +75 Pts'
-                : 'Upload to Study Repository'}
+                ? rewards.questionPaperUpload > 0
+                  ? `Upload Whole PDF & Earn +${rewards.questionPaperUpload} Pts`
+                  : 'Upload Question Paper'
+                : rewards.studyMaterialUpload > 0
+                  ? `Upload & Earn +${rewards.studyMaterialUpload} Pts`
+                  : 'Upload Whole PDF / Study Material'}
           </button>
 
           {!contributorAccess && (
@@ -620,6 +677,11 @@ export const StudyMaterialView: React.FC = () => {
                         {m.pageCount || 1} pg · {formatBytes(m.fileSizeBytes)} · By{' '}
                         {m.uploaderName}
                       </div>
+                      {m.description && (
+                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                          {m.description}
+                        </p>
+                      )}
                       <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-600 tabular-nums">
                         <span className="rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-amber-800">
                           Rent: {hourlyRate} pts/hr
@@ -691,7 +753,7 @@ export const StudyMaterialView: React.FC = () => {
                         </div>
                       )}
 
-                      {isOwnerOrAdmin && isWorkspaceEnabled && (
+                      {isOwnerOrAdmin && isWorkspaceEnabled && workspacePermissions.driveSync && (
                         <button
                           type="button"
                           onClick={() => handleMirrorToAsanUserContentDrive(m)}

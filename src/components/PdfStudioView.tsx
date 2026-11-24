@@ -1106,19 +1106,19 @@ export const PdfStudioView: React.FC = () => {
       </div>
 
       {statusMsg && (
-        <div className="no-print rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700">
+        <div className="no-print rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs text-slate-700 dark:text-slate-200">
           {statusMsg}
         </div>
       )}
 
       {/* Split Studio Body: Left Controls + Right Dark Preview Canvas */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 items-start">
         {/* Left Control Column */}
         <div className="no-print lg:col-span-4 space-y-4">
           {/* Insert / Paste Panel */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
                 Insert / Append at Position:
               </label>
               <select
@@ -1126,7 +1126,7 @@ export const PdfStudioView: React.FC = () => {
                 onChange={(e) =>
                   setInsertPosition(e.target.value as 'end' | 'beginning' | 'after')
                 }
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
               >
                 <option value="end">End of list</option>
                 <option value="beginning">Beginning of list</option>
@@ -1147,7 +1147,7 @@ export const PdfStudioView: React.FC = () => {
                 type="button"
                 disabled={importingFiles}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60"
               >
                 <FolderOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                 <span>{importingFiles ? 'Importing...' : 'Images / PDF'}</span>
@@ -1158,9 +1158,9 @@ export const PdfStudioView: React.FC = () => {
                   setCapturedShots(0);
                   setCameraOpen(true);
                 }}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 px-3 py-2 text-xs font-medium text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950"
               >
-                <Camera className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <Camera className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>Camera</span>
               </button>
               <input
@@ -1197,7 +1197,7 @@ export const PdfStudioView: React.FC = () => {
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDropFiles}
-              className="rounded-lg border border-dashed border-blue-400 bg-blue-50/40 px-3 py-3 text-center text-xs text-blue-700"
+              className="rounded-lg border border-dashed border-blue-400 dark:border-blue-700 bg-blue-50/40 dark:bg-blue-950/30 px-3 py-3 text-center text-xs text-blue-700 dark:text-blue-300"
             >
               Press <strong>Ctrl + V</strong>, snap with <strong>Camera</strong>, or drag whole <strong>.pdf</strong> / images / text here
             </div>
@@ -1208,7 +1208,7 @@ export const PdfStudioView: React.FC = () => {
                 onClick={() =>
                   insertNewSlots([{ id: makeSlotId(), label: '0X', kind: 'cover' }])
                 }
-                className="rounded border border-emerald-300 bg-white py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                className="rounded border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-800 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
               >
                 + Cover (0X)
               </button>
@@ -1223,7 +1223,7 @@ export const PdfStudioView: React.FC = () => {
                     },
                   ])
                 }
-                className="rounded border border-blue-300 bg-white py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                className="rounded border border-blue-300 dark:border-blue-800 bg-white dark:bg-slate-800 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40"
               >
                 + Page
               </button>
@@ -1232,7 +1232,7 @@ export const PdfStudioView: React.FC = () => {
                 onClick={() =>
                   insertNewSlots([{ id: makeSlotId(), label: 'XX', kind: 'back' }])
                 }
-                className="rounded border border-slate-300 bg-white py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
                 + Back (XX)
               </button>
@@ -1247,14 +1247,14 @@ export const PdfStudioView: React.FC = () => {
                       { id: makeSlotId(), label: 'Blank', kind: 'blank' },
                     ])
                   }
-                  className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                  className="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   + Blank Slot
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAddTextSlots('Type or paste 10pt text content here...')}
-                  className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                  className="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   + 10pt Text
                 </button>
@@ -1266,7 +1266,7 @@ export const PdfStudioView: React.FC = () => {
                   setSelectedSlotId(null);
                   setCheckedIds(new Set());
                 }}
-                className="rounded border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                className="rounded border border-red-200 dark:border-red-900 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
               >
                 Clear All
               </button>
@@ -1274,13 +1274,13 @@ export const PdfStudioView: React.FC = () => {
           </div>
 
           {/* Pages List with Group Reordering, Image Cropping & Autocorrect */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-800 tabular-nums">
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 tabular-nums">
                   Pages ({pages.length})
                 </span>
-                <label className="inline-flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
+                <label className="inline-flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={autoRenumber}
@@ -1300,7 +1300,7 @@ export const PdfStudioView: React.FC = () => {
                 <button
                   type="button"
                   onClick={selectAllImages}
-                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   Select Images
                 </button>
@@ -1311,9 +1311,9 @@ export const PdfStudioView: React.FC = () => {
                     setStatusMsg('Renumbered pages to match sheet layout.');
                   }}
                   title="Renumber pages sequentially for selected layout"
-                  className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
-                  <RefreshCw className="h-3 w-3 text-blue-600" />
+                  <RefreshCw className="h-3 w-3 text-blue-600 dark:text-blue-400" />
                   Renumber
                 </button>
                 <button
@@ -1329,13 +1329,13 @@ export const PdfStudioView: React.FC = () => {
 
             {/* Group Image Reorder Bar */}
             {checkedIds.size > 0 && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-2.5 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-semibold text-blue-900">
+              <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 p-2.5 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-blue-900 dark:text-blue-200">
                   <span>{checkedIds.size} Selected · Drag or move group together</span>
                   <button
                     type="button"
                     onClick={() => setCheckedIds(new Set())}
-                    className="text-blue-700 hover:underline"
+                    className="text-blue-700 dark:text-blue-300 hover:underline"
                   >
                     Clear
                   </button>
@@ -1344,14 +1344,14 @@ export const PdfStudioView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => moveCheckedGroup('top')}
-                    className="rounded border border-blue-200 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-blue-100"
+                    className="rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 py-1 font-medium text-slate-800 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-slate-700"
                   >
                     To Top
                   </button>
                   <button
                     type="button"
                     onClick={() => moveCheckedGroup('up')}
-                    className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-blue-100"
+                    className="inline-flex items-center gap-0.5 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 py-1 font-medium text-slate-800 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-slate-700"
                   >
                     <ArrowUp className="h-3 w-3" />
                     Group Up
@@ -1359,7 +1359,7 @@ export const PdfStudioView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => moveCheckedGroup('down')}
-                    className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-blue-100"
+                    className="inline-flex items-center gap-0.5 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 py-1 font-medium text-slate-800 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-slate-700"
                   >
                     <ArrowDown className="h-3 w-3" />
                     Group Down
@@ -1367,7 +1367,7 @@ export const PdfStudioView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => moveCheckedGroup('bottom')}
-                    className="rounded border border-blue-200 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-blue-100"
+                    className="rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2 py-1 font-medium text-slate-800 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-slate-700"
                   >
                     To Bottom
                   </button>
@@ -1379,7 +1379,7 @@ export const PdfStudioView: React.FC = () => {
                       );
                       setCheckedIds(new Set());
                     }}
-                    className="ml-auto rounded border border-red-200 bg-white px-2 py-1 font-medium text-red-600 hover:bg-red-50"
+                    className="ml-auto rounded border border-red-200 dark:border-red-900 bg-white dark:bg-slate-800 px-2 py-1 font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
                   >
                     Remove
                   </button>
@@ -1387,7 +1387,7 @@ export const PdfStudioView: React.FC = () => {
               </div>
             )}
 
-            <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+            <div className="lg:max-h-80 space-y-1.5 lg:overflow-y-auto pr-1">
               {pages.map((slot, idx) => {
                 const isSelected = slot.id === selectedSlotId;
                 const isChecked = checkedIds.has(slot.id);
@@ -1415,12 +1415,12 @@ export const PdfStudioView: React.FC = () => {
                     onClick={() => setSelectedSlotId(slot.id)}
                     className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs cursor-pointer transition-colors ${
                       isDragTarget
-                        ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-400'
+                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/50 ring-1 ring-blue-400'
                         : isChecked
-                          ? 'border-blue-400 bg-blue-50/40'
+                          ? 'border-blue-400 bg-blue-50/40 dark:bg-blue-950/30'
                           : isSelected
-                            ? 'border-blue-500 bg-slate-50'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
+                            ? 'border-blue-500 bg-slate-50 dark:bg-slate-800'
+                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'
                     }`}
                   >
                     <button
@@ -1429,17 +1429,17 @@ export const PdfStudioView: React.FC = () => {
                         e.stopPropagation();
                         toggleCheckSlot(idx, slot.id, e.shiftKey);
                       }}
-                      className="text-slate-500 hover:text-blue-600 shrink-0"
+                      className="text-slate-500 dark:text-slate-400 hover:text-blue-600 shrink-0"
                       aria-label={`Select ${slot.label} for group reorder`}
                     >
                       {isChecked ? (
-                        <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
+                        <CheckSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                       ) : (
                         <Square className="h-3.5 w-3.5" />
                       )}
                     </button>
                     <GripVertical className="h-3.5 w-3.5 text-slate-400 shrink-0 cursor-grab" />
-                    <span className="w-7 text-center font-mono text-[10px] text-slate-500 border border-slate-200 rounded bg-slate-50 py-0.5 shrink-0">
+                    <span className="w-7 text-center font-mono text-[10px] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded bg-slate-50 dark:bg-slate-800 py-0.5 shrink-0">
                       {slot.kind === 'text' ? '10pt' : slot.kind === 'image' ? 'IMG' : slot.label}
                     </span>
                     <input
@@ -1452,7 +1452,7 @@ export const PdfStudioView: React.FC = () => {
                           )
                         )
                       }
-                      className="min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-800"
+                      className="min-w-0 flex-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-800 dark:text-slate-100"
                     />
                     {slot.kind === 'image' && slot.imageDataUrl && (
                       <button
@@ -1463,13 +1463,13 @@ export const PdfStudioView: React.FC = () => {
                         }}
                         title="Crop & Rotate Image"
                         aria-label="Crop and rotate image"
-                        className="rounded border border-amber-200 bg-amber-50 p-1 text-amber-700 hover:bg-amber-100 shrink-0"
+                        className="rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 p-1 text-amber-700 dark:text-amber-300 hover:bg-amber-100 shrink-0"
                       >
                         <Crop className="h-3 w-3" />
                       </button>
                     )}
                     {slot.kind === 'back' && (
-                      <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      <span className="rounded bg-slate-900 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                         BACK
                       </span>
                     )}
@@ -1479,7 +1479,7 @@ export const PdfStudioView: React.FC = () => {
                         e.stopPropagation();
                         movePage(idx, -1);
                       }}
-                      className="p-0.5 text-slate-500 hover:text-slate-900"
+                      className="p-0.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                       aria-label="Move up"
                     >
                       <ArrowUp className="h-3 w-3" />
@@ -1490,7 +1490,7 @@ export const PdfStudioView: React.FC = () => {
                         e.stopPropagation();
                         movePage(idx, 1);
                       }}
-                      className="p-0.5 text-slate-500 hover:text-slate-900"
+                      className="p-0.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                       aria-label="Move down"
                     >
                       <ArrowDown className="h-3 w-3" />
@@ -1508,7 +1508,7 @@ export const PdfStudioView: React.FC = () => {
                           return next;
                         });
                       }}
-                      className="p-1 text-red-500 hover:text-red-700"
+                      className="p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       aria-label="Remove page"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1519,8 +1519,8 @@ export const PdfStudioView: React.FC = () => {
             </div>
 
             {selectedSlot && selectedSlot.kind === 'image' && selectedSlot.imageDataUrl && (
-              <div className="border-t border-slate-100 pt-2.5 flex items-center justify-between gap-2 text-xs">
-                <span className="text-slate-600 truncate">
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-2.5 flex items-center justify-between gap-2 text-xs">
+                <span className="text-slate-600 dark:text-slate-300 truncate">
                   Image: <strong>{selectedSlot.label}</strong>
                 </span>
                 <button
@@ -1536,8 +1536,8 @@ export const PdfStudioView: React.FC = () => {
 
             {/* Inline Editor for Selected 10pt Text Placeholder */}
             {selectedSlot && selectedSlot.kind === 'text' && (
-              <div className="border-t border-slate-100 pt-3 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-medium text-slate-600">
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-slate-300">
                   <span>Edit 10pt Text ({activePageLengthLabel})</span>
                   <span className="tabular-nums">
                     {(selectedSlot.textContent || '').length} chars
@@ -1556,20 +1556,20 @@ export const PdfStudioView: React.FC = () => {
                     )
                   }
                   style={{ fontSize: '10pt' }}
-                  className="w-full rounded-lg border border-slate-200 p-2.5 leading-snug text-slate-900 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 leading-snug text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </div>
             )}
           </div>
 
           {/* Sheet & Assembly Setup */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-            <h3 className="text-xs font-bold text-slate-900">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white">
               Sheet &amp; Assembly Setup
             </h3>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                 Pages Per A4 Side:
               </label>
               <select
@@ -1585,7 +1585,7 @@ export const PdfStudioView: React.FC = () => {
                     setPages((prev) => renumberPagesForLayout(prev, nextPerSide));
                   }
                 }}
-                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-800 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
               >
                 <option value={2}>2 Pages per side (Half A4: 1A, 1B, 2A, 2B)</option>
                 <option value={4}>4 Pages per side (Quarter A4: 1A–1D, 2A–2D)</option>
@@ -1593,13 +1593,13 @@ export const PdfStudioView: React.FC = () => {
               </select>
             </div>
 
-            <div className="rounded-lg border border-slate-200 p-3 space-y-2.5">
-              <div className="text-xs font-medium text-blue-700">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2.5">
+              <div className="text-xs font-medium text-blue-700 dark:text-blue-400">
                 Paper Actions (Max 1 Fold total, 0–2 Cuts):
               </div>
 
-              <div className="space-y-1 border-b border-slate-100 pb-2 text-xs text-slate-700">
-                <div className="font-semibold text-slate-800">Vertical Center Axis:</div>
+              <div className="space-y-1 border-b border-slate-100 dark:border-slate-800 pb-2 text-xs text-slate-700 dark:text-slate-300">
+                <div className="font-semibold text-slate-800 dark:text-slate-200">Vertical Center Axis:</div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1620,8 +1620,8 @@ export const PdfStudioView: React.FC = () => {
                 </label>
               </div>
 
-              <div className="space-y-1 text-xs text-slate-700">
-                <div className="font-semibold text-slate-800">Horizontal Center Axis:</div>
+              <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
+                <div className="font-semibold text-slate-800 dark:text-slate-200">Horizontal Center Axis:</div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1645,7 +1645,7 @@ export const PdfStudioView: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-1.5 text-xs text-slate-700">
+            <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1677,7 +1677,7 @@ export const PdfStudioView: React.FC = () => {
         </div>
 
         {/* Right Dark Studio Viewport with Sheet Navigation & Smooth Scroll */}
-        <div className="lg:col-span-8 flex flex-col rounded-xl bg-[#202124] overflow-hidden border border-slate-800 print-only-sheets">
+        <div className="lg:col-span-8 lg:sticky lg:top-16 flex flex-col rounded-xl bg-[#202124] overflow-hidden border border-slate-800 print-only-sheets">
           {/* Page View & Jump Bar */}
           <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 bg-[#18191c] px-3 sm:px-4 py-2 text-xs text-slate-200">
             <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5">
@@ -1731,7 +1731,7 @@ export const PdfStudioView: React.FC = () => {
 
           <div
             ref={sheetsContainerRef}
-            className="flex-1 p-3 sm:p-6 overflow-auto min-h-[58vh] lg:min-h-[75vh] max-h-[82vh] space-y-6 sm:space-y-8 scroll-smooth touch-pan-x touch-pan-y"
+            className="flex-1 p-3 sm:p-6 overflow-x-auto lg:overflow-auto min-h-[55vh] lg:min-h-[72vh] lg:max-h-[calc(100vh-11rem)] space-y-6 sm:space-y-8 scroll-smooth touch-pan-x touch-pan-y"
           >
             {sheets.length === 0 ? (
               <div className="flex h-full min-h-[300px] items-center justify-center text-xs text-slate-400">

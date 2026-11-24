@@ -9,8 +9,10 @@ import { User } from 'firebase/auth';
 import {
   apiFetch,
   apiPublicFetch,
+  checkBackendHealth,
   ensureAppDriveFolder,
   getPasswordSessionToken,
+  resetExpressBackendCache,
   setPasswordSessionToken,
 } from '../lib/api';
 import {
@@ -62,6 +64,13 @@ function saveWorkspacePermissions(perms: WorkspacePermissionsConfig) {
 }
 
 export type PermissionStep = 'drive' | 'workspace' | null;
+export type DbConnectionState = 'checking' | 'connecting' | 'connected' | 'local' | 'offline';
+
+function isTransientWakeError(msg: string): boolean {
+  return /waking up|connecting|DB_CONNECTING|timed out|502|503|504|temporarily unavailable|Failed to fetch|NetworkError|Load failed/i.test(
+    msg
+  );
+}
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -77,6 +86,11 @@ interface AuthContextValue {
   workspaceToken: string | null;
   loading: boolean;
   error: string | null;
+  dbStatus: DbConnectionState;
+  dbStatusMessage: string | null;
+  dbRetryCount: number;
+  dbWaitSeconds: number;
+  retryDbConnection: () => Promise<void>;
   permissionStep: PermissionStep;
   savedAccounts: SavedAccountEntry[];
   prefillIdentifier: string;
@@ -152,6 +166,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [workspaceToken, setWorkspaceToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dbStatus, setDbStatus] = useState<DbConnectionState>('checking');
+  const [dbStatusMessage, setDbStatusMessage] = useState<string | null>(null);
+  const [dbRetryCount, setDbRetryCount] = useState(0);
+  const [connectingSinceMs, setConnectingSinceMs] = useState<number | null>(null);
+  const [dbWaitSeconds, setDbWaitSeconds] = useState(0);
   const [permissionStep, setPermissionStep] = useState<PermissionStep>(null);
   const [savedAccounts, setSavedAccounts] = useState<SavedAccountEntry[]>(() =>
     loadSavedAccounts()
@@ -216,6 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const syncUserProfile = useCallback(
     async (explicitMode?: 'google' | 'password', explicitPwdToken?: string | null) => {
+      setConnectingSinceMs((prev) => prev ?? Date.now());
       try {
         const profile = await apiFetch<DbUser>('/api/me');
         const resolvedMode: 'google' | 'password' =
@@ -224,8 +244,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const enriched: DbUser = { ...profile, authMode: resolvedMode };
         setDbUser(enriched);
         setError(null);
+        setDbStatusMessage(null);
+        setDbRetryCount(0);
+        setConnectingSinceMs(null);
+        setDbWaitSeconds(0);
         recordSavedAccount(enriched, resolvedMode, explicitPwdToken ?? getPasswordSessionToken());
         maybePromptSequentialPermissions(enriched, resolvedMode);
+
+        void checkBackendHealth(4000).then((health) => {
+          if (health.dbConnected) {
+            setDbStatus('connected');
+          } else if (!health.dbConfigured || health.mode === 'inbuilt-offline') {
+            setDbStatus('local');
+          } else {
+            setDbStatus('connected');
+          }
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to load user account';
         if (
@@ -234,12 +268,98 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         ) {
           setPasswordSessionToken(null);
           setDbUser(null);
+          setConnectingSinceMs(null);
+          setDbStatus('connected');
+          setDbStatusMessage(null);
+          setError(msg);
+          return;
+        }
+        if (isTransientWakeError(msg) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+          setDbStatus(typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'connecting');
+          setDbStatusMessage(msg);
+          setDbRetryCount((c) => c + 1);
+          setConnectingSinceMs((prev) => prev ?? Date.now());
+        } else {
+          setDbStatus('connecting');
+          setDbStatusMessage(msg);
+          setDbRetryCount((c) => c + 1);
+          setConnectingSinceMs((prev) => prev ?? Date.now());
         }
         setError(msg);
       }
     },
     [maybePromptSequentialPermissions, recordSavedAccount]
   );
+
+  const retryDbConnection = useCallback(async () => {
+    resetExpressBackendCache();
+    setConnectingSinceMs((prev) => prev ?? Date.now());
+    const health = await checkBackendHealth(8000);
+    if (health.mode === 'connecting' || health.wakingUp) {
+      setDbStatus('connecting');
+      setDbStatusMessage(
+        health.reason || 'Database is waking up / connecting. Please wait a moment...'
+      );
+      setDbRetryCount((c) => c + 1);
+      return;
+    }
+    if (health.mode === 'inbuilt-offline') {
+      setDbStatus(typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'local');
+    } else if (health.dbConnected) {
+      setDbStatus('connected');
+      setDbStatusMessage(null);
+    } else {
+      setDbStatus('local');
+      setDbStatusMessage(null);
+    }
+    const pwdToken = getPasswordSessionToken();
+    if (firebaseUser || pwdToken) {
+      await syncUserProfile(pwdToken ? 'password' : 'google', pwdToken);
+    } else {
+      setConnectingSinceMs(null);
+      setDbWaitSeconds(0);
+    }
+  }, [firebaseUser, syncUserProfile]);
+
+  useEffect(() => {
+    if (connectingSinceMs === null) {
+      setDbWaitSeconds(0);
+      return;
+    }
+    const updateElapsed = () => {
+      setDbWaitSeconds(Math.max(0, Math.floor((Date.now() - connectingSinceMs) / 1000)));
+    };
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [connectingSinceMs]);
+
+  useEffect(() => {
+    const hasPendingCloudProfile =
+      !isGuest && !dbUser && !loading && Boolean(firebaseUser || getPasswordSessionToken());
+    const shouldPoll = dbStatus === 'connecting' || hasPendingCloudProfile;
+    if (!shouldPoll) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const tick = async () => {
+      if (cancelled || attempts >= 40) return;
+      attempts += 1;
+      await retryDbConnection();
+    };
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 3500);
+    const onOnline = () => {
+      void tick();
+    };
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [dbStatus, dbUser, firebaseUser, isGuest, loading, retryDbConnection]);
 
   useEffect(() => {
     let active = true;
@@ -260,9 +380,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (pwdToken) {
         if (active) {
           setIsGuest(false);
-          await syncUserProfile('password', pwdToken);
           setLoading(false);
+          await syncUserProfile('password', pwdToken);
         }
+      } else {
+        // Probe backend/database readiness cleanly for AuthGate / cold wake-up feedback
+        void checkBackendHealth(5000).then((health) => {
+          if (!active) return;
+          if (health.wakingUp || health.mode === 'connecting') {
+            setDbStatus('connecting');
+            setDbStatusMessage(health.reason || 'Server & database are waking up...');
+            setConnectingSinceMs((prev) => prev ?? Date.now());
+          } else if (health.dbConnected) {
+            setDbStatus('connected');
+            setDbStatusMessage(null);
+          } else if (health.mode === 'inbuilt-offline') {
+            setDbStatus(typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'local');
+          } else {
+            setDbStatus('local');
+          }
+        });
       }
     };
 
@@ -281,6 +418,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setFirebaseUser(user);
       setWorkspaceToken(token || getAccessToken());
+      setLoading(false);
       if (user) {
         setPasswordSessionToken(null);
         setIsGuest(false);
@@ -293,7 +431,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       } else if (!pwdToken) {
         setDbUser(null);
       }
-      setLoading(false);
     });
 
     return () => {
@@ -735,6 +872,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         workspaceToken,
         loading,
         error,
+        dbStatus,
+        dbStatusMessage,
+        dbRetryCount,
+        dbWaitSeconds,
+        retryDbConnection,
         permissionStep,
         savedAccounts,
         prefillIdentifier,

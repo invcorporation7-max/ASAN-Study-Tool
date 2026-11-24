@@ -30,77 +30,34 @@ import type {
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 export const SpectraView: React.FC = () => {
-  const { dbUser, updateProfile } = useAuth();
-  const [urlInput, setUrlInput] = useState(
-    dbUser?.spectraUrl || 'https://www.khanacademy.org'
-  );
-  const [saved, setSaved] = useState(false);
-
-  const handleSaveUrl = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await updateProfile({ spectraUrl: urlInput.trim() });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
-
-  const activeUrl = dbUser?.spectraUrl || urlInput;
-
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-slate-900">
+        <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
           Spectra AI
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Direct external portal link configured for your Pro study workflow.
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Module availability status for ASAN-Study_tool.
         </p>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-              <Globe className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-display text-base font-semibold text-slate-900">
-                Launch Spectra AI External Portal
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500 break-all">{activeUrl}</p>
-            </div>
+      <div className="rounded-xl border border-amber-200 dark:border-amber-800/70 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-4">
+        <div className="flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+            <Globe className="h-5 w-5" />
           </div>
-
-          <a
-            href={activeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 whitespace-nowrap shrink-0"
-          >
-            Open Spectra AI
-            <ExternalLink className="h-4 w-4" />
-          </a>
+          <div className="space-y-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              Unavailable
+            </div>
+            <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
+              Spectra AI is currently under development
+            </h2>
+            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              The Spectra AI integration is temporarily unavailable while the module is under active development. Please use Specialized Calculators, Study Material Notes, Casio fx-82MS, and A4 Notebooks in the meantime.
+            </p>
+          </div>
         </div>
-
-        <form onSubmit={handleSaveUrl} className="border-t border-slate-100 pt-4 space-y-3">
-          <label className="block text-xs font-medium text-slate-600">
-            Update Spectra AI Destination URL
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              required
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0"
-            >
-              {saved ? 'Saved' : 'Update Link'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
@@ -131,10 +88,10 @@ export const MoreFeaturesView: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-slate-900">
+        <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
           More Features
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Additional study modules planned for upcoming releases of ASAN-Study_tool.
         </p>
       </div>
@@ -143,16 +100,16 @@ export const MoreFeaturesView: React.FC = () => {
         {upcoming.map((item) => (
           <div
             key={item.title}
-            className="rounded-xl border border-slate-200 bg-white p-6 space-y-2"
+            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-2"
           >
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span className="font-medium text-blue-600">{item.tier} Roadmap</span>
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-medium text-blue-600 dark:text-blue-400">{item.tier} Roadmap</span>
               <Layers className="h-4 w-4 text-slate-400" />
             </div>
-            <h2 className="font-display text-base font-semibold text-slate-900">
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               {item.title}
             </h2>
-            <p className="text-xs leading-relaxed text-slate-600">
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
               {item.description}
             </p>
           </div>
@@ -271,7 +228,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         'Dashboard, Infinite Monthly Calendar & Persistent Timers',
         'Up to 10 A4 PDF note documents (local browser)',
         'Up to 150 tasks (local browser)',
-        'Excludes Cloud Sync, Tool Mail, Points, PDF Booklet Tool, Workspace & Spectra AI',
+        'Excludes Cloud Sync, Tool Mail, Points, PDF Booklet Tool, Workspace & Specialized Calculators',
       ],
     },
     {
@@ -286,7 +243,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           rewards.noteCreate > 0 ? `, +${rewards.noteCreate} note` : ''
         })`,
         'Tool Mail (@username, 5-char UID, multi-recipient, Self, Public)',
-        'Excludes Spectra AI, PDF Booklet Tool & Google Sheets Workspace',
+        'Excludes Specialized Calculators, PDF Booklet Tool & Google Sheets Workspace',
       ],
     },
     {
@@ -296,9 +253,9 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       price: '500 Pts / Mo · 5,100 Pts / Yr (15% Off)',
       features: [
         'Everything in Basic plan + Study Time Logger (In/Out − 2.5% − Sleep)',
+        'Specialized Calculators Suite (Calculus, Coordinate Geometry, Algebra, Vector & 3D, Trigonometry)',
         'PDF Tool: A4 Booklet & Imposition Studio (Full/Half/Quarter)',
         'Google Workspace (Sheets "master" / "test_dates" sync, Docs export, Meet rooms)',
-        'Spectra AI portal launcher access',
         'Expirable 8-char Pro Key (1 yr activation window, 1 mo or 12 mo Pro term)',
       ],
     },
@@ -326,13 +283,13 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
             View Plans &amp; Responsibilities
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Active View: <strong className="text-slate-900 capitalize">{currentPlan}</strong>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Active View: <strong className="text-slate-900 dark:text-slate-100 capitalize">{currentPlan}</strong>
             {dbUser?.viewPlanMode === 'basic' && dbUser.plan === 'pro' && (
-              <span className="text-xs text-blue-600">
+              <span className="text-xs text-blue-600 dark:text-blue-400">
                 {' '}
                 (Basic preview — Pro tenure still runs until {dbUser.proExpiresAt.slice(0, 10)})
               </span>
@@ -340,7 +297,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
             {!isGuest && dbUser?.role !== 'user' && (
               <span>
                 {' '}
-                · Role: <strong className="capitalize text-blue-700">{dbUser?.role}</strong>
+                · Role: <strong className="capitalize text-blue-700 dark:text-blue-400">{dbUser?.role}</strong>
               </span>
             )}
           </p>
@@ -348,8 +305,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
 
         <div className="flex flex-wrap items-center gap-2">
           {canPreviewBasic && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1.5">
-              <span className="px-2 text-[11px] font-medium text-slate-500">
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5">
+              <span className="px-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 Lower-Plan Preview:
               </span>
               <button
@@ -359,7 +316,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                 className={`rounded-md px-2.5 py-1 text-xs font-medium ${
                   dbUser?.viewPlanMode === 'basic'
                     ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 Basic View
@@ -371,7 +328,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                 className={`rounded-md px-2.5 py-1 text-xs font-medium ${
                   dbUser?.viewPlanMode !== 'basic'
                     ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 Full Tier
@@ -380,8 +337,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           )}
 
           {isAdmin && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white p-1.5">
-              <span className="px-2 text-[11px] font-medium text-slate-500">
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5">
+              <span className="px-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 Admin Account Plan:
               </span>
               {(['basic', 'pro'] as const).map((p) => (
@@ -392,8 +349,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                   onClick={() => handlePlanSwitch(p)}
                   className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${
                     dbUser?.plan === p
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   {p}
@@ -410,36 +367,36 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           return (
             <div
               key={tier.id}
-              className={`rounded-xl border p-6 flex flex-col justify-between space-y-6 bg-white ${
-                isCurrent ? 'border-blue-600' : 'border-slate-200'
+              className={`rounded-xl border p-6 flex flex-col justify-between space-y-6 bg-white dark:bg-slate-900 ${
+                isCurrent ? 'border-blue-600 dark:border-blue-500' : 'border-slate-200 dark:border-slate-800'
               }`}
             >
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between">
-                    <h2 className="font-display text-lg font-bold text-slate-900">
+                    <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
                       {tier.name}
                     </h2>
                     {isCurrent && (
-                      <span className="text-xs font-semibold text-blue-600">
+                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                         Active
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{tier.audience}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{tier.audience}</p>
                 </div>
 
-                <div className="font-display text-2xl font-bold text-slate-900">
+                <div className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                   {tier.price}
                 </div>
 
-                <ul className="space-y-2.5 border-t border-slate-100 pt-4">
+                <ul className="space-y-2.5 border-t border-slate-100 dark:border-slate-800 pt-4">
                   {tier.features.map((feat) => (
                     <li
                       key={feat}
-                      className="flex items-start gap-2 text-xs text-slate-700"
+                      className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300"
                     >
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
                       <span>{feat}</span>
                     </li>
                   ))}
@@ -458,7 +415,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                 <button
                   type="button"
                   onClick={() => (isGuest ? signIn() : onNavigate?.('subscriptions'))}
-                  className="w-full rounded-lg bg-slate-900 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  className="w-full rounded-lg bg-slate-900 dark:bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
                 >
                   {isGuest ? 'Sign In to Upgrade to Pro' : 'Upgrade in Subscriptions'}
                 </button>
@@ -468,8 +425,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                   disabled
                   className={`w-full rounded-lg py-2.5 text-xs font-semibold ${
                     isCurrent
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                      : 'bg-slate-100 text-slate-500'
+                      ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                   }`}
                 >
                   {isCurrent ? 'Current Plan (Active)' : 'Included on Sign-In'}
@@ -484,18 +441,18 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       {!isGuest && (
         <form
           onSubmit={handleRedeemKey}
-          className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-              <KeyRound className="h-4 w-4 text-blue-600" />
+            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               Activate 8-Character License Key
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Enter a Pro License Key or Admin Key to activate your plan immediately.
             </p>
-            {keyStatus && <p className="text-xs font-medium text-emerald-700">{keyStatus}</p>}
-            {keyError && <p className="text-xs font-medium text-red-600">{keyError}</p>}
+            {keyStatus && <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{keyStatus}</p>}
+            {keyError && <p className="text-xs font-medium text-red-600 dark:text-red-400">{keyError}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <input
@@ -504,12 +461,12 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
               value={keyInput}
               onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
               placeholder="8-CHAR KEY"
-              className="w-40 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
+              className="w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
             />
             <button
               type="submit"
               disabled={redeeming || !keyInput.trim()}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              className="rounded-lg bg-slate-900 dark:bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-60"
             >
               {redeeming ? 'Activating...' : 'Activate'}
             </button>
@@ -518,16 +475,16 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       )}
 
       {/* Google Workspace Function Permissions */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">
+            <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
               Google Workspace Function Permissions
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Enable or disable individual Google Workspace actions across Notes, Tasks, Calendar, Study Materials, and Contact.
               {!isWorkspaceEnabled && (
-                <span className="text-amber-700 font-medium">
+                <span className="text-amber-700 dark:text-amber-400 font-medium">
                   {' '}
                   (Active only when signed in with Google; preferences are saved to your account/browser.)
                 </span>
@@ -539,7 +496,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
               type="button"
               disabled={permBusyKey !== null}
               onClick={() => void handleSetAllWorkspacePerms(true)}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-60"
             >
               Enable All
             </button>
@@ -547,7 +504,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
               type="button"
               disabled={permBusyKey !== null}
               onClick={() => void handleSetAllWorkspacePerms(false)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60"
             >
               Disable All
             </button>
@@ -583,11 +540,11 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
             return (
               <label
                 key={item.key}
-                className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 cursor-pointer hover:border-slate-300"
+                className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 px-4 py-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600"
               >
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold text-slate-900">{item.title}</div>
-                  <div className="mt-0.5 text-[11px] text-slate-500">{item.desc}</div>
+                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">{item.title}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{item.desc}</div>
                 </div>
                 <button
                   type="button"
@@ -598,7 +555,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                   className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
                     enabled
                       ? 'border-blue-600 bg-blue-600'
-                      : 'border-slate-300 bg-slate-200'
+                      : 'border-slate-300 dark:border-slate-600 bg-slate-200 dark:bg-slate-700'
                   }`}
                 >
                   <span
@@ -615,20 +572,20 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
 
       {/* Extra Responsibilities: Contributor & Hand-Selected Admin */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
-          <div className="text-xs font-semibold text-emerald-700">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+          <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
             Extra Role · Study Material Contributors
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             Contributors upload large Study Material Notes into the server storage pool (3 GB+ usable, mirrored to <code className="font-mono">ASAN-user-content</code>). Approved contributors receive <strong>+{rewards.contributorWeekly} points every week (starting Sunday)</strong> as long as Admins are satisfied with their work.
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
-          <div className="text-xs font-semibold text-amber-700">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+          <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">
             Extra Responsibility · Hand-Selected Admins (Not a Plan)
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
             Admin is an extra responsibility reserved solely for hand-selected users (never publicly claimable). Admins can hold either Basic or Pro plans, manage server storage &amp; analytics, send Admin Mail, generate Pro keys, and receive a free Pro key on first login + <strong>150 points weekly starting Sunday</strong>.
           </p>
         </div>
@@ -659,45 +616,44 @@ export const AboutCreatorsView: React.FC = () => {
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-slate-900">
+        <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
           About the Creators &amp; Credits
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Built for students preparing for competitive and board examinations.
         </p>
       </div>
 
-      {/* Primary Creator & AI Attribution */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+      {/* Primary Creator & Attribution */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
         <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
             <Users className="h-5 w-5" />
           </div>
           <div className="space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+            <div className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
               Creator &amp; Lead Architect
             </div>
-            <h2 className="font-display text-xl font-bold text-slate-900">
+            <h2 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
               Arham Imam
             </h2>
-            <p className="text-sm leading-relaxed text-slate-600">
-              Creator of <strong>ASAN-Study_tool</strong> — combining OneNote-style structured A4 notebooks, duplex booklet imposition PDF printing, infinite calendar &amp; exam master blueprints, fullscreen exam hall timers (JEE, NEET, ISC, CBSE, CUET), Study Material Notes, and internal points &amp; license workflows.
+            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              Creator of <strong>ASAN-Study_tool</strong> — combining OneNote-style structured A4 notebooks, duplex booklet imposition PDF printing, infinite multi-date calendar &amp; exam master blueprints, fullscreen exam hall timers &amp; countdowns, Specialized STEM Calculators, Study Material Notes, and internal points &amp; license workflows.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2 text-xs text-slate-600">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-1">
-            <div className="font-semibold text-slate-900">
-              Spectra AI Integration
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 dark:border-slate-800 pt-5 sm:grid-cols-2 text-xs text-slate-600 dark:text-slate-300">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
+              Spectra AI Module
             </div>
             <p className="leading-relaxed">
-              External AI study portal integration credited to{' '}
-              <strong>Spectra AI</strong> (launched directly via external link for Pro members).
+              Currently <strong>under development</strong> and temporarily unavailable in this release.
             </p>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-1">
-            <div className="font-semibold text-slate-900">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
               Application Engineering
             </div>
             <p className="leading-relaxed">
@@ -706,20 +662,20 @@ export const AboutCreatorsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2 text-xs text-slate-600">
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 dark:border-slate-800 pt-5 sm:grid-cols-2 text-xs text-slate-600 dark:text-slate-300">
           <div className="flex items-start gap-2.5">
-            <ShieldCheck className="mt-0.5 h-4 w-4 text-blue-600 shrink-0" />
+            <ShieldCheck className="mt-0.5 h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
-              <div className="font-semibold text-slate-900">Privacy &amp; Opt-In Drive</div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100">Privacy &amp; Opt-In Drive</div>
               <p className="mt-0.5">
                 Drive permissions are never requested on sign-in. Basic &amp; Pro users opt in only when saving inside their dedicated <code className="font-mono">ASAN-user-content</code> folder.
               </p>
             </div>
           </div>
           <div className="flex items-start gap-2.5">
-            <Layers className="mt-0.5 h-4 w-4 text-blue-600 shrink-0" />
+            <Layers className="mt-0.5 h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
-              <div className="font-semibold text-slate-900">Print-First A4 Standards</div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100">Print-First A4 Standards</div>
               <p className="mt-0.5">
                 Built around standard ISO 210 × 297 mm A4 geometry for immediate physical printing and digital sharing.
               </p>
@@ -729,25 +685,25 @@ export const AboutCreatorsView: React.FC = () => {
       </div>
 
       {/* Currently Serving Contributors */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">
+            <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
               Currently Serving Contributors
             </h2>
-            <p className="text-xs text-slate-500">
-              Approved contributors maintaining the ASAN-Study_tool Study Material repository.
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Approved contributors (including serving Admins &amp; Super) maintaining the ASAN-Study_tool Study Material repository.
             </p>
           </div>
-          <span className="rounded-full bg-red-50 border border-red-200 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 tabular-nums">
+          <span className="rounded-md bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/80 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300 tabular-nums whitespace-nowrap shrink-0">
             {contributors.length} Serving
           </span>
         </div>
 
         {loadingCredits ? (
-          <p className="py-4 text-xs text-slate-500">Loading contributor credits...</p>
+          <p className="py-4 text-xs text-slate-500 dark:text-slate-400">Loading contributor credits...</p>
         ) : contributors.length === 0 ? (
-          <p className="py-4 text-xs text-slate-500">
+          <p className="py-4 text-xs text-slate-500 dark:text-slate-400">
             No additional approved contributors serving right now. Apply in Study Material Notes to become a Contributor.
           </p>
         ) : (
@@ -755,7 +711,7 @@ export const AboutCreatorsView: React.FC = () => {
             {contributors.map((c) => (
               <div
                 key={c.id}
-                className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3"
+                className="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 p-3"
               >
                 <UserAvatarBadge
                   name={c.displayName}
@@ -766,50 +722,81 @@ export const AboutCreatorsView: React.FC = () => {
                   size="md"
                 />
                 <div className="min-w-0">
-                  <div className="truncate text-xs font-bold text-slate-900">
+                  <div className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
                     {c.displayName}
                   </div>
-                  <div className="truncate font-mono text-[11px] text-blue-700">
+                  <div className="truncate font-mono text-[11px] text-blue-700 dark:text-blue-400">
                     @{c.username} · {c.shortUid}
                   </div>
+                  {(c.role === 'admin' || c.role === 'super') && (
+                    <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                      {c.role === 'super' ? 'Super · Contributor' : 'Admin · Contributor'}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
-      {/* About Site & Release Tag v1.6 */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+
+      {/* About Site & Release Tag v1.7 */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">
-              About Site · Version <span className="font-mono text-blue-700">v1.6</span>
+            <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
+              About Site · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.7</span>
             </h2>
-            <p className="text-xs text-slate-500">
-              Current production build tag &amp; release highlights for ASAN-Study_tool.
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Current production release highlights for ASAN-Study_tool.
             </p>
           </div>
-          <span className="font-mono text-xs font-bold text-slate-800">
+          <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
+            Release v1.7
+          </span>
+        </div>
+
+        <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed list-disc pl-5">
+          <li>
+            <strong>Specialized STEM Calculators Suite (Pro &amp; Admin):</strong> Five deterministic math engines bundled together — <strong>Calculus</strong> (symbolic derivatives, definite/improper integrals, limits, Taylor series, critical points), <strong>Coordinate Geometry</strong> (lines, triangles, circles, parabolas/ellipses/hyperbolas), <strong>Algebra</strong> (linear systems, polynomials up to cubic, 2×2 &amp; 3×3 matrices, quadratic inequalities), <strong>Vector &amp; 3D Geometry</strong> (dot/cross products, planes, skew line distance), and <strong>Trigonometry</strong> (identities, equation roots, SSA/SSS/SAS triangles).
+          </li>
+          <li>
+            <strong>Exam Countdown Timers &amp; Dashboard Pinning:</strong> Admins publish top-level upcoming national/board exam countdowns, students create custom countdowns (name, date, optional time), and any countdown can be pinned to the Dashboard with live second-by-second ticking.
+          </li>
+          <li>
+            <strong>Customizable Dashboard &amp; Dark Theme Mode:</strong> Show/hide and reorder Dashboard widgets per account, plus a full Light/Dark theme switch synced across the entire workspace.
+          </li>
+          <li>
+            <strong>Multi-Date &amp; Recurring Calendar Scheduler:</strong> Create a single event across a date stretch (with weekday filters), far-separated specific dates (click calendar dates directly), or recurring Weekly / Monthly / Annual rules (by calendar date or Nth weekday such as First Sunday).
+          </li>
+          <li>
+            <strong>Admin Contributor Credits, Tool Scrolling Polish &amp; Spectra AI Status:</strong> Admins and Super can also serve and receive credit under Currently Serving Contributors, tool scroll containers adapt cleanly on mobile/tablet/desktop, and Spectra AI is marked under development.
+          </li>
+        </ul>
+      </div>
+
+      {/* About Site & Release Tag v1.6 (Older Version — Headings Only) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
+              Previous Release · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.6</span>
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Update headings from earlier release v1.6.
+            </p>
+          </div>
+          <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
             Release v1.6
           </span>
         </div>
 
-        <ul className="space-y-2 text-xs text-slate-600 leading-relaxed list-disc pl-5">
-          <li>
-            <strong>Casio fx-82MS Scientific Calculator Simulator:</strong> Authentic 2nd edition S-V.P.A.M. dual-line calculator with SHIFT &amp; ALPHA keys, COMP/SD/REG modes, CLR resets, persistent variables (A–F, X, Y, M), token-aware DEL key, combinatorics syntax validation, and 20-step session replay history erased upon power OFF.
-          </li>
-          <li>
-            <strong>Admin Transaction Verification &amp; Super Action Point Control:</strong> Admins and Super can verify, revert, or dismiss every point transaction, while Super can configure point rewards across Notes, Calendar events, Question Papers, Study Materials, and Exam Timers.
-          </li>
-          <li>
-            <strong>PDF Studio Enhancements:</strong> Whole PDF file import into page slots, live Camera capture (with mobile fallback), Auto-renumbering (<code className="font-mono">1..4</code>, <code className="font-mono">1A/1B</code>, <code className="font-mono">1A-1D</code>) on move/group-reorder/Autocorrect, interactive crop &amp; 90° rotation, and Single Page vs. Scroll All views.
-          </li>
-          <li>
-            <strong>Custom Sidebar &amp; Study Material Economy:</strong> Hand-pick and pin any tools from the All Apps catalog, toggle individual Google Workspace permissions under View Plans, attach optional descriptions on Study Materials, and credit 70% royalty (rounded to nearest 10) to uploaders.
-          </li>
-          <li>
-            <strong>Mobile, Tablet &amp; Offline PWA Formatting:</strong> Responsive navigation across 375px phones, tablets, and desktops with offline-capable Netlify &amp; PWABuilder compatibility.
-          </li>
+        <ul className="space-y-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 list-disc pl-5">
+          <li>Casio fx-82MS Scientific Calculator Simulator</li>
+          <li>Admin Point Verification &amp; Super Action Point Control</li>
+          <li>PDF Studio Whole-PDF Import, Camera Scan &amp; Auto-Renumbering</li>
+          <li>Custom Sidebar App Pinning &amp; Workspace Function Permissions</li>
+          <li>Study Material 70% Owner Royalty &amp; Mobile/Tablet Layout Fixes</li>
         </ul>
       </div>
     </div>
@@ -905,14 +892,14 @@ export const ContactView: React.FC = () => {
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
           <div className="flex items-start gap-3">
-            <Lock className="mt-1 h-5 w-5 text-blue-600 shrink-0" />
+            <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
-              <h1 className="font-display text-xl font-bold text-slate-900">
+              <h1 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
                 Contact &amp; Support Tickets
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 Sign in with Google to submit support inquiries directly to the ASAN-Study_tool server database and track replies.
               </p>
             </div>
@@ -933,8 +920,8 @@ export const ContactView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">Contact</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">Contact</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Inquiries are stored directly in the ASAN-Study_tool server database and reviewed in-app—no external email required.
           </p>
         </div>
@@ -943,16 +930,16 @@ export const ContactView: React.FC = () => {
           <button
             type="button"
             onClick={handleBackupContactDrive}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
           >
-            <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
+            <CloudUpload className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
             Backup Inquiries to Drive Folder
           </button>
         )}
       </div>
 
       {backupMsg && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
           {backupMsg}
         </div>
       )}
@@ -960,68 +947,68 @@ export const ContactView: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <form
           onSubmit={handleSubmit}
-          className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-6 space-y-4 h-fit"
+          className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium text-slate-600">Name</label>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Name</label>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600">Account Email</label>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Account Email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600">Subject</label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Subject</label>
             <input
               type="text"
               required
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Feature feedback, Pro key inquiry..."
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600">Message</label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Message</label>
             <textarea
               rows={4}
               required
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Write your message..."
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
           </div>
 
           {submitted && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
-              Message saved to server database! View your submitted tickets on the right.
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+              Message saved to server database! View your submitted tickets below.
             </div>
           )}
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
 
           <div className="flex items-center justify-between pt-2">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
               <Mail className="h-3.5 w-3.5" />
               Stored in Server DB
             </div>
@@ -1036,36 +1023,36 @@ export const ContactView: React.FC = () => {
           </div>
         </form>
 
-        <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h2 className="font-display text-base font-semibold text-slate-900">
+        <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               {isAdmin ? 'All User Contact Inquiries (Admin)' : 'Your Submitted Inquiries'}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Logged inside ASAN-Study_tool server storage ({history.length}).
             </p>
           </div>
 
           {history.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-500">
+            <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
               No contact inquiries submitted yet.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-[420px] lg:overflow-y-auto">
               {history.map((item) => (
                 <div key={item.id} className="py-3 space-y-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-900">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                       {item.subject}
                     </span>
                     <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
                       {new Date(item.createdAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
                     {item.name} · {item.email}
                   </div>
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                  <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
                     {item.message}
                   </p>
                 </div>

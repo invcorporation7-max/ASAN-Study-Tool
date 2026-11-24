@@ -6,6 +6,7 @@ export type NavSection =
   | 'notes'
   | 'timers'
   | 'calculator'
+  | 'specialized-calculators'
   | 'messages'
   | 'notifications'
   | 'study-materials'
@@ -437,3 +438,27 @@ export interface SuperUsersPointsResponse {
   recentTransactions: SuperAuditTransactionItem[];
 }
 
+export interface ExamCountdownItem {
+  id: number;
+  userId: number | null;
+  scope: 'admin' | 'user' | string;
+  title: string;
+  category: string;
+  targetDate: string;
+  targetTime: string;
+  pinnedByDefault: boolean;
+  createdByLabel: string;
+  createdAt: string;
+}
+
+export type DashboardWidgetId =
+  | 'exam-countdowns'
+  | 'metrics'
+  | 'tasks'
+  | 'schedule'
+  | 'quick-actions';
+
+export interface DashboardPreferences {
+  order: DashboardWidgetId[];
+  hidden: DashboardWidgetId[];
+}

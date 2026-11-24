@@ -16,6 +16,7 @@ import {
   contributorFiles,
   contributorFolders,
   examBlueprints,
+  examCountdowns,
   examSchedules,
   licenseKeys,
   materialPurchases,
@@ -305,6 +306,95 @@ export async function createCalendarEvent(
       );
     }
     return { event: created, pointsAwarded, studyVerified };
+  }
+}
+
+export async function createCalendarEventsBulk(
+  userId: number,
+  data: {
+    title: string;
+    dates: string[];
+    eventTime?: string;
+    category?: string;
+    notes?: string;
+    meetLink?: string;
+  }
+) {
+  const uniqueDates = Array.from(
+    new Set(
+      data.dates
+        .map((d) => String(d).trim())
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    )
+  ).sort();
+  if (uniqueDates.length === 0) {
+    throw new Error('Please provide at least one valid date (YYYY-MM-DD).');
+  }
+  if (uniqueDates.length > 366) {
+    throw new Error('Maximum 366 dates can be scheduled in a single series.');
+  }
+
+  const studyVerified = isStudyRelatedEvent(data.title, data.category, data.notes);
+  const rewards = await getPointRewardsConfig();
+  const pointsAwarded = studyVerified ? rewards.calendarStudyEvent : 0;
+  const eventTime = data.eventTime || '09:00';
+  const category = data.category || 'study';
+  const notes = data.notes || '';
+  const meetLink = data.meetLink || '';
+
+  try {
+    const rows = await db
+      .insert(calendarEvents)
+      .values(
+        uniqueDates.map((eventDate) => ({
+          userId,
+          title: data.title,
+          eventDate,
+          eventTime,
+          category,
+          notes,
+          meetLink,
+        }))
+      )
+      .returning();
+
+    if (pointsAwarded > 0) {
+      await awardPoints(
+        userId,
+        pointsAwarded,
+        `Study Calendar Series (${uniqueDates.length} dates): ${data.title}`,
+        'calendar_study'
+      );
+    }
+    return { events: rows, count: rows.length, pointsAwarded, studyVerified };
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const created = uniqueDates.map((eventDate) => {
+      const row = {
+        id: nextSeq('calendarEvents'),
+        userId,
+        title: data.title,
+        eventDate,
+        eventTime,
+        category,
+        notes,
+        meetLink,
+        createdAt: new Date(),
+      };
+      store.calendarEvents.push(row);
+      return row;
+    });
+    persistLocalStore();
+    if (pointsAwarded > 0) {
+      await awardPoints(
+        userId,
+        pointsAwarded,
+        `Study Calendar Series (${uniqueDates.length} dates): ${data.title}`,
+        'calendar_study'
+      );
+    }
+    return { events: created, count: created.length, pointsAwarded, studyVerified };
   }
 }
 
@@ -1575,9 +1665,7 @@ export async function getAdminAnalytics() {
         basicUsers: allUsers.filter((u) => u.plan === 'basic').length,
         proUsers: allUsers.filter((u) => u.plan === 'pro').length,
         adminUsers: allUsers.filter((u) => u.role === 'admin' || u.role === 'super').length,
-        approvedContributors: allUsers.filter(
-          (u) => u.role === 'contributor' && u.contributorApproved
-        ).length,
+        approvedContributors: allUsers.filter((u) => Boolean(u.contributorApproved)).length,
         pendingContributorRequests: allUsers.filter((u) => u.contributorRequested).length,
         totalTasks: allTasks.length,
         totalNoteDocs: allNotes.length,
@@ -1620,9 +1708,7 @@ export async function getAdminAnalytics() {
         basicUsers: store.users.filter((u) => u.plan === 'basic').length,
         proUsers: store.users.filter((u) => u.plan === 'pro').length,
         adminUsers: store.users.filter((u) => u.role === 'admin' || u.role === 'super').length,
-        approvedContributors: store.users.filter(
-          (u) => u.role === 'contributor' && u.contributorApproved
-        ).length,
+        approvedContributors: store.users.filter((u) => Boolean(u.contributorApproved)).length,
         pendingContributorRequests: store.users.filter((u) => u.contributorRequested).length,
         totalTasks: store.tasks.length,
         totalNoteDocs: store.notePages.length,
@@ -1761,9 +1847,7 @@ export async function getSuperUsersAndPointsLedger() {
         totalPointsSpent,
         proUsers: enrichedUsers.filter((u) => u.plan === 'pro').length,
         basicUsers: enrichedUsers.filter((u) => u.plan !== 'pro').length,
-        approvedContributors: enrichedUsers.filter(
-          (u) => u.role === 'contributor' && u.contributorApproved
-        ).length,
+        approvedContributors: enrichedUsers.filter((u) => Boolean(u.contributorApproved)).length,
         contributorWeeklyPoints,
       },
       users: enrichedUsers,
@@ -2643,3 +2727,132 @@ export async function deleteExamBlueprint(userId: number, blueprintId: number) {
   }
 }
 
+// --- EXAM COUNTDOWN TIMERS ---
+export async function listExamCountdowns(userId?: number) {
+  const sortCountdowns = <T extends { targetDate: string; targetTime: string; id: number }>(rows: T[]) =>
+    [...rows].sort((a, b) => {
+      const ka = `${a.targetDate} ${a.targetTime || '00:00'}`;
+      const kb = `${b.targetDate} ${b.targetTime || '00:00'}`;
+      return ka.localeCompare(kb) || a.id - b.id;
+    });
+
+  try {
+    const rows = userId
+      ? await db
+          .select()
+          .from(examCountdowns)
+          .where(or(eq(examCountdowns.scope, 'admin'), eq(examCountdowns.userId, userId)))
+      : await db
+          .select()
+          .from(examCountdowns)
+          .where(eq(examCountdowns.scope, 'admin'));
+    return sortCountdowns(rows);
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const list = (store.examCountdowns || []).filter(
+      (c) => c.scope === 'admin' || (userId !== undefined && c.userId === userId)
+    );
+    return sortCountdowns(list);
+  }
+}
+
+export async function createExamCountdown(data: {
+  userId: number | null;
+  scope: 'admin' | 'user';
+  title: string;
+  category?: string;
+  targetDate: string;
+  targetTime?: string;
+  pinnedByDefault?: boolean;
+  createdByLabel?: string;
+}) {
+  const cleanTitle = data.title.trim().slice(0, 140);
+  const cleanDate = data.targetDate.trim().slice(0, 16);
+  const cleanTime = (data.targetTime || '').trim().slice(0, 10);
+  if (!cleanTitle) throw new Error('Countdown name is required.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    throw new Error('Target date must be in YYYY-MM-DD format.');
+  }
+  if (cleanTime && !/^\d{2}:\d{2}$/.test(cleanTime)) {
+    throw new Error('Optional target time must be in HH:mm format.');
+  }
+
+  try {
+    const [created] = await db
+      .insert(examCountdowns)
+      .values({
+        userId: data.scope === 'admin' ? null : data.userId,
+        scope: data.scope,
+        title: cleanTitle,
+        category: (data.category || '').trim().slice(0, 60),
+        targetDate: cleanDate,
+        targetTime: cleanTime,
+        pinnedByDefault: Boolean(data.pinnedByDefault),
+        createdByLabel: (data.createdByLabel || '').trim().slice(0, 80),
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    if (!store.examCountdowns) store.examCountdowns = [];
+    const created = {
+      id: nextSeq('examCountdowns'),
+      userId: data.scope === 'admin' ? null : data.userId,
+      scope: data.scope,
+      title: cleanTitle,
+      category: (data.category || '').trim().slice(0, 60),
+      targetDate: cleanDate,
+      targetTime: cleanTime,
+      pinnedByDefault: Boolean(data.pinnedByDefault),
+      createdByLabel: (data.createdByLabel || '').trim().slice(0, 80),
+      createdAt: new Date(),
+    };
+    store.examCountdowns.push(created);
+    persistLocalStore();
+    return created;
+  }
+}
+
+export async function deleteExamCountdown(
+  userId: number,
+  countdownId: number,
+  isAdmin: boolean
+) {
+  try {
+    const [existing] = await db
+      .select()
+      .from(examCountdowns)
+      .where(eq(examCountdowns.id, countdownId))
+      .limit(1);
+    if (!existing) return false;
+    if (existing.scope === 'admin') {
+      if (!isAdmin) {
+        throw new Error('Only Admin or Super can remove top-level exam countdowns.');
+      }
+      await db.delete(examCountdowns).where(eq(examCountdowns.id, countdownId));
+      return true;
+    }
+    if (existing.userId !== userId && !isAdmin) {
+      throw new Error('You can only delete your own custom countdown timers.');
+    }
+    await db.delete(examCountdowns).where(eq(examCountdowns.id, countdownId));
+    return true;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const list = store.examCountdowns || [];
+    const existing = list.find((c) => c.id === countdownId);
+    if (!existing) return false;
+    if (existing.scope === 'admin' && !isAdmin) {
+      throw new Error('Only Admin or Super can remove top-level exam countdowns.');
+    }
+    if (existing.scope !== 'admin' && existing.userId !== userId && !isAdmin) {
+      throw new Error('You can only delete your own custom countdown timers.');
+    }
+    store.examCountdowns = list.filter((c) => c.id !== countdownId);
+    persistLocalStore();
+    return true;
+  }
+}

@@ -1,6 +1,7 @@
 import type {
   A4PageItem,
   CalendarEventItem,
+  ExamCountdownItem,
   ExamScheduleItem,
   StudyLogItem,
   StudyNotebook,
@@ -21,6 +22,7 @@ export interface GuestWorkspaceState {
   notePages: StudyNotePage[];
   exams: ExamScheduleItem[];
   studyLogs: StudyLogItem[];
+  countdowns: ExamCountdownItem[];
 }
 
 function defaultGuestState(): GuestWorkspaceState {
@@ -75,6 +77,7 @@ function defaultGuestState(): GuestWorkspaceState {
     ],
     exams: [],
     studyLogs: [],
+    countdowns: [],
   };
 }
 
@@ -96,6 +99,7 @@ export function loadGuestWorkspace(): GuestWorkspaceState {
       notePages: parsed.notePages || def.notePages,
       exams: parsed.exams || [],
       studyLogs: parsed.studyLogs || [],
+      countdowns: parsed.countdowns || [],
     };
   } catch {
     return defaultGuestState();
@@ -178,6 +182,33 @@ export function guestCreateEvent(data: {
     createdAt: new Date().toISOString(),
   };
   state.events.push(created);
+  saveGuestWorkspace(state);
+  return created;
+}
+
+export function guestCreateEventsBulk(data: {
+  title: string;
+  dates: string[];
+  eventTime?: string;
+  category?: string;
+  notes?: string;
+}) {
+  const state = loadGuestWorkspace();
+  const uniqueDates = Array.from(
+    new Set(data.dates.map((d) => d.trim()).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))
+  ).sort();
+  const created: CalendarEventItem[] = uniqueDates.map((eventDate) => ({
+    id: ++state.seq,
+    userId: 0,
+    title: data.title,
+    eventDate,
+    eventTime: data.eventTime || '09:00',
+    category: data.category || 'study',
+    notes: data.notes || '',
+    meetLink: '',
+    createdAt: new Date().toISOString(),
+  }));
+  state.events.push(...created);
   saveGuestWorkspace(state);
   return created;
 }
@@ -292,3 +323,34 @@ export function guestCreateStudyLog(data: {
   saveGuestWorkspace(state);
   return created;
 }
+
+export function guestCreateCountdown(data: {
+  title: string;
+  category?: string;
+  targetDate: string;
+  targetTime?: string;
+}): ExamCountdownItem {
+  const state = loadGuestWorkspace();
+  const created: ExamCountdownItem = {
+    id: -(++state.seq), // negative ID distinguishes local guest countdowns cleanly
+    userId: 0,
+    scope: 'user',
+    title: data.title.trim(),
+    category: (data.category || 'Personal Exam').trim(),
+    targetDate: data.targetDate.trim(),
+    targetTime: (data.targetTime || '').trim(),
+    pinnedByDefault: true,
+    createdByLabel: 'Free Tier (Local)',
+    createdAt: new Date().toISOString(),
+  };
+  state.countdowns.push(created);
+  saveGuestWorkspace(state);
+  return created;
+}
+
+export function guestDeleteCountdown(id: number) {
+  const state = loadGuestWorkspace();
+  state.countdowns = state.countdowns.filter((c) => c.id !== id);
+  saveGuestWorkspace(state);
+}
+

@@ -201,6 +201,7 @@ interface InbuiltStore {
   examBlueprints: any[];
   contributorFolders: any[];
   contributorFiles: any[];
+  examCountdowns: any[];
 }
 
 function emptyStore(): InbuiltStore {
@@ -227,6 +228,7 @@ function emptyStore(): InbuiltStore {
     examBlueprints: [],
     contributorFolders: [],
     contributorFiles: [],
+    examCountdowns: [],
   };
 }
 
@@ -842,7 +844,7 @@ export async function handleInbuiltApiRequest<T>(
 
   if (path === '/api/credits' && method === 'GET') {
     const contributors = store.users
-      .filter((u) => u.role === 'contributor' && u.contributorApproved)
+      .filter((u) => Boolean(u.contributorApproved))
       .map((u) => ({
         id: u.id,
         displayName: u.displayName,
@@ -854,6 +856,25 @@ export async function handleInbuiltApiRequest<T>(
         photoUrl: u.photoUrl,
       }));
     return { contributors } as T;
+  }
+
+  if (path === '/api/countdowns' && method === 'GET') {
+    let uid: number | null = null;
+    if (token) {
+      try {
+        uid = resolveUserFromToken(store, token).user.id;
+      } catch {
+        uid = null;
+      }
+    }
+    const rows = (store.examCountdowns || [])
+      .filter((c) => c.scope === 'admin' || (uid !== null && c.userId === uid))
+      .sort((a, b) => {
+        const ka = `${a.targetDate} ${a.targetTime || '00:00'}`;
+        const kb = `${b.targetDate} ${b.targetTime || '00:00'}`;
+        return ka.localeCompare(kb) || a.id - b.id;
+      });
+    return rows as T;
   }
 
   if (path === '/api/auth/register' && method === 'POST') {
@@ -1289,9 +1310,117 @@ export async function handleInbuiltApiRequest<T>(
       return { event: created, pointsAwarded, studyVerified } as T;
     }
   }
+  if (path === '/api/events/bulk' && method === 'POST') {
+    const datesRaw = Array.isArray(body.dates) ? body.dates : [];
+    const uniqueDates = Array.from(
+      new Set(
+        datesRaw.map((d: unknown) => String(d).trim()).filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      )
+    ).sort();
+    if (uniqueDates.length === 0) throw new Error('Please provide at least one valid date (YYYY-MM-DD).');
+    if (uniqueDates.length > 366) throw new Error('Maximum 366 dates can be created per series.');
+    const studyVerified = isStudyRelatedEvent(String(body.title || ''), body.category, body.notes);
+    const rewards = getStoreRewards(store);
+    const pointsAwarded = studyVerified ? rewards.calendarStudyEvent : 0;
+    const now = new Date().toISOString();
+    const created = uniqueDates.map((eventDate) => {
+      const row = {
+        id: nextId(store, 'calendarEvents'),
+        userId: user.id,
+        title: String(body.title || ''),
+        eventDate,
+        eventTime: String(body.eventTime || '09:00'),
+        category: String(body.category || 'study'),
+        notes: String(body.notes || ''),
+        meetLink: String(body.meetLink || ''),
+        createdAt: now,
+      };
+      store.calendarEvents.push(row);
+      return row;
+    });
+    if (pointsAwarded > 0) {
+      awardPointsLocal(
+        store,
+        user,
+        pointsAwarded,
+        `Study Calendar Series (${uniqueDates.length} dates): ${String(body.title || '')}`,
+        'calendar_study'
+      );
+    }
+    saveStore(store);
+    return { events: created, count: created.length, pointsAwarded, studyVerified } as T;
+  }
   if (path.startsWith('/api/events/') && method === 'DELETE') {
     const id = Number(path.split('/').pop());
     store.calendarEvents = store.calendarEvents.filter((e) => !(e.id === id && e.userId === user.id));
+    saveStore(store);
+    return { ok: true } as T;
+  }
+
+  // --- EXAM COUNTDOWN TIMERS ---
+  if (path === '/api/countdowns' && method === 'POST') {
+    const title = String(body.title || '').trim().slice(0, 140);
+    const targetDate = String(body.targetDate || '').trim().slice(0, 16);
+    const targetTime = String(body.targetTime || '').trim().slice(0, 10);
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      throw new Error('Countdown name and valid date (YYYY-MM-DD) are required.');
+    }
+    if (!store.examCountdowns) store.examCountdowns = [];
+    const created = {
+      id: nextId(store, 'examCountdowns'),
+      userId: user.id,
+      scope: 'user',
+      title,
+      category: String(body.category || 'Personal Exam').trim().slice(0, 60),
+      targetDate,
+      targetTime,
+      pinnedByDefault: false,
+      createdByLabel: user.username ? `@${user.username}` : user.displayName,
+      createdAt: new Date().toISOString(),
+    };
+    store.examCountdowns.push(created);
+    saveStore(store);
+    return created as T;
+  }
+  if (path.startsWith('/api/countdowns/') && method === 'DELETE') {
+    const id = Number(path.split('/').pop());
+    const item = (store.examCountdowns || []).find((c) => c.id === id);
+    if (!item) throw new Error('Countdown not found.');
+    if (item.scope === 'admin' && !isElevated) throw new Error('Only Admin or Super can remove top-level exam countdowns.');
+    if (item.scope !== 'admin' && item.userId !== user.id && !isElevated) throw new Error('You can only delete your own countdowns.');
+    store.examCountdowns = (store.examCountdowns || []).filter((c) => c.id !== id);
+    saveStore(store);
+    return { ok: true } as T;
+  }
+  if (path === '/api/admin/countdowns' && method === 'POST') {
+    if (!isElevated) throw new Error('Forbidden: Admin responsibility required.');
+    const title = String(body.title || '').trim().slice(0, 140);
+    const targetDate = String(body.targetDate || '').trim().slice(0, 16);
+    const targetTime = String(body.targetTime || '').trim().slice(0, 10);
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      throw new Error('Exam name and valid target date (YYYY-MM-DD) are required.');
+    }
+    if (!store.examCountdowns) store.examCountdowns = [];
+    const created = {
+      id: nextId(store, 'examCountdowns'),
+      userId: null,
+      scope: 'admin',
+      title,
+      category: String(body.category || 'National Exam').trim().slice(0, 60),
+      targetDate,
+      targetTime,
+      pinnedByDefault: Boolean(body.pinnedByDefault),
+      createdByLabel: user.username ? `@${user.username}` : user.displayName,
+      createdAt: new Date().toISOString(),
+    };
+    store.examCountdowns.push(created);
+    saveStore(store);
+    return created as T;
+  }
+  if (path.startsWith('/api/admin/countdowns/') && method === 'DELETE') {
+    if (!isElevated) throw new Error('Forbidden: Admin responsibility required.');
+    const id = Number(path.split('/').pop());
+    store.examCountdowns = (store.examCountdowns || []).filter((c) => c.id !== id);
     saveStore(store);
     return { ok: true } as T;
   }
@@ -1842,7 +1971,7 @@ export async function handleInbuiltApiRequest<T>(
         basicUsers: store.users.filter((u) => u.plan === 'basic').length,
         proUsers: store.users.filter((u) => u.plan === 'pro').length,
         adminUsers: store.users.filter((u) => u.role === 'admin' || u.role === 'super').length,
-        approvedContributors: store.users.filter((u) => u.role === 'contributor' && u.contributorApproved).length,
+        approvedContributors: store.users.filter((u) => Boolean(u.contributorApproved)).length,
         pendingContributorRequests: store.users.filter((u) => u.contributorRequested).length,
         totalTasks: store.tasks.length,
         totalNoteDocs: store.notePages.length,
@@ -2250,7 +2379,7 @@ export async function handleInbuiltApiRequest<T>(
         totalPointsSpent,
         proUsers: enrichedUsers.filter((u) => u.plan === 'pro').length,
         basicUsers: enrichedUsers.filter((u) => u.plan !== 'pro').length,
-        approvedContributors: enrichedUsers.filter((u) => u.role === 'contributor' && u.contributorApproved).length,
+        approvedContributors: enrichedUsers.filter((u) => Boolean(u.contributorApproved)).length,
         contributorWeeklyPoints: store.settings.contributorWeeklyPoints,
       },
       users: enrichedUsers,

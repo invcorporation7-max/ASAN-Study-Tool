@@ -29,19 +29,19 @@ export const PWAInstallButton: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowIOSGuide(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
         >
-          <Smartphone className="h-3.5 w-3.5 text-blue-600" />
+          <Smartphone className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
           Install iOS
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl space-y-3">
-              <h3 className="font-display text-base font-bold text-slate-900">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/75 p-4">
+            <div className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xl space-y-3">
+              <h3 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                 Install ASAN-Study_tool on iOS
               </h3>
-              <p className="text-xs leading-relaxed text-slate-600">
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
                 1. Tap the <strong>Share</strong> button in Safari&apos;s toolbar.
                 <br />
                 2. Scroll down and choose <strong>Add to Home Screen</strong>.
@@ -49,7 +49,7 @@ export const PWAInstallButton: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowIOSGuide(false)}
-                className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                className="w-full rounded-lg bg-slate-900 dark:bg-blue-600 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
               >
                 Got it
               </button>

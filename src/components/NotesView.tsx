@@ -610,10 +610,10 @@ export const NotesView: React.FC<NotesViewProps> = ({
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">
             My Notes · OneNote A4 Studio
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
             Organize notebooks and sections distributed into A4 pages, ready to export or share as PDF ·{' '}
             {isGuest
               ? `${notePages.length} / ${FREE_TIER_MAX_NOTES} PDF Notes (Free Tier)`
@@ -627,9 +627,9 @@ export const NotesView: React.FC<NotesViewProps> = ({
               type="button"
               onClick={handleSaveNotesTxtToDrive}
               disabled={exporting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
             >
-              <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
+              <CloudUpload className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               Save Notes (.txt) to Drive
             </button>
           )}
@@ -648,16 +648,16 @@ export const NotesView: React.FC<NotesViewProps> = ({
                 type="button"
                 onClick={handleSharePdf}
                 disabled={exporting}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
               >
-                <Share2 className="h-3.5 w-3.5 text-blue-600" />
+                <Share2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                 Share PDF
               </button>
               <button
                 type="button"
                 onClick={handleDownloadPdf}
                 disabled={exporting}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
               >
                 <Download className="h-3.5 w-3.5" />
                 Download PDF
@@ -667,9 +667,9 @@ export const NotesView: React.FC<NotesViewProps> = ({
                   type="button"
                   onClick={handleSaveToDrive}
                   disabled={exporting}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
                 >
-                  <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
+                  <CloudUpload className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                   Save PDF to Drive
                 </button>
               )}
@@ -678,9 +678,9 @@ export const NotesView: React.FC<NotesViewProps> = ({
                   type="button"
                   onClick={handleExportGoogleDoc}
                   disabled={exporting}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
                 >
-                  <FileText className="h-3.5 w-3.5 text-blue-600" />
+                  <FileText className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                   To Docs
                 </button>
               )}
@@ -688,9 +688,9 @@ export const NotesView: React.FC<NotesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onShareViaMessage(activeDoc.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
                 >
-                  <Mail className="h-3.5 w-3.5 text-blue-600" />
+                  <Mail className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                   Share via Tool Mail
                 </button>
               )}
@@ -700,14 +700,14 @@ export const NotesView: React.FC<NotesViewProps> = ({
       </div>
 
       {statusMsg && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200">
           <span>{statusMsg}</span>
           {externalLink && (
             <a
               href={externalLink.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-semibold text-blue-600 hover:underline"
+              className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
             >
               {externalLink.label}
             </a>
@@ -716,16 +716,16 @@ export const NotesView: React.FC<NotesViewProps> = ({
       )}
 
       {/* OneNote Three-Pane Layout: Notebooks/Sections | A4 Page Canvas */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 items-start">
         {/* Left Navigation Tree (Notebooks + Pages) */}
-        <aside className="lg:col-span-3 rounded-xl border border-slate-200 bg-white p-4 space-y-5 h-fit">
+        <aside className="lg:col-span-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-5 h-fit">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Notebooks</span>
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Notebooks</span>
               <button
                 type="button"
                 onClick={() => setShowNewNotebook((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700"
               >
                 <Plus className="h-3.5 w-3.5" />
                 New
@@ -733,21 +733,21 @@ export const NotesView: React.FC<NotesViewProps> = ({
             </div>
 
             {showNewNotebook && (
-              <form onSubmit={handleCreateNotebook} className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+              <form onSubmit={handleCreateNotebook} className="mt-3 space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
                 <input
                   type="text"
                   required
                   value={newNotebookTitle}
                   onChange={(e) => setNewNotebookTitle(e.target.value)}
                   placeholder="Notebook title"
-                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
                 <input
                   type="text"
                   value={newNotebookSubject}
                   onChange={(e) => setNewNotebookSubject(e.target.value)}
                   placeholder="Subject (e.g., Chemistry)"
-                  className="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
                 <button
                   type="submit"
@@ -766,8 +766,8 @@ export const NotesView: React.FC<NotesViewProps> = ({
                     key={nb.id}
                     className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs transition-colors ${
                       active
-                        ? 'bg-blue-50 text-blue-900 font-semibold'
-                        : 'text-slate-700 hover:bg-slate-50'
+                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-200 font-semibold'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     <button
@@ -775,7 +775,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
                       onClick={() => setSelectedNotebookId(nb.id)}
                       className="flex flex-1 items-center gap-2 text-left min-w-0"
                     >
-                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
                       <span className="truncate">{nb.title}</span>
                     </button>
                     {notebooks.length > 1 && (
@@ -788,7 +788,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
                             label: nb.title,
                           })
                         }
-                        className="p-1 text-slate-400 hover:text-red-600"
+                        className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                         aria-label={`Delete ${nb.title}`}
                       >
                         <Trash2 className="h-3 w-3" />
@@ -800,16 +800,16 @@ export const NotesView: React.FC<NotesViewProps> = ({
             </div>
           </div>
 
-          <div className="border-t border-slate-100 pt-4">
+          <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                 Sections & Documents
               </span>
               <button
                 type="button"
                 onClick={handleCreateDoc}
                 disabled={!selectedNotebookId}
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 disabled:opacity-50"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Doc
@@ -829,8 +829,8 @@ export const NotesView: React.FC<NotesViewProps> = ({
                       key={docItem.id}
                       className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-xs transition-colors ${
                         active
-                          ? 'bg-slate-900 text-white'
-                          : 'text-slate-700 hover:bg-slate-50'
+                          ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
                       <button
@@ -841,7 +841,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
                         <div className="truncate font-medium">{docItem.title}</div>
                         <div
                           className={`truncate text-[11px] tabular-nums ${
-                            active ? 'text-slate-300' : 'text-slate-400'
+                            active ? 'text-slate-200' : 'text-slate-400'
                           }`}
                         >
                           {docItem.sectionName} · {docItem.pagesData?.length || 1} A4 pg
@@ -858,8 +858,8 @@ export const NotesView: React.FC<NotesViewProps> = ({
                         }
                         className={`p-1 ${
                           active
-                            ? 'text-slate-300 hover:text-white'
-                            : 'text-slate-400 hover:text-red-600'
+                            ? 'text-slate-200 hover:text-white'
+                            : 'text-slate-400 hover:text-red-600 dark:hover:text-red-400'
                         }`}
                         aria-label={`Delete ${docItem.title}`}
                       >
@@ -876,8 +876,8 @@ export const NotesView: React.FC<NotesViewProps> = ({
         {/* Main A4 Page Distribution Workspace */}
         <div className="lg:col-span-9 space-y-4">
           {!activeDoc ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
-              <p className="text-sm text-slate-600">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
                 Select or create a document in your notebook to start writing on A4 sheets.
               </p>
               <button
@@ -892,21 +892,21 @@ export const NotesView: React.FC<NotesViewProps> = ({
           ) : (
             <>
               {/* Document Metadata & A4 Page Controls */}
-              <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     type="text"
                     value={docTitle}
                     onChange={(e) => setDocTitle(e.target.value)}
                     placeholder="Document Title"
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
+                    className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                   />
                   <input
                     type="text"
                     value={sectionName}
                     onChange={(e) => setSectionName(e.target.value)}
                     placeholder="Section Name"
-                    className="sm:w-44 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+                    className="sm:w-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:border-blue-500 focus:outline-none"
                   />
                 </div>
 
@@ -914,14 +914,14 @@ export const NotesView: React.FC<NotesViewProps> = ({
                   <button
                     type="button"
                     onClick={handleAutoDistributePages}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0"
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
                   >
                     Auto-Distribute A4
                   </button>
                   <button
                     type="button"
                     onClick={handleAddA4Page}
-                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 dark:hover:bg-blue-700 whitespace-nowrap shrink-0"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add A4 Page
@@ -930,7 +930,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
               </div>
 
               {/* A4 Sheet Stream (210mm x 297mm proportion) */}
-              <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 sm:p-6 space-y-6 sm:space-y-8 overflow-y-auto max-h-[75vh]">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-3 sm:p-6 space-y-6 sm:space-y-8 lg:overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
                 {pages.map((page, pageIdx) => (
                   <div
                     key={page.id}

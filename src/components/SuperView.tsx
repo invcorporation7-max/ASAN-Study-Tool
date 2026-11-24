@@ -160,12 +160,12 @@ export const SuperView: React.FC = () => {
   if (!isSuper) {
     return (
       <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-xl border border-violet-200 bg-white p-8 text-center space-y-2">
-          <Crown className="mx-auto h-6 w-6 text-violet-600" />
-          <h1 className="font-display text-lg font-bold text-slate-900">
+        <div className="rounded-xl border border-violet-200 dark:border-violet-800/70 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
+          <Crown className="mx-auto h-6 w-6 text-violet-600 dark:text-violet-400" />
+          <h1 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
             Super Developer Mode Restricted
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             This console is restricted exclusively to the workspace owner (invcorporation7@gmail.com).
           </p>
         </div>
@@ -434,16 +434,16 @@ export const SuperView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <Crown className="h-5 w-5 text-violet-700" />
-            <h1 className="font-display text-2xl font-bold text-slate-900">
+          <div className="flex flex-wrap items-center gap-2">
+            <Crown className="h-5 w-5 text-violet-700 dark:text-violet-400" />
+            <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
               Super Console · All Users, Points &amp; GA4 Reporting
             </h1>
-            <span className="rounded border border-violet-300 bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-800">
+            <span className="rounded border border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/50 px-2 py-0.5 text-[11px] font-bold text-violet-800 dark:text-violet-300">
               OWNER ONLY
             </span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Signed in as <strong>{dbUser?.email}</strong> · Complete user points ledger, point overrides with Tool Mail reasons, and Google Analytics 4 traffic.
           </p>
         </div>
@@ -464,7 +464,7 @@ export const SuperView: React.FC = () => {
             type="button"
             disabled={loading}
             onClick={() => void loadSuperData()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Reload Ledger
@@ -473,12 +473,12 @@ export const SuperView: React.FC = () => {
       </div>
 
       {statusMsg && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
           {statusMsg}
         </div>
       )}
       {errorMsg && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
           {errorMsg}
         </div>
       )}
@@ -487,81 +487,81 @@ export const SuperView: React.FC = () => {
       <GA4AnalyticsPanel title="Google Analytics (GA4) — Super Overview" />
 
       {loading || !ledger ? (
-        <div className="py-10 text-center text-xs text-slate-500">
+        <div className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
           Loading Super users &amp; points ledger...
         </div>
       ) : (
         <>
           {/* Economy Summary Strip */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 tabular-nums">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Total Users</span>
-                <Users className="h-4 w-4 text-blue-600" />
+                <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
-              <div className="mt-1.5 font-display text-2xl font-bold text-slate-900">
+              <div className="mt-1.5 font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
                 {ledger.summary.totalUsers}
               </div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
                 {ledger.summary.proUsers} Pro · {ledger.summary.basicUsers} Basic
               </div>
             </div>
 
-            <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-              <div className="flex items-center justify-between text-xs font-medium text-amber-800">
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/30 p-4">
+              <div className="flex items-center justify-between text-xs font-medium text-amber-800 dark:text-amber-300">
                 <span>Points Circulating</span>
-                <Coins className="h-4 w-4 text-amber-600" />
+                <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               </div>
-              <div className="mt-1.5 font-display text-2xl font-bold text-amber-950">
+              <div className="mt-1.5 font-display text-2xl font-bold text-amber-950 dark:text-amber-200">
                 {ledger.summary.totalPointsCirculating.toLocaleString()}
               </div>
-              <div className="text-[11px] text-amber-700">Combined user balances</div>
+              <div className="text-[11px] text-amber-700 dark:text-amber-400">Combined user balances</div>
             </div>
 
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
-              <div className="flex items-center justify-between text-xs font-medium text-emerald-800">
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/40 dark:bg-emerald-950/30 p-4">
+              <div className="flex items-center justify-between text-xs font-medium text-emerald-800 dark:text-emerald-300">
                 <span>Total Awarded</span>
-                <TrendingUp className="h-4 w-4 text-emerald-600" />
+                <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <div className="mt-1.5 font-display text-2xl font-bold text-emerald-950">
+              <div className="mt-1.5 font-display text-2xl font-bold text-emerald-950 dark:text-emerald-200">
                 +{ledger.summary.totalPointsEarned.toLocaleString()}
               </div>
-              <div className="text-[11px] text-emerald-700">Rewards, bonuses &amp; stipends</div>
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400">Rewards, bonuses &amp; stipends</div>
             </div>
 
-            <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-4">
-              <div className="flex items-center justify-between text-xs font-medium text-rose-800">
+            <div className="rounded-xl border border-rose-200 dark:border-rose-800/70 bg-rose-50/40 dark:bg-rose-950/30 p-4">
+              <div className="flex items-center justify-between text-xs font-medium text-rose-800 dark:text-rose-300">
                 <span>Spent / Deducted</span>
-                <TrendingDown className="h-4 w-4 text-rose-600" />
+                <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
               </div>
-              <div className="mt-1.5 font-display text-2xl font-bold text-rose-950">
+              <div className="mt-1.5 font-display text-2xl font-bold text-rose-950 dark:text-rose-200">
                 −{ledger.summary.totalPointsSpent.toLocaleString()}
               </div>
-              <div className="text-[11px] text-rose-700">Plans, materials &amp; deductions</div>
+              <div className="text-[11px] text-rose-700 dark:text-rose-400">Plans, materials &amp; deductions</div>
             </div>
 
-            <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
-              <div className="flex items-center justify-between text-xs font-medium text-violet-800">
+            <div className="rounded-xl border border-violet-200 dark:border-violet-800/70 bg-violet-50/40 dark:bg-violet-950/30 p-4 col-span-2 lg:col-span-1">
+              <div className="flex items-center justify-between text-xs font-medium text-violet-800 dark:text-violet-300">
                 <span>Contributors</span>
-                <Sliders className="h-4 w-4 text-violet-600" />
+                <Sliders className="h-4 w-4 text-violet-600 dark:text-violet-400" />
               </div>
-              <div className="mt-1.5 font-display text-2xl font-bold text-violet-950">
+              <div className="mt-1.5 font-display text-2xl font-bold text-violet-950 dark:text-violet-200">
                 {ledger.summary.approvedContributors}
               </div>
-              <div className="text-[11px] text-violet-700">
+              <div className="text-[11px] text-violet-700 dark:text-violet-400">
                 {ledger.summary.contributorWeeklyPoints} pts / Sunday
               </div>
             </div>
           </div>
 
           {/* All Users & Their Points Directory */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-display text-base font-bold text-slate-900">
+                <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                   All Registered Users &amp; Points ({filteredUsers.length} of {ledger.users.length})
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Click &ldquo;Adjust +/−&rdquo; on any user to credit or deduct points with an instant Tool Mail explanation.
                 </p>
               </div>
@@ -569,7 +569,7 @@ export const SuperView: React.FC = () => {
                 type="button"
                 onClick={handleExportUsersCsv}
                 disabled={filteredUsers.length === 0}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
               >
                 <Download className="h-3.5 w-3.5" />
                 Export CSV
@@ -585,12 +585,12 @@ export const SuperView: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search by name, @username, email, or 5-char UID..."
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-xs focus:border-violet-500 focus:bg-white focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pl-9 pr-3 py-2 text-xs focus:border-violet-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
                 />
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 text-[11px]">
+                <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-[11px]">
                   {(
                     [
                       ['all', 'All'],
@@ -608,8 +608,8 @@ export const SuperView: React.FC = () => {
                       onClick={() => setFilterMode(val)}
                       className={`rounded-md px-2.5 py-1 font-medium ${
                         filterMode === val
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       {label}
@@ -617,12 +617,12 @@ export const SuperView: React.FC = () => {
                   ))}
                 </div>
 
-                <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs">
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-1.5 text-xs">
                   <ArrowDownUp className="h-3.5 w-3.5 text-slate-400" />
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as UserSort)}
-                    className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none"
+                    className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none"
                   >
                     <option value="points_desc">Highest Points</option>
                     <option value="points_asc">Lowest Points</option>
@@ -637,7 +637,7 @@ export const SuperView: React.FC = () => {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                     <th className="py-2.5 pr-3 font-medium">User / 5-Char UID</th>
                     <th className="py-2.5 pr-3 font-medium">Auth &amp; Role</th>
                     <th className="py-2.5 pr-3 font-medium">Plan</th>
@@ -647,16 +647,16 @@ export const SuperView: React.FC = () => {
                     <th className="py-2.5 font-medium text-right">Quick Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 tabular-nums">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                      <td colSpan={7} className="py-8 text-center text-slate-500 dark:text-slate-400">
                         No users match your search or filter.
                       </td>
                     </tr>
                   ) : (
                     filteredUsers.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50/70">
+                      <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
                         <td className="py-3 pr-3">
                           <div className="flex items-center gap-2.5">
                             <UserAvatarBadge
@@ -668,12 +668,12 @@ export const SuperView: React.FC = () => {
                               size="sm"
                             />
                             <div className="min-w-0">
-                              <div className="font-semibold text-slate-900">
+                              <div className="font-semibold text-slate-900 dark:text-slate-100">
                                 {u.displayName}{' '}
-                                <span className="font-mono text-blue-700">@{u.username}</span>
+                                <span className="font-mono text-blue-700 dark:text-blue-400">@{u.username}</span>
                               </div>
-                              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5">
-                                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono font-bold text-slate-800">
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
+                                <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 font-mono font-bold text-slate-800 dark:text-slate-200">
                                   {u.shortUid || `U${u.id}`}
                                 </span>
                                 <span>{u.email}</span>
@@ -683,21 +683,21 @@ export const SuperView: React.FC = () => {
                         </td>
                         <td className="py-3 pr-3">
                           <div className="flex flex-wrap items-center gap-1">
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-700">
+                            <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-700 dark:text-slate-300">
                               {u.authMode === 'password' ? 'Password' : 'Google'}
                             </span>
                             {u.role === 'super' && (
-                              <span className="rounded border border-violet-300 bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-900">
+                              <span className="rounded border border-violet-300 dark:border-violet-700 bg-violet-100 dark:bg-violet-950/60 px-1.5 py-0.5 text-[10px] font-bold text-violet-900 dark:text-violet-300">
                                 SUPER
                               </span>
                             )}
                             {u.role === 'admin' && (
-                              <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                              <span className="rounded border border-amber-300 dark:border-amber-700 bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-300">
                                 ADMIN
                               </span>
                             )}
                             {u.contributorApproved && (
-                              <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                              <span className="rounded border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300">
                                 Contributor
                               </span>
                             )}
@@ -707,34 +707,34 @@ export const SuperView: React.FC = () => {
                           <span
                             className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${
                               u.plan === 'pro'
-                                ? 'border border-indigo-200 bg-indigo-50 text-indigo-700'
-                                : 'border border-blue-200 bg-blue-50 text-blue-700'
+                                ? 'border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
+                                : 'border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
                             }`}
                           >
                             {u.plan}
                           </span>
                           {u.plan === 'pro' && u.proExpiresAt && (
-                            <div className="mt-0.5 text-[10px] text-slate-500">
+                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                               ends {u.proExpiresAt.slice(0, 10)}
                             </div>
                           )}
                         </td>
                         <td className="py-3 pr-3 text-right">
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 font-mono text-xs font-bold text-amber-900">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 font-mono text-xs font-bold text-amber-900 dark:text-amber-300">
                             {u.points.toLocaleString()} pts
                           </span>
                         </td>
                         <td className="py-3 pr-3 text-right text-[11px]">
-                          <span className="font-semibold text-emerald-700">
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-400">
                             +{u.pointsEarned.toLocaleString()}
                           </span>
                           {' / '}
-                          <span className="font-semibold text-rose-700">
+                          <span className="font-semibold text-rose-700 dark:text-rose-400">
                             −{u.pointsSpent.toLocaleString()}
                           </span>
-                          <div className="text-[10px] text-slate-400">{u.txCount} tx</div>
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500">{u.txCount} tx</div>
                         </td>
-                        <td className="py-3 pr-3 text-right text-[11px] text-slate-500">
+                        <td className="py-3 pr-3 text-right text-[11px] text-slate-500 dark:text-slate-400">
                           {u.notesCount} notes · {u.tasksCount} tasks · {u.materialsCount} uploads
                         </td>
                         <td className="py-3 text-right">
@@ -744,7 +744,7 @@ export const SuperView: React.FC = () => {
                               setPointsUserId(String(u.id));
                               setActionUserId(String(u.id));
                             }}
-                            className="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-800 hover:bg-violet-100"
+                            className="rounded-md border border-violet-200 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/50 px-2.5 py-1 text-[11px] font-semibold text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50"
                           >
                             Select for +/−
                           </button>
@@ -762,16 +762,16 @@ export const SuperView: React.FC = () => {
             {/* Adjust Points */}
             <form
               onSubmit={handleAdjustPoints}
-              className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Coins className="h-4 w-4 text-amber-600" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 Add / Deduct Any User&apos;s Points
               </div>
               <select
                 value={pointsUserId}
                 onChange={(e) => setPointsUserId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
               >
                 {ledger.users.map((u) => (
                   <option key={u.id} value={u.id}>
@@ -783,7 +783,7 @@ export const SuperView: React.FC = () => {
                 <select
                   value={pointsOp}
                   onChange={(e) => setPointsOp(e.target.value as 'add' | 'deduct')}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs font-medium"
                 >
                   <option value="add">Add (+)</option>
                   <option value="deduct">Deduct (−)</option>
@@ -796,7 +796,7 @@ export const SuperView: React.FC = () => {
                   value={pointsAmount}
                   onChange={(e) => setPointsAmount(e.target.value)}
                   placeholder="Amount"
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs tabular-nums"
                 />
               </div>
               <input
@@ -805,7 +805,7 @@ export const SuperView: React.FC = () => {
                 value={pointsReason}
                 onChange={(e) => setPointsReason(e.target.value)}
                 placeholder="Reason (sent directly to user's Tool Mail)"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
               />
               <button
                 type="submit"
@@ -823,16 +823,16 @@ export const SuperView: React.FC = () => {
             {/* Terminate / Cancel Plans & Approvals */}
             <form
               onSubmit={handleSuperAction}
-              className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ShieldAlert className="h-4 w-4 text-red-600" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
                 Terminate Plans &amp; Cancel Approvals
               </div>
               <select
                 value={actionUserId}
                 onChange={(e) => setActionUserId(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
               >
                 {ledger.users.map((u) => (
                   <option key={u.id} value={u.id}>
@@ -851,7 +851,7 @@ export const SuperView: React.FC = () => {
                       | 'revoke_admin'
                   )
                 }
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs font-medium"
               >
                 <option value="terminate_pro">Terminate Pro Plan (Revert to Basic)</option>
                 <option value="grant_pro">Grant 1-Month Pro Plan</option>
@@ -863,12 +863,12 @@ export const SuperView: React.FC = () => {
                 value={superActionReason}
                 onChange={(e) => setSuperActionReason(e.target.value)}
                 placeholder="Reason for Tool Mail notification..."
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
               />
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                className="w-full rounded-lg bg-slate-900 dark:bg-blue-600 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
               >
                 Execute Super Action
               </button>
@@ -877,16 +877,16 @@ export const SuperView: React.FC = () => {
             {/* Contributor Weekly Income */}
             <form
               onSubmit={handleUpdateWeeklyStipend}
-              className="rounded-xl border border-slate-200 bg-white p-5 space-y-3 flex flex-col justify-between"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
             >
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Sliders className="h-4 w-4 text-violet-700" />
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  <Sliders className="h-4 w-4 text-violet-700 dark:text-violet-400" />
                   Contributor Weekly Income
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Points credited every Sunday to approved Contributors. Currently{' '}
-                  <strong>{ledger.summary.contributorWeeklyPoints} pts/week</strong>.
+                  <strong className="text-slate-800 dark:text-slate-200">{ledger.summary.contributorWeeklyPoints} pts/week</strong>.
                 </p>
                 <input
                   type="number"
@@ -895,7 +895,7 @@ export const SuperView: React.FC = () => {
                   required
                   value={weeklyStipendInput}
                   onChange={(e) => setWeeklyStipendInput(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold tabular-nums"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm font-semibold tabular-nums"
                 />
               </div>
               <button
@@ -911,14 +911,14 @@ export const SuperView: React.FC = () => {
           {/* Configure Action Point Rewards */}
           <form
             onSubmit={handleSavePointRewards}
-            className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4"
+            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <h2 className="font-display text-base font-bold text-slate-900">
+                <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                   Configure Action Point Rewards
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Control how many points signed-in users earn when adding study notes, calendar events, question papers, study materials, or completing exam timers.
                 </p>
               </div>
@@ -968,10 +968,10 @@ export const SuperView: React.FC = () => {
               ).map((field) => (
                 <label
                   key={field.key}
-                  className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-1.5"
+                  className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 p-3 space-y-1.5"
                 >
-                  <div className="font-semibold text-slate-900">{field.label}</div>
-                  <div className="text-[11px] text-slate-500">{field.hint}</div>
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">{field.label}</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{field.hint}</div>
                   <input
                     type="number"
                     min={0}
@@ -984,7 +984,7 @@ export const SuperView: React.FC = () => {
                         [field.key]: Math.max(0, Math.min(100000, Math.round(Number(e.target.value) || 0))),
                       }))
                     }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 tabular-nums focus:border-violet-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums focus:border-violet-500 focus:outline-none"
                   />
                 </label>
               ))}
@@ -1000,13 +1000,13 @@ export const SuperView: React.FC = () => {
           />
 
           {/* Global Point Transactions Audit Log */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-display text-base font-bold text-slate-900">
+                <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                   Global Points Audit Ledger ({filteredTransactions.length})
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Every point addition, deduction, Pro upgrade, study reward, and weekly stipend recorded across all accounts.
                 </p>
               </div>
@@ -1015,19 +1015,19 @@ export const SuperView: React.FC = () => {
                 value={txFilter}
                 onChange={(e) => setTxFilter(e.target.value)}
                 placeholder="Filter ledger by @user, UID, or reason..."
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs focus:border-violet-500 focus:bg-white focus:outline-none w-full sm:w-64"
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-1.5 text-xs focus:border-violet-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none w-full sm:w-64"
               />
             </div>
 
             {filteredTransactions.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">
+              <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
                 No matching point transactions logged yet.
               </p>
             ) : (
-              <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <div className="overflow-x-auto lg:max-h-80 lg:overflow-y-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                       <th className="py-2 pr-3 font-medium">User</th>
                       <th className="py-2 pr-3 font-medium">Change</th>
                       <th className="py-2 pr-3 font-medium">Category</th>
@@ -1035,12 +1035,12 @@ export const SuperView: React.FC = () => {
                       <th className="py-2 font-medium text-right">Date</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 tabular-nums">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                     {filteredTransactions.map((tx) => (
                       <tr key={tx.id}>
                         <td className="py-2.5 pr-3">
-                          <span className="font-semibold text-slate-900">@{tx.username}</span>{' '}
-                          <span className="font-mono text-[10px] text-slate-500">
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">@{tx.username}</span>{' '}
+                          <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
                             {tx.shortUid}
                           </span>
                         </td>
@@ -1048,18 +1048,18 @@ export const SuperView: React.FC = () => {
                           <span
                             className={`rounded px-2 py-0.5 font-mono font-bold ${
                               tx.amount >= 0
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'bg-rose-50 text-rose-700'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
                             }`}
                           >
                             {tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts
                           </span>
                         </td>
-                        <td className="py-2.5 pr-3 text-slate-500 capitalize">
+                        <td className="py-2.5 pr-3 text-slate-500 dark:text-slate-400 capitalize">
                           {tx.category.replace(/_/g, ' ')}
                         </td>
-                        <td className="py-2.5 pr-3 text-slate-700">{tx.reason}</td>
-                        <td className="py-2.5 text-right text-slate-500">
+                        <td className="py-2.5 pr-3 text-slate-700 dark:text-slate-300">{tx.reason}</td>
+                        <td className="py-2.5 text-right text-slate-500 dark:text-slate-400">
                           {new Date(tx.createdAt).toLocaleString()}
                         </td>
                       </tr>
@@ -1072,19 +1072,19 @@ export const SuperView: React.FC = () => {
 
           {/* License Key Cancellation Control */}
           {licenseKeys.length > 0 && (
-            <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-sm font-bold text-slate-900">
+            <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
                   License Key Cancellation Control ({licenseKeys.length})
                 </h2>
-                <span className="text-[11px] text-slate-500">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
                   Revoke unused or active 8-char Pro license keys
                 </span>
               </div>
-              <div className="overflow-x-auto max-h-56 overflow-y-auto">
+              <div className="overflow-x-auto lg:max-h-56 lg:overflow-y-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                       <th className="py-2 pr-3 font-medium">Key</th>
                       <th className="py-2 pr-3 font-medium">Issued To</th>
                       <th className="py-2 pr-3 font-medium">Status</th>
@@ -1092,29 +1092,29 @@ export const SuperView: React.FC = () => {
                       <th className="py-2 text-right font-medium">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 tabular-nums">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                     {licenseKeys.slice(0, 30).map((k) => (
                       <tr key={k.id}>
-                        <td className="py-2 pr-3 font-mono font-semibold text-slate-900">
+                        <td className="py-2 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
                           {k.keyCode}
                         </td>
-                        <td className="py-2 pr-3 text-slate-600">
+                        <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
                           {k.issuedToEmail || 'Unassigned'}
                         </td>
                         <td className="py-2 pr-3 capitalize">
                           <span
                             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                               k.status === 'cancelled'
-                                ? 'bg-red-50 text-red-700'
+                                ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
                                 : k.status === 'active'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-blue-50 text-blue-700'
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                                  : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
                             }`}
                           >
                             {k.status}
                           </span>
                         </td>
-                        <td className="py-2 pr-3 text-slate-500">
+                        <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
                           {k.durationMonths === 12 ? '12 mo' : '1 mo'}
                         </td>
                         <td className="py-2 text-right">
@@ -1123,7 +1123,7 @@ export const SuperView: React.FC = () => {
                               type="button"
                               disabled={busy}
                               onClick={() => void handleCancelLicenseKey(k)}
-                              className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100"
+                              className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-2 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
                             >
                               <Ban className="h-3 w-3" />
                               Cancel Key

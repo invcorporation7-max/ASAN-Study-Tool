@@ -45,19 +45,19 @@ export const ProGateCard: React.FC<ProGateCardProps> = ({
 
   return (
     <div className="mx-auto max-w-2xl py-8">
-      <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-5">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-5">
         <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
             <Lock className="h-5 w-5" />
           </div>
           <div className="space-y-1.5">
-            <div className="text-xs font-medium text-slate-500">
+            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Pro Feature · Login Required (500 Points/Month or 8-Char License Key)
             </div>
-            <h1 className="font-display text-xl font-bold text-slate-900">
+            <h1 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
               {featureName}
             </h1>
-            <p className="text-sm leading-relaxed text-slate-600">
+            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               {description}
             </p>
           </div>
@@ -66,10 +66,10 @@ export const ProGateCard: React.FC<ProGateCardProps> = ({
         {!isGuest && (
           <form
             onSubmit={handleRedeemKey}
-            className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2.5"
+            className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 p-4 space-y-2.5"
           >
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-              <KeyRound className="h-3.5 w-3.5 text-blue-600" />
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
+              <KeyRound className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
               Have an 8-Character License Key? Activate Now
             </div>
             <div className="flex flex-wrap gap-2">
@@ -79,23 +79,23 @@ export const ProGateCard: React.FC<ProGateCardProps> = ({
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
                 placeholder="Enter 8-char License Key"
-                className="flex-1 min-w-[180px] rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
+                className="flex-1 min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={redeeming || !keyInput.trim()}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                className="rounded-lg bg-slate-900 dark:bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-60"
               >
                 {redeeming ? 'Activating...' : 'Activate Key'}
               </button>
             </div>
-            {statusMsg && <p className="text-xs text-emerald-700">{statusMsg}</p>}
-            {errorMsg && <p className="text-xs text-red-600">{errorMsg}</p>}
+            {statusMsg && <p className="text-xs text-emerald-700 dark:text-emerald-400">{statusMsg}</p>}
+            {errorMsg && <p className="text-xs text-red-600 dark:text-red-400">{errorMsg}</p>}
           </form>
         )}
 
-        <div className="border-t border-slate-100 pt-5 flex flex-wrap items-center justify-between gap-4">
-          <span className="text-xs text-slate-500">
+        <div className="border-t border-slate-100 dark:border-slate-800 pt-5 flex flex-wrap items-center justify-between gap-4">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
             {isGuest
               ? 'Pro members must sign in with Google first (500 welcome points included).'
               : 'Redeem 500 points or activate an 8-character License Key in Subscriptions.'}

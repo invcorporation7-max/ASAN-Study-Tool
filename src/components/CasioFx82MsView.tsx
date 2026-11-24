@@ -1743,10 +1743,10 @@ export const CasioFx82MsView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
             Casio fx-82MS Scientific Calculator Simulator
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Non-programmable 2-line S-V.P.A.M. 2nd Edition · SHIFT &amp; ALPHA keys · MODE/CLR · Persistent A–F, X, Y, M variables · Session replay history (erased on OFF).
           </p>
         </div>
@@ -1754,9 +1754,9 @@ export const CasioFx82MsView: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowManual((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 self-start sm:self-auto"
         >
-          <Info className="h-3.5 w-3.5 text-blue-600" />
+          <Info className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
           {showManual ? 'Hide Key Guide' : 'Key & Mode Guide'}
         </button>
       </div>
@@ -2330,22 +2330,22 @@ export const CasioFx82MsView: React.FC = () => {
         {/* RIGHT: Variables Persistence, Mode Quick Controls & Replay History */}
         <div className="lg:col-span-6 xl:col-span-7 space-y-4">
           {/* Power & Quick State Strip */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className={`inline-flex items-center gap-1.5 font-semibold ${
-                  isOn ? 'text-emerald-700' : 'text-slate-500'
+                  isOn ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 <Power className="h-3.5 w-3.5" />
                 {isOn ? 'Power ON' : 'Power OFF'}
               </span>
-              <span className="text-slate-300">·</span>
-              <span className="font-mono font-semibold text-slate-800">{calcMode}</span>
-              <span className="text-slate-300">·</span>
-              <span className="font-mono font-semibold text-slate-800">{angleUnit}</span>
-              <span className="text-slate-300">·</span>
-              <span className="font-mono text-slate-600">
+              <span className="text-slate-300 dark:text-slate-600">·</span>
+              <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{calcMode}</span>
+              <span className="text-slate-300 dark:text-slate-600">·</span>
+              <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{angleUnit}</span>
+              <span className="text-slate-300 dark:text-slate-600">·</span>
+              <span className="font-mono text-slate-600 dark:text-slate-400">
                 {numFormat}
                 {(numFormat === 'FIX' || numFormat === 'SCI') ? `(${formatDigits})` : ''}
               </span>
@@ -2357,8 +2357,8 @@ export const CasioFx82MsView: React.FC = () => {
                 onClick={() => (isOn ? handlePowerOff() : handlePowerOn())}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${
                   isOn
-                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    ? 'border-rose-200 dark:border-rose-800/70 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/50'
+                    : 'border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
                 }`}
               >
                 <Power className="h-3.5 w-3.5" />
@@ -2369,7 +2369,7 @@ export const CasioFx82MsView: React.FC = () => {
                 onClick={() => {
                   setVars({ ...DEFAULT_VARS });
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Mcl (Clear Vars)
@@ -2378,17 +2378,17 @@ export const CasioFx82MsView: React.FC = () => {
           </div>
 
           {/* Variables Memory Bank (A-F, X, Y, M) — Persists across OFF/ON */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="font-display text-sm font-bold text-slate-900">
+                <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
                   Variable Storage (A–F, X, Y, M)
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Use <code className="rounded bg-slate-100 px-1 font-mono">SHIFT + RCL (STO)</code> + key to store, or <code className="rounded bg-slate-100 px-1 font-mono">ALPHA</code> + key inside expressions. Variables persist even when turned OFF.
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Use <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 font-mono text-slate-800 dark:text-slate-200">SHIFT + RCL (STO)</code> + key to store, or <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 font-mono text-slate-800 dark:text-slate-200">ALPHA</code> + key inside expressions. Variables persist even when turned OFF.
                 </p>
               </div>
-              <span className="text-[11px] font-medium text-emerald-700">
+              <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                 Persisted Across OFF
               </span>
             </div>
@@ -2403,10 +2403,10 @@ export const CasioFx82MsView: React.FC = () => {
                     insertToken(v);
                   }}
                   title={`Click to insert variable ${v}`}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:border-blue-300 hover:bg-blue-50/40"
+                  className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-left hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/40 dark:hover:bg-blue-950/30"
                 >
-                  <span className="font-mono text-xs font-bold text-rose-700">{v}</span>
-                  <span className="font-mono text-xs font-semibold text-slate-800 tabular-nums truncate max-w-[110px]">
+                  <span className="font-mono text-xs font-bold text-rose-700 dark:text-rose-400">{v}</span>
+                  <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200 tabular-nums truncate max-w-[110px]">
                     {Number((vars[v] ?? 0).toPrecision(8))}
                   </span>
                 </button>
@@ -2415,14 +2415,14 @@ export const CasioFx82MsView: React.FC = () => {
           </div>
 
           {/* Session Replay History (20-entry limit, erased when OFF) */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="font-display text-sm font-bold text-slate-900 tabular-nums">
+                <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                   Replay History ({history.length} / {MAX_REPLAY_HISTORY})
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Navigate with Replay ▲ / ▼. Just like the real Casio fx-82MS, history is cleared when turned OFF (<code className="rounded bg-slate-100 px-1 font-mono">SHIFT + AC</code>).
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Navigate with Replay ▲ / ▼. Just like the real Casio fx-82MS, history is cleared when turned OFF (<code className="rounded bg-slate-100 dark:bg-slate-800 px-1 font-mono text-slate-800 dark:text-slate-200">SHIFT + AC</code>).
                 </p>
               </div>
               {history.length > 0 && (
@@ -2432,7 +2432,7 @@ export const CasioFx82MsView: React.FC = () => {
                     setHistory([]);
                     setHistoryIdx(-1);
                   }}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-red-600"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Clear
@@ -2441,13 +2441,13 @@ export const CasioFx82MsView: React.FC = () => {
             </div>
 
             {history.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">
+              <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
                 {isOn
                   ? 'No expressions evaluated in this power-on session yet.'
                   : 'Calculator is OFF — Replay history was cleared on shutdown.'}
               </div>
             ) : (
-              <div className="max-h-60 space-y-1.5 overflow-y-auto pr-1">
+              <div className="lg:max-h-60 space-y-1.5 lg:overflow-y-auto pr-1">
                 {[...history].reverse().map((item, idx) => (
                   <button
                     key={`${item.expr}-${idx}`}
@@ -2459,12 +2459,12 @@ export const CasioFx82MsView: React.FC = () => {
                       setJustEvaluated(false);
                       renderNumberOutput(item.resultNum);
                     }}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-left hover:border-blue-300 hover:bg-blue-50/40"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-3 py-2 text-left hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/40 dark:hover:bg-blue-950/30"
                   >
-                    <span className="truncate font-mono text-xs text-slate-700">
+                    <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-300">
                       {item.expr}
                     </span>
-                    <span className="shrink-0 font-mono text-xs font-bold text-slate-900 tabular-nums">
+                    <span className="shrink-0 font-mono text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                       = {item.displayText}
                     </span>
                   </button>
@@ -2475,20 +2475,20 @@ export const CasioFx82MsView: React.FC = () => {
 
           {/* Stat Mode Live Entries Preview when in SD / REG */}
           {calcMode !== 'COMP' && (
-            <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-blue-900">
+            <div className="rounded-xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/40 dark:bg-blue-950/30 p-4 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-blue-900 dark:text-blue-200">
                 <span>
                   {calcMode === 'SD' ? 'SD Statistics Register' : 'REG Linear Regression Register'} · n = {computeStats.n}
                 </span>
                 <button
                   type="button"
                   onClick={() => setStatData([])}
-                  className="text-[11px] font-medium text-blue-700 hover:underline"
+                  className="text-[11px] font-medium text-blue-700 dark:text-blue-400 hover:underline"
                 >
                   Clear Data (CL)
                 </button>
               </div>
-              <p className="text-[11px] text-blue-800">
+              <p className="text-[11px] text-blue-800 dark:text-blue-300">
                 {calcMode === 'SD'
                   ? 'Type value (or x;freq) and press M+ (DT). Use SHIFT+1 (S-SUM) or SHIFT+2 (S-VAR) to recall Σx², Σx, n, x̄, xσn, xσn-1.'
                   : 'Type x,y (e.g. 2,5) and press M+ (DT). Use SHIFT+1 (S-SUM) or SHIFT+2 (S-VAR) for x̄, ȳ, A, B, and correlation r.'}
@@ -2497,9 +2497,9 @@ export const CasioFx82MsView: React.FC = () => {
           )}
 
           {showManual && (
-            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-2 text-xs text-slate-600">
-              <div className="flex items-center gap-2 font-semibold text-slate-900">
-                <Keyboard className="h-4 w-4 text-blue-600" />
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                <Keyboard className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 Quick Reference &amp; Physical Keyboard Shortcuts
               </div>
               <ul className="list-disc pl-5 space-y-1 leading-relaxed">

@@ -7,12 +7,18 @@ import * as dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import {
   type AuthRequest,
+  optionalAuth,
   requireAdmin,
   requireAuth,
   requireSuper,
   signLocalSessionToken,
 } from './src/middleware/auth.ts';
-import { ensureDatabaseSchema, getDatabaseStatus } from './src/db/index.ts';
+import {
+  ensureDatabaseSchema,
+  getDatabaseStatus,
+  isPostgresConfigured,
+  verifyDatabaseConnection,
+} from './src/db/index.ts';
 import { CONSTANT_ADMIN_LICENSE_KEY, UPLOADS_DIR } from './src/db/localStore.ts';
 import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
 import {
@@ -41,10 +47,12 @@ import {
 import {
   acquireStudyMaterial,
   createCalendarEvent,
+  createCalendarEventsBulk,
   createContactMessage,
   createContributorFile,
   createContributorFolder,
   createExamBlueprint,
+  createExamCountdown,
   createExamSchedule,
   createNotebook,
   createNotePage,
@@ -55,6 +63,7 @@ import {
   deleteContributorFile,
   deleteContributorFolder,
   deleteExamBlueprint,
+  deleteExamCountdown,
   deleteExamSchedule,
   deleteNotebook,
   deleteNotePage,
@@ -80,6 +89,7 @@ import {
   hasActiveMaterialAccess,
   listAllContributorAssetsForMasterSync,
   listContributorWorkspace,
+  listExamCountdowns,
   listPointTransactionsForAdmin,
   listStudyMaterials,
   markNotificationRead,
@@ -146,7 +156,10 @@ async function startServer() {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 
-  app.get('/api/health', (_req, res) => {
+  app.get('/api/health', async (_req, res) => {
+    if (isPostgresConfigured()) {
+      await verifyDatabaseConnection();
+    }
     const database = getDatabaseStatus();
     res.json({
       status: 'ok',
@@ -726,6 +739,31 @@ async function startServer() {
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to create event',
       });
+    }
+  });
+
+  app.post('/api/events/bulk', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { title, dates, eventTime, category, notes, meetLink } = req.body || {};
+      if (!title || !Array.isArray(dates) || dates.length === 0) {
+        return res.status(400).json({ error: 'Event title and at least one date are required.' });
+      }
+      if (dates.length > 366) {
+        return res.status(400).json({ error: 'Maximum 366 dates can be created per series.' });
+      }
+      const result = await createCalendarEventsBulk(req.dbUser!.id, {
+        title: String(title).slice(0, 200),
+        dates: dates.map((d: unknown) => String(d).slice(0, 20)),
+        eventTime: typeof eventTime === 'string' ? eventTime.slice(0, 20) : '09:00',
+        category: typeof category === 'string' ? category.slice(0, 40) : 'study',
+        notes: typeof notes === 'string' ? notes.slice(0, 2000) : '',
+        meetLink: typeof meetLink === 'string' ? meetLink.slice(0, 300) : '',
+      });
+      res.status(201).json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to create event series';
+      const status = msg.includes('Maximum') || msg.includes('valid date') ? 400 : 500;
+      res.status(status).json({ error: msg });
     }
   });
 
@@ -1632,6 +1670,92 @@ async function startServer() {
     } catch (error: unknown) {
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to load credits',
+      });
+    }
+  });
+
+  // Exam Countdown Timers (Admin top-level + User custom)
+  app.get('/api/countdowns', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const rows = await listExamCountdowns(req.dbUser?.id);
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load exam countdowns',
+      });
+    }
+  });
+
+  app.post('/api/countdowns', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { title, category, targetDate, targetTime } = req.body || {};
+      if (!title || !targetDate) {
+        return res.status(400).json({ error: 'Countdown name and date are required.' });
+      }
+      const created = await createExamCountdown({
+        userId: req.dbUser!.id,
+        scope: 'user',
+        title: String(title),
+        category: typeof category === 'string' ? category : 'Personal Exam',
+        targetDate: String(targetDate),
+        targetTime: typeof targetTime === 'string' ? targetTime : '',
+        pinnedByDefault: false,
+        createdByLabel: req.dbUser!.username ? `@${req.dbUser!.username}` : req.dbUser!.displayName,
+      });
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to create countdown';
+      res.status(msg.includes('required') || msg.includes('format') ? 400 : 500).json({ error: msg });
+    }
+  });
+
+  app.delete('/api/countdowns/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid countdown ID' });
+      const isAdmin = req.dbUser!.role === 'admin' || req.dbUser!.role === 'super';
+      const deleted = await deleteExamCountdown(req.dbUser!.id, id, isAdmin);
+      if (!deleted) return res.status(404).json({ error: 'Countdown not found.' });
+      res.json({ ok: true });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to delete countdown';
+      res.status(msg.includes('Only Admin') || msg.includes('only delete') ? 403 : 500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/admin/countdowns', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { title, category, targetDate, targetTime, pinnedByDefault } = req.body || {};
+      if (!title || !targetDate) {
+        return res.status(400).json({ error: 'Exam name and target date are required.' });
+      }
+      const created = await createExamCountdown({
+        userId: null,
+        scope: 'admin',
+        title: String(title),
+        category: typeof category === 'string' ? category : 'National Exam',
+        targetDate: String(targetDate),
+        targetTime: typeof targetTime === 'string' ? targetTime : '',
+        pinnedByDefault: Boolean(pinnedByDefault),
+        createdByLabel: req.dbUser!.username ? `@${req.dbUser!.username}` : req.dbUser!.displayName,
+      });
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to create top-level exam countdown';
+      res.status(msg.includes('required') || msg.includes('format') ? 400 : 500).json({ error: msg });
+    }
+  });
+
+  app.delete('/api/admin/countdowns/:id', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid countdown ID' });
+      const deleted = await deleteExamCountdown(req.dbUser!.id, id, true);
+      if (!deleted) return res.status(404).json({ error: 'Countdown not found.' });
+      res.json({ ok: true });
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to delete top-level exam countdown',
       });
     }
   });

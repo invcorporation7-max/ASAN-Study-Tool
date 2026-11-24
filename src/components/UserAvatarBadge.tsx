@@ -64,7 +64,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = ({
       className={`relative inline-flex shrink-0 items-center justify-center rounded-full p-[2.5px] ${ringClass} ${glowClass}`}
     >
       <div
-        className={`flex ${dim} items-center justify-center overflow-hidden rounded-full bg-white font-semibold text-slate-800 ring-1 ring-white`}
+        className={`flex ${dim} items-center justify-center overflow-hidden rounded-full bg-white dark:bg-slate-900 font-semibold text-slate-800 dark:text-slate-100 ring-1 ring-white dark:ring-slate-900`}
       >
         {photoUrl ? (
           <img
@@ -74,7 +74,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = ({
             referrerPolicy="no-referrer"
           />
         ) : (
-          <span className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-700">
+          <span className="flex h-full w-full items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
             {initials}
           </span>
         )}

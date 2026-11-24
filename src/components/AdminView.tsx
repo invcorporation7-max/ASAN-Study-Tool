@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Ban,
   BarChart3,
-  Check,
+  CalendarClock,
   CloudUpload,
   Coins,
   Crown,
@@ -10,6 +10,8 @@ import {
   HardDrive,
   KeyRound,
   Mail,
+  Pin,
+  Plus,
   ShieldAlert,
   ShieldCheck,
   Sliders,
@@ -20,6 +22,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import {
   apiFetch,
+  apiOptionalAuthFetch,
   buildGmailLicenseComposeUrl,
   ensureNamedDriveFolder,
   ensureSubfolderInDrive,
@@ -31,6 +34,7 @@ import type {
   ContributorFileItem,
   ContributorFolderItem,
   DbUser,
+  ExamCountdownItem,
   LicenseKeyItem,
   MaterialPurchaseItem,
   StudyMaterialItem,
@@ -81,7 +85,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export const AdminView: React.FC = () => {
+interface AdminViewProps {
+  onRefreshCountdowns?: () => Promise<void>;
+}
+
+export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => {
   const {
     dbUser,
     isAdmin,
@@ -93,6 +101,13 @@ export const AdminView: React.FC = () => {
   } = useAuth();
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [adminCountdowns, setAdminCountdowns] = useState<ExamCountdownItem[]>([]);
+  const [cdTitle, setCdTitle] = useState('');
+  const [cdCategory, setCdCategory] = useState('National Exam');
+  const [cdDate, setCdDate] = useState('');
+  const [cdTime, setCdTime] = useState('');
+  const [cdPinnedDefault, setCdPinnedDefault] = useState(true);
 
   // Admin forms
   const [keyRecipient, setKeyRecipient] = useState('');
@@ -130,8 +145,14 @@ export const AdminView: React.FC = () => {
   const loadOverview = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<AdminOverviewResponse>('/api/admin/overview');
+      const [res, cdList] = await Promise.all([
+        apiFetch<AdminOverviewResponse>('/api/admin/overview'),
+        apiOptionalAuthFetch<ExamCountdownItem[]>('/api/countdowns').catch(() => []),
+      ]);
       setData(res);
+      setAdminCountdowns(
+        (Array.isArray(cdList) ? cdList : []).filter((c) => c.scope === 'admin')
+      );
       if (typeof res.contributorWeeklyPoints === 'number') {
         setWeeklyStipendInput(String(res.contributorWeeklyPoints));
       }
@@ -153,12 +174,12 @@ export const AdminView: React.FC = () => {
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center space-y-2">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
           <ShieldCheck className="mx-auto h-6 w-6 text-slate-400" />
-          <h1 className="font-display text-lg font-bold text-slate-900">
+          <h1 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
             Admin Responsibility Restricted
           </h1>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             Admin is an extra responsibility assigned strictly to hand-selected users by the workspace owner. There is no public option to claim Admin.
           </p>
         </div>
@@ -234,12 +255,55 @@ export const AdminView: React.FC = () => {
       });
       setStatusMsg(
         approve
-          ? `Approved Contributor access (+${weeklyRate} points/week starting Sunday).`
+          ? `Approved Contributor access (+${weeklyRate} points/week starting Sunday) & credited on About the Creators.`
           : 'Paused Contributor access & weekly stipend.'
       );
-      await loadOverview();
+      await Promise.all([loadOverview(), refreshProfile()]);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to update contributor');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateAdminCountdown = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cdTitle.trim() || !cdDate) return;
+    setBusy(true);
+    setErrorMsg(null);
+    setStatusMsg(null);
+    try {
+      await apiFetch('/api/admin/countdowns', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: cdTitle.trim(),
+          category: cdCategory.trim() || 'National Exam',
+          targetDate: cdDate,
+          targetTime: cdTime.trim(),
+          pinnedByDefault: cdPinnedDefault,
+        }),
+      });
+      setStatusMsg(`Published top-level exam countdown "${cdTitle.trim()}" (${cdDate}).`);
+      setCdTitle('');
+      setCdDate('');
+      setCdTime('');
+      await Promise.all([loadOverview(), onRefreshCountdowns?.()]);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to publish exam countdown');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteAdminCountdown = async (id: number) => {
+    setBusy(true);
+    setErrorMsg(null);
+    try {
+      await apiFetch(`/api/admin/countdowns/${id}`, { method: 'DELETE' });
+      setStatusMsg('Removed top-level exam countdown.');
+      await Promise.all([loadOverview(), onRefreshCountdowns?.()]);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to remove countdown');
     } finally {
       setBusy(false);
     }
@@ -546,25 +610,25 @@ export const AdminView: React.FC = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-bold text-slate-900">
+            <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
               {isSuper ? 'Super Developer & Admin Console' : 'Admin Console · Storage, Analytics & Oversight'}
             </h1>
             {isSuper && (
-              <span className="inline-flex items-center gap-1 rounded border border-violet-300 bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-800">
+              <span className="inline-flex items-center gap-1 rounded border border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/60 px-2 py-0.5 text-[11px] font-bold text-violet-800 dark:text-violet-300">
                 <Crown className="h-3 w-3" />
                 SUPER MODE
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Admin responsibility (+150 pts/wk from Sunday). Contributor weekly income: <strong>{weeklyRate} pts/wk</strong>.
           </p>
         </div>
 
         {data && (
-          <div className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs">
-            <span className="text-slate-500">Constant Admin Key: </span>
-            <strong className="font-mono text-slate-900 tracking-wider">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 py-2 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">Constant Admin Key: </span>
+            <strong className="font-mono text-slate-900 dark:text-slate-100 tracking-wider">
               {data.constantAdminKey}
             </strong>
           </div>
@@ -572,77 +636,195 @@ export const AdminView: React.FC = () => {
       </div>
 
       {statusMsg && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
           {statusMsg}
         </div>
       )}
       {errorMsg && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
           {errorMsg}
         </div>
       )}
 
       {loading || !data ? (
-        <div className="py-12 text-center text-xs text-slate-500">
+        <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400">
           Loading Admin analytics &amp; server storage metrics...
         </div>
       ) : (
         <>
           {/* Storage & Analytics Metrics Strip */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-2">
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Server Storage Pool</span>
-                <HardDrive className="h-4 w-4 text-blue-600" />
+                <HardDrive className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
-              <div className="font-display text-xl font-bold text-slate-900 tabular-nums">
+              <div className="font-display text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {formatBytes(data.storage.usedBytes)} / 5.00 GB
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <div
                   className="h-full bg-blue-600"
                   style={{ width: `${Math.max(2, usedPct)}%` }}
                 />
               </div>
-              <div className="text-[11px] text-slate-500 tabular-nums">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                 {data.storage.fileCount} files · Mirror: {data.storage.driveMirrorFolder}
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Registered Users</span>
-                <BarChart3 className="h-4 w-4 text-emerald-600" />
+                <BarChart3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <div className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums">
+              <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {data.analytics.totalUsers}
               </div>
-              <div className="mt-1 text-xs text-slate-500 tabular-nums">
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 {data.analytics.proUsers} Pro · {data.analytics.basicUsers} Basic ·{' '}
                 {data.analytics.adminUsers} Admin/Super
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="text-xs font-medium text-slate-500">Contributors &amp; Requests</div>
-              <div className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Contributors &amp; Requests</div>
+              <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {data.analytics.approvedContributors}
               </div>
-              <div className="mt-1 text-xs text-slate-500 tabular-nums">
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 {data.analytics.pendingContributorRequests} pending · {weeklyRate} pts/wk
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="text-xs font-medium text-slate-500">Workspace Activity</div>
-              <div className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Workspace Activity</div>
+              <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {data.analytics.totalPointsCirculating} pts
               </div>
-              <div className="mt-1 text-xs text-slate-500 tabular-nums">
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 {data.analytics.totalNoteDocs} notes · {data.analytics.totalTasks} tasks ·{' '}
                 {data.analytics.activeProKeys} active keys
               </div>
             </div>
+          </div>
+
+          {/* Top-Level National / Board Exam Countdown Timers */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="flex items-center gap-2 font-display text-base font-bold text-slate-900 dark:text-slate-100">
+                  <CalendarClock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  Top-Level Exam Countdown Timers ({adminCountdowns.length})
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Publish recent top-level national/board exams (e.g., JEE Main, NEET UG, CUET, ISC, CBSE). Users can pin any countdown to their Dashboard.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateAdminCountdown} className="grid grid-cols-1 gap-3 sm:grid-cols-12 items-end">
+              <div className="sm:col-span-4">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  Exam Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cdTitle}
+                  onChange={(e) => setCdTitle(e.target.value)}
+                  placeholder="e.g., JEE Main 2027 Session 1"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={cdCategory}
+                  onChange={(e) => setCdCategory(e.target.value)}
+                  placeholder="National Exam"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  Exam Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={cdDate}
+                  onChange={(e) => setCdDate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  Time (Optional)
+                </label>
+                <input
+                  type="time"
+                  value={cdTime}
+                  onChange={(e) => setCdTime(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60 whitespace-nowrap"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Publish Exam
+                </button>
+              </div>
+            </form>
+
+            <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cdPinnedDefault}
+                onChange={(e) => setCdPinnedDefault(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+              />
+              <Pin className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+              Pin to student Dashboard by default
+            </label>
+
+            {adminCountdowns.length > 0 && (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-100 dark:border-slate-800 pt-2">
+                {adminCountdowns.map((cd) => (
+                  <div
+                    key={cd.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        {cd.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                        {cd.category} · {cd.targetDate}
+                        {cd.targetTime ? ` at ${cd.targetTime}` : ' (Date-only)'}
+                        {cd.pinnedByDefault ? ' · Pinned by default' : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleDeleteAdminCountdown(cd.id)}
+                      className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-2.5 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Live Google Analytics (GA4) Admin Reporting */}
@@ -661,16 +843,16 @@ export const AdminView: React.FC = () => {
 
           {/* SUPER / DEVELOPER MODE SECTION (Strictly invcorporation7@gmail.com) */}
           {isSuper && (
-            <div className="rounded-xl border-2 border-violet-200 bg-violet-50/30 p-6 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-200/70 pb-3">
+            <div className="rounded-xl border-2 border-violet-200 dark:border-violet-800/80 bg-violet-50/30 dark:bg-violet-950/20 p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-200/70 dark:border-violet-800/70 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <Crown className="h-5 w-5 text-violet-700" />
+                  <Crown className="h-5 w-5 text-violet-700 dark:text-violet-400" />
                   <div>
-                    <h2 className="font-display text-base font-bold text-slate-900">
+                    <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                       Super / Developer Mode Controls ({dbUser?.email})
                     </h2>
-                    <p className="text-xs text-slate-600">
-                      Adjust any user&apos;s points with mandatory Tool Mail reason, terminate plans/approvals/keys, configure contributor weekly income, and sync contributors to <code className="rounded bg-white px-1 py-0.5">ASAN-Master-Folder</code>.
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      Adjust any user&apos;s points with mandatory Tool Mail reason, terminate plans/approvals/keys, configure contributor weekly income, and sync contributors to <code className="rounded bg-white dark:bg-slate-800 px-1 py-0.5">ASAN-Master-Folder</code>.
                     </p>
                   </div>
                 </div>
@@ -694,16 +876,16 @@ export const AdminView: React.FC = () => {
                 {/* Add / Deduct Points with Reason */}
                 <form
                   onSubmit={handleSuperAdjustPoints}
-                  className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
+                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
                 >
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <Coins className="h-4 w-4 text-amber-600" />
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                     Add / Deduct User Points (With Reason)
                   </div>
                   <select
                     value={pointsUserId}
                     onChange={(e) => setPointsUserId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
                   >
                     {data.users.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -715,7 +897,7 @@ export const AdminView: React.FC = () => {
                     <select
                       value={pointsOp}
                       onChange={(e) => setPointsOp(e.target.value as 'add' | 'deduct')}
-                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2.5 py-2 text-xs font-medium"
                     >
                       <option value="add">Add (+)</option>
                       <option value="deduct">Deduct (−)</option>
@@ -728,7 +910,7 @@ export const AdminView: React.FC = () => {
                       value={pointsAmount}
                       onChange={(e) => setPointsAmount(e.target.value)}
                       placeholder="Amount"
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs tabular-nums"
                     />
                   </div>
                   <input
@@ -737,7 +919,7 @@ export const AdminView: React.FC = () => {
                     value={pointsReason}
                     onChange={(e) => setPointsReason(e.target.value)}
                     placeholder="Reason (shown in recipient's Tool Mail)"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
                   />
                   <button
                     type="submit"
@@ -755,16 +937,16 @@ export const AdminView: React.FC = () => {
                 {/* Terminate Plans & Cancel Approvals */}
                 <form
                   onSubmit={handleSuperAction}
-                  className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
+                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
                 >
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                    <ShieldAlert className="h-4 w-4 text-red-600" />
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
                     Terminate Plans &amp; Cancel Approvals
                   </div>
                   <select
                     value={actionUserId}
                     onChange={(e) => setActionUserId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
                   >
                     {data.users.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -783,7 +965,7 @@ export const AdminView: React.FC = () => {
                           | 'revoke_admin'
                       )
                     }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs font-medium"
                   >
                     <option value="terminate_pro">Terminate Pro Plan (Revert to Basic)</option>
                     <option value="grant_pro">Grant 1-Month Pro Plan</option>
@@ -795,12 +977,12 @@ export const AdminView: React.FC = () => {
                     value={superActionReason}
                     onChange={(e) => setSuperActionReason(e.target.value)}
                     placeholder="Reason for Tool Mail notification..."
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs"
                   />
                   <button
                     type="submit"
                     disabled={busy}
-                    className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                    className="w-full rounded-lg bg-slate-900 dark:bg-blue-600 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
                   >
                     Execute Super Action
                   </button>
@@ -809,14 +991,14 @@ export const AdminView: React.FC = () => {
                 {/* Weekly Contributor Stipend Setting */}
                 <form
                   onSubmit={handleUpdateWeeklyStipend}
-                  className="rounded-xl border border-slate-200 bg-white p-5 space-y-3 flex flex-col justify-between"
+                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
                 >
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                      <Sliders className="h-4 w-4 text-violet-700" />
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      <Sliders className="h-4 w-4 text-violet-700 dark:text-violet-400" />
                       Contributor Weekly Income
                     </div>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Set how many points approved Contributors earn every Sunday. Currently{' '}
                       <strong>{weeklyRate} pts/week</strong>.
                     </p>
@@ -827,7 +1009,7 @@ export const AdminView: React.FC = () => {
                       required
                       value={weeklyStipendInput}
                       onChange={(e) => setWeeklyStipendInput(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold tabular-nums"
+                      className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm font-semibold tabular-nums"
                     />
                   </div>
                   <button
@@ -842,19 +1024,19 @@ export const AdminView: React.FC = () => {
 
               {/* License Keys Oversight (Cancel Unused / Active Keys) */}
               {data.licenseKeys && data.licenseKeys.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-display text-sm font-semibold text-slate-900">
+                    <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
                       License Key Cancellation Control ({data.licenseKeys.length})
                     </h3>
-                    <span className="text-[11px] text-slate-500">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
                       Cancel unused or active keys immediately
                     </span>
                   </div>
-                  <div className="overflow-x-auto max-h-56 overflow-y-auto">
+                  <div className="overflow-x-auto lg:max-h-72 lg:overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-slate-200 text-slate-500">
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                           <th className="py-2 pr-3 font-medium">Key</th>
                           <th className="py-2 pr-3 font-medium">Issued To</th>
                           <th className="py-2 pr-3 font-medium">Status</th>
@@ -862,29 +1044,29 @@ export const AdminView: React.FC = () => {
                           <th className="py-2 text-right font-medium">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 tabular-nums">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                         {data.licenseKeys.slice(0, 25).map((k) => (
                           <tr key={k.id}>
-                            <td className="py-2 pr-3 font-mono font-semibold text-slate-900">
+                            <td className="py-2 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
                               {k.keyCode}
                             </td>
-                            <td className="py-2 pr-3 text-slate-600">
+                            <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
                               {k.issuedToEmail || 'Unassigned'}
                             </td>
                             <td className="py-2 pr-3 capitalize">
                               <span
                                 className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                                   k.status === 'cancelled'
-                                    ? 'bg-red-50 text-red-700'
+                                    ? 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300'
                                     : k.status === 'active'
-                                      ? 'bg-emerald-50 text-emerald-700'
-                                      : 'bg-blue-50 text-blue-700'
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                                 }`}
                               >
                                 {k.status}
                               </span>
                             </td>
-                            <td className="py-2 pr-3 text-slate-500">
+                            <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
                               {k.durationMonths === 12 ? '12 mo' : '1 mo'}
                             </td>
                             <td className="py-2 text-right">
@@ -893,7 +1075,7 @@ export const AdminView: React.FC = () => {
                                   type="button"
                                   disabled={busy}
                                   onClick={() => void handleCancelLicenseKey(k)}
-                                  className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100"
+                                  className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-2 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60"
                                 >
                                   <Ban className="h-3 w-3" />
                                   Cancel Key
@@ -915,21 +1097,21 @@ export const AdminView: React.FC = () => {
             {/* Issue Pro Key */}
             <form
               onSubmit={handleGenerateProKey}
-              className="rounded-xl border border-slate-200 bg-white p-6 space-y-3"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <KeyRound className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 Generate Expirable 8-Char Pro Key
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Valid 1 year to activate, grants 1 month or 12 months Pro from activation. Delivered automatically to Tool Mail.
               </p>
-              <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-xs">
+              <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-xs">
                 <button
                   type="button"
                   onClick={() => setKeyTerm('monthly')}
                   className={`flex-1 rounded py-1 font-medium ${
-                    keyTerm === 'monthly' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                    keyTerm === 'monthly' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs' : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   Monthly (1m)
@@ -938,7 +1120,7 @@ export const AdminView: React.FC = () => {
                   type="button"
                   onClick={() => setKeyTerm('annual')}
                   className={`flex-1 rounded py-1 font-medium ${
-                    keyTerm === 'annual' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                    keyTerm === 'annual' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs' : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   Annual (12m)
@@ -949,7 +1131,7 @@ export const AdminView: React.FC = () => {
                 value={keyRecipient}
                 onChange={(e) => setKeyRecipient(e.target.value)}
                 placeholder="@username, 5-char UID (e.g. K7P9M), or email"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="submit"
@@ -960,15 +1142,15 @@ export const AdminView: React.FC = () => {
               </button>
 
               {generatedKeyInfo && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs space-y-1.5">
-                  <div className="font-mono font-bold text-blue-900">
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 p-3 text-xs space-y-1.5">
+                  <div className="font-mono font-bold text-blue-900 dark:text-blue-200">
                     {generatedKeyInfo.keyCode}
                   </div>
                   <a
                     href={buildGmailLicenseComposeUrl(generatedKeyInfo)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline"
+                    className="inline-flex items-center gap-1 font-medium text-blue-700 dark:text-blue-300 hover:underline"
                   >
                     Open in Gmail Mailbox
                     <ExternalLink className="h-3 w-3" />
@@ -980,13 +1162,13 @@ export const AdminView: React.FC = () => {
             {/* Hand-Select Admin */}
             <form
               onSubmit={handleAuthorizeAdmin}
-              className="rounded-xl border border-slate-200 bg-white p-6 space-y-3"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ShieldCheck className="h-4 w-4 text-amber-600" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 Hand-Select Workspace Admin
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Only hand-selected accounts can hold Admin responsibility or use constant Admin key <code className="font-mono">{data.constantAdminKey}</code>.
               </p>
               <input
@@ -995,12 +1177,12 @@ export const AdminView: React.FC = () => {
                 value={adminEmailInput}
                 onChange={(e) => setAdminEmailInput(e.target.value)}
                 placeholder="email, @username, or 5-char UID"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full rounded-lg border border-slate-300 bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-900 dark:bg-blue-600 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
               >
                 Authorize Admin Responsibility
               </button>
@@ -1009,10 +1191,10 @@ export const AdminView: React.FC = () => {
             {/* Quick Admin Mail */}
             <form
               onSubmit={handleSendAdminMail}
-              className="rounded-xl border border-slate-200 bg-white p-6 space-y-3"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Mail className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 Send Official Admin Mail
               </div>
               <input
@@ -1020,7 +1202,7 @@ export const AdminView: React.FC = () => {
                 value={adminMailTarget}
                 onChange={(e) => setAdminMailTarget(e.target.value)}
                 placeholder='@username, 5-char UID, or "all" for broadcast'
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
               />
               <input
                 type="text"
@@ -1028,7 +1210,7 @@ export const AdminView: React.FC = () => {
                 value={adminMailSubject}
                 onChange={(e) => setAdminMailSubject(e.target.value)}
                 placeholder="Subject"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
               />
               <textarea
                 rows={2}
@@ -1036,7 +1218,7 @@ export const AdminView: React.FC = () => {
                 value={adminMailBody}
                 onChange={(e) => setAdminMailBody(e.target.value)}
                 placeholder="Admin announcement or direct message..."
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="submit"
@@ -1049,14 +1231,19 @@ export const AdminView: React.FC = () => {
           </div>
 
           {/* Contributor & User Oversight */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
-            <h2 className="font-display text-base font-semibold text-slate-900">
-              Contributor Oversight &amp; User Directory ({data.users.length})
-            </h2>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+            <div>
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Contributor Oversight &amp; User Directory ({data.users.length})
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Members, Admins, and Super can all hold Contributor status and receive credit under About the Creators.
+              </p>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                     <th className="py-2 pr-3 font-medium">Member / 5-Char UID</th>
                     <th className="py-2 pr-3 font-medium">Plan &amp; Role Tags</th>
                     <th className="py-2 pr-3 font-medium">Points</th>
@@ -1064,12 +1251,11 @@ export const AdminView: React.FC = () => {
                     <th className="py-2 font-medium text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 tabular-nums">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                   {data.users.map((u) => {
                     const uploadCount = data.materials.filter(
                       (m) => m.uploaderId === u.id
                     ).length;
-                    const isElevatedTarget = u.role === 'admin' || u.role === 'super';
                     return (
                       <tr key={u.id}>
                         <td className="py-3 pr-3">
@@ -1083,14 +1269,14 @@ export const AdminView: React.FC = () => {
                               size="sm"
                             />
                             <div className="min-w-0">
-                              <div className="font-semibold text-slate-900">
+                              <div className="font-semibold text-slate-900 dark:text-slate-100">
                                 {u.displayName}{' '}
-                                <span className="font-mono text-blue-700">
+                                <span className="font-mono text-blue-700 dark:text-blue-400">
                                   @{u.username}
                                 </span>
                               </div>
-                              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5">
-                                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono font-bold text-slate-800">
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
+                                <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 font-mono font-bold text-slate-800 dark:text-slate-200">
                                   {u.shortUid || `U${u.id}`}
                                 </span>
                                 <span>{u.email}</span>
@@ -1103,8 +1289,8 @@ export const AdminView: React.FC = () => {
                             <span
                               className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${
                                 u.plan === 'pro'
-                                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                  : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                               }`}
                             >
                               {u.plan}
@@ -1113,31 +1299,31 @@ export const AdminView: React.FC = () => {
                                 : ''}
                             </span>
                             {u.contributorApproved && (
-                              <span className="rounded bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                              <span className="rounded bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
                                 Contributor
                               </span>
                             )}
                             {u.contributorRequested && !u.contributorApproved && (
-                              <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                              <span className="rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                                 Pending Req
                               </span>
                             )}
                             {u.role === 'super' && (
-                              <span className="rounded bg-violet-100 border border-violet-300 px-2 py-0.5 text-[11px] font-semibold text-violet-900">
+                              <span className="rounded bg-violet-100 dark:bg-violet-950/70 border border-violet-300 dark:border-violet-700 px-2 py-0.5 text-[11px] font-semibold text-violet-900 dark:text-violet-300">
                                 Super
                               </span>
                             )}
                             {u.role === 'admin' && (
-                              <span className="rounded bg-amber-100 border border-amber-300 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                              <span className="rounded bg-amber-100 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:text-amber-300">
                                 Admin
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 pr-3 font-mono font-semibold text-slate-900">
+                        <td className="py-3 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
                           {u.points} pts
                         </td>
-                        <td className="py-3 pr-3 text-slate-600">
+                        <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">
                           {uploadCount} upload(s)
                           {u.contributorApproved
                             ? ` · Active (+${weeklyRate}/wk)`
@@ -1146,36 +1332,29 @@ export const AdminView: React.FC = () => {
                               : ''}
                         </td>
                         <td className="py-3 text-right">
-                          {!isElevatedTarget && (
-                            <div className="inline-flex items-center gap-1.5">
-                              {!u.contributorApproved ? (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => handleToggleContributor(u.id, true)}
-                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700"
-                                >
-                                  <UserCheck className="h-3 w-3" />
-                                  Approve Contributor
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => handleToggleContributor(u.id, false)}
-                                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                                >
-                                  <UserX className="h-3 w-3" />
-                                  Pause Stipend
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {isElevatedTarget && (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                              <Check className="h-3 w-3" /> {u.role === 'super' ? 'Super' : 'Admin'}
-                            </span>
-                          )}
+                          <div className="inline-flex items-center gap-1.5">
+                            {!u.contributorApproved ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => handleToggleContributor(u.id, true)}
+                                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 whitespace-nowrap"
+                              >
+                                <UserCheck className="h-3 w-3" />
+                                Approve Contributor
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => handleToggleContributor(u.id, false)}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap"
+                              >
+                                <UserX className="h-3 w-3" />
+                                Pause Stipend
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1186,34 +1365,34 @@ export const AdminView: React.FC = () => {
           </div>
 
           {/* Server Storage Files & ASAN-user-content Mirror */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="font-display text-base font-semibold text-slate-900">
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Study Material Notes &amp; Server Storage Files ({data.materials.length})
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Mirror uploaded contributor materials to Drive folder <code className="font-mono">ASAN-user-content</code> or prune server disk usage.
                 </p>
               </div>
             </div>
 
             {data.materials.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">
+              <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
                 No files stored in the server material repository yet.
               </p>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {data.materials.map((m) => (
                   <div
                     key={m.id}
                     className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs"
                   >
                     <div className="min-w-0">
-                      <div className="font-semibold text-slate-900">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
                         {m.title} ({m.fileName})
                       </div>
-                      <div className="text-slate-500 tabular-nums">
+                      <div className="text-slate-500 dark:text-slate-400 tabular-nums">
                         {m.pageCount || 1} pg · Rent {m.hourlyRentCost || 10} pts/hr · Buy{' '}
                         {m.buyCost || 40} pts · {formatBytes(m.fileSizeBytes)} ·{' '}
                         {m.category.replace('_', ' ')} · By {m.uploaderEmail}
@@ -1226,7 +1405,7 @@ export const AdminView: React.FC = () => {
                           href={m.driveWebLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-emerald-700 font-medium hover:underline"
+                          className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium hover:underline"
                         >
                           In ASAN-user-content
                           <ExternalLink className="h-3 w-3" />
@@ -1235,16 +1414,16 @@ export const AdminView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleSyncToAsanUserContent(m)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-100"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
-                          <CloudUpload className="h-3.5 w-3.5 text-emerald-600" />
+                          <CloudUpload className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                           Sync to ASAN-user-content
                         </button>
                       ) : null}
                       <button
                         type="button"
                         onClick={() => setDeleteMaterialTarget(m)}
-                        className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        className="rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/60 hover:text-red-600 dark:hover:text-red-400"
                         aria-label="Delete material"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1257,31 +1436,31 @@ export const AdminView: React.FC = () => {
           </div>
 
           {/* Repository Purchases & Hourly Rentals (DB Log) */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="font-display text-base font-semibold text-slate-900">
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Repository Purchases &amp; Hourly Rentals (DB Log)
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   All repository point transactions, page-based hourly rentals (5–100 pts/hr), and permanent buys recorded directly in the database.
                 </p>
               </div>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 tabular-nums">
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300 tabular-nums">
                 {data.analytics.totalMaterialPurchases ?? 0} Tx ·{' '}
                 {data.analytics.totalMaterialRevenuePts ?? 0} pts volume
               </div>
             </div>
 
             {!data.materialPurchases || data.materialPurchases.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-500">
+              <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
                 No material purchases or hourly rentals logged yet.
               </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                       <th className="py-2 pr-3 font-medium">Buyer</th>
                       <th className="py-2 pr-3 font-medium">Material</th>
                       <th className="py-2 pr-3 font-medium">Type</th>
@@ -1290,34 +1469,34 @@ export const AdminView: React.FC = () => {
                       <th className="py-2 font-medium">Expiry / Date</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 tabular-nums">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                     {data.materialPurchases.map((p) => (
                       <tr key={p.id}>
                         <td className="py-2.5 pr-3">
-                          <div className="font-medium text-slate-900">{p.buyerName}</div>
-                          <div className="text-[11px] text-slate-500">{p.buyerEmail}</div>
+                          <div className="font-medium text-slate-900 dark:text-slate-100">{p.buyerName}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{p.buyerEmail}</div>
                         </td>
-                        <td className="py-2.5 pr-3 font-medium text-slate-800">
+                        <td className="py-2.5 pr-3 font-medium text-slate-800 dark:text-slate-200">
                           {p.materialTitle}
                         </td>
                         <td className="py-2.5 pr-3">
                           <span
                             className={`rounded px-2 py-0.5 text-[11px] font-semibold ${
                               p.accessType === 'buy'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                             }`}
                           >
                             {p.accessType === 'buy' ? 'Buy (Permanent)' : `Rent (${p.hours}h)`}
                           </span>
                         </td>
-                        <td className="py-2.5 pr-3 text-slate-600">
+                        <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300">
                           {p.pageCount} pg · {p.hourlyRate} pts/hr
                         </td>
-                        <td className="py-2.5 pr-3 font-mono font-semibold text-amber-700">
+                        <td className="py-2.5 pr-3 font-mono font-semibold text-amber-700 dark:text-amber-400">
                           {p.totalCost} pts
                         </td>
-                        <td className="py-2.5 text-slate-500">
+                        <td className="py-2.5 text-slate-500 dark:text-slate-400">
                           {p.expiresAt
                             ? `Until ${new Date(p.expiresAt).toLocaleString()}`
                             : new Date(p.createdAt).toLocaleDateString()}

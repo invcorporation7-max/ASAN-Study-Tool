@@ -66,7 +66,7 @@ export const createPool = () => {
         connectionString: databaseUrl,
         ssl: isLocal ? false : { rejectUnauthorized: false },
         max: 10,
-        connectionTimeoutMillis: 6000,
+        connectionTimeoutMillis: 12000,
       });
     } else {
       global._postgresPool = new Pool({
@@ -75,12 +75,18 @@ export const createPool = () => {
         password: process.env.SQL_PASSWORD,
         database: process.env.SQL_DB_NAME,
         max: 10,
-        connectionTimeoutMillis: 4000,
+        connectionTimeoutMillis: 12000,
       });
     }
 
     global._postgresPool.on('error', (err) => {
       console.error('Unexpected error on idle SQL pool client:', err instanceof Error ? err.message : err);
+      global._schemaEnsured = undefined;
+      global._dbStatus = {
+        connected: false,
+        mode: 'local-fallback',
+        reason: classifyDatabaseError(err),
+      };
     });
   }
   return global._postgresPool;
@@ -166,6 +172,9 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
       reason: 'DATABASE_URL not set',
     };
     return false;
+  }
+  if (global._dbStatus?.connected && global._schemaEnsured) {
+    return true;
   }
   if (!global._schemaEnsured) {
     global._schemaEnsured = (async () => {
@@ -452,6 +461,19 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             master_drive_web_link TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          CREATE TABLE IF NOT EXISTS exam_countdowns (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            scope TEXT NOT NULL DEFAULT 'user',
+            title TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '',
+            target_date TEXT NOT NULL,
+            target_time TEXT NOT NULL DEFAULT '',
+            pinned_by_default BOOLEAN NOT NULL DEFAULT false,
+            created_by_label TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
         `);
       } finally {
         client.release();
@@ -463,9 +485,33 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
     global._dbStatus = { connected: true, mode: 'postgres' };
     return true;
   } catch (err) {
+    global._schemaEnsured = undefined;
     const reason = classifyDatabaseError(err);
     global._dbStatus = { connected: false, mode: 'local-fallback', reason };
     console.warn('Postgres connection unavailable, using local fallback store:', err instanceof Error ? err.message : err);
     return false;
+  }
+}
+
+export async function verifyDatabaseConnection(): Promise<boolean> {
+  if (!isPostgresConfigured()) {
+    global._dbStatus = {
+      connected: false,
+      mode: 'local-fallback',
+      reason: 'DATABASE_URL not set',
+    };
+    return false;
+  }
+  if (!global._dbStatus?.connected) {
+    return ensureDatabaseSchema();
+  }
+  try {
+    await pool.query('SELECT 1');
+    return true;
+  } catch (err) {
+    global._schemaEnsured = undefined;
+    const reason = classifyDatabaseError(err);
+    global._dbStatus = { connected: false, mode: 'local-fallback', reason };
+    return ensureDatabaseSchema();
   }
 }

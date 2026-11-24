@@ -7,19 +7,32 @@ import {
   Lock,
   Maximize2,
   Pause,
+  Pin,
+  PinOff,
   Play,
+  Plus,
   RotateCcw,
   ShieldAlert,
+  Timer,
   Trash2,
   Volume2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch, apiPublicFetch } from '../lib/api';
 import {
+  guestCreateCountdown,
   guestCreateExam,
   guestCreateStudyLog,
+  guestDeleteCountdown,
   guestDeleteExam,
 } from '../lib/guestStore';
+import {
+  CountdownPinState,
+  getCountdownRemaining,
+  isCountdownPinned,
+  loadCountdownPins,
+  toggleCountdownPin,
+} from '../lib/workspacePrefs';
 import {
   playBasicTimerChime,
   playExamEndBell,
@@ -28,11 +41,17 @@ import {
   playPhaseStartBell,
   playPreStartWarningAlarm,
 } from '../lib/audioAlarms';
-import type { ExamScheduleItem, PointRewardsConfig, StudyLogItem } from '../types';
+import type {
+  ExamCountdownItem,
+  ExamScheduleItem,
+  PointRewardsConfig,
+  StudyLogItem,
+} from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface TimersViewProps {
   exams: ExamScheduleItem[];
+  countdowns: ExamCountdownItem[];
   studyLogs: StudyLogItem[];
   onRefresh: () => Promise<void>;
 }
@@ -47,7 +66,7 @@ const EXAM_TYPES = [
   'Other',
 ] as const;
 
-type TimerTab = 'test' | 'basic' | 'stopwatch' | 'study-logger';
+type TimerTab = 'test' | 'countdowns' | 'basic' | 'stopwatch' | 'study-logger';
 
 const EXAM_PERSIST_KEY = 'asan_persist_exam_v1';
 const BASIC_PERSIST_KEY = 'asan_persist_basic_v1';
@@ -102,12 +121,34 @@ function formatMicrosecondStopwatch(totalUs: number): {
 
 export const TimersView: React.FC<TimersViewProps> = ({
   exams,
+  countdowns,
   studyLogs,
   onRefresh,
 }) => {
-  const { isGuest, isEffectiveProOrAdmin, refreshProfile } = useAuth();
+  const { dbUser, isGuest, isEffectiveProOrAdmin, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<TimerTab>('test');
   const [examTimer30MinPts, setExamTimer30MinPts] = useState(10);
+
+  // --- EXAM COUNTDOWNS STATE ---
+  const userKey = isGuest ? 'guest' : dbUser?.uid || String(dbUser?.id || 'user');
+  const [pinState, setPinState] = useState<CountdownPinState>(() => loadCountdownPins(userKey));
+  const [countdownNowMs, setCountdownNowMs] = useState(() => Date.now());
+  const [cdTitle, setCdTitle] = useState('');
+  const [cdCategory, setCdCategory] = useState('');
+  const [cdDate, setCdDate] = useState('');
+  const [cdTime, setCdTime] = useState('');
+  const [cdBusy, setCdBusy] = useState(false);
+  const [cdFeedback, setCdFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPinState(loadCountdownPins(userKey));
+  }, [userKey]);
+
+  useEffect(() => {
+    if (activeTab !== 'countdowns') return;
+    const id = window.setInterval(() => setCountdownNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [activeTab]);
 
   useEffect(() => {
     apiPublicFetch<PointRewardsConfig>('/api/point-rewards')
@@ -824,22 +865,85 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
   const swFormatted = formatMicrosecondStopwatch(swElapsedUs);
 
+  const handleCreateCustomCountdown = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cdTitle.trim() || !cdDate) return;
+    setCdBusy(true);
+    setCdFeedback(null);
+    try {
+      if (isGuest) {
+        const created = guestCreateCountdown({
+          title: cdTitle.trim(),
+          category: cdCategory.trim() || 'Personal Exam',
+          targetDate: cdDate,
+          targetTime: cdTime.trim(),
+        });
+        setPinState(toggleCountdownPin(userKey, created, false));
+      } else {
+        const created = await apiFetch<ExamCountdownItem>('/api/countdowns', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: cdTitle.trim(),
+            category: cdCategory.trim() || 'Personal Exam',
+            targetDate: cdDate,
+            targetTime: cdTime.trim(),
+          }),
+        });
+        setPinState(toggleCountdownPin(userKey, created, false));
+      }
+      setCdTitle('');
+      setCdCategory('');
+      setCdDate('');
+      setCdTime('');
+      setCdFeedback('Custom countdown saved and pinned to your Dashboard.');
+      await onRefresh();
+    } catch (err) {
+      setCdFeedback(err instanceof Error ? err.message : 'Unable to create countdown');
+    } finally {
+      setCdBusy(false);
+    }
+  };
+
+  const handleDeleteCustomCountdown = async (item: ExamCountdownItem) => {
+    setCdFeedback(null);
+    try {
+      if (isGuest || item.id < 0) {
+        guestDeleteCountdown(item.id);
+      } else {
+        await apiFetch(`/api/countdowns/${item.id}`, { method: 'DELETE' });
+      }
+      await onRefresh();
+    } catch (err) {
+      setCdFeedback(err instanceof Error ? err.message : 'Unable to delete countdown');
+    }
+  };
+
+  const adminCountdowns = useMemo(
+    () => countdowns.filter((c) => c.scope === 'admin'),
+    [countdowns]
+  );
+  const customCountdowns = useMemo(
+    () => countdowns.filter((c) => c.scope !== 'admin'),
+    [countdowns]
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
-            Timers & Exam Simulation
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
+            Timers &amp; Exam Countdowns
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Specialized exam timers with automated audio checkpoints, study timers, and microsecond stopwatch.
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Specialized exam timers with audio checkpoints, official &amp; custom exam countdowns, study timers, and microsecond stopwatch.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 w-fit">
           {(
             [
               { id: 'test', label: 'Test Timers' },
+              { id: 'countdowns', label: 'Exam Countdowns' },
               { id: 'basic', label: 'Basic Timers' },
               { id: 'stopwatch', label: 'Stopwatch (µs)' },
               { id: 'study-logger', label: 'Study Time Logger (Pro)' },
@@ -851,8 +955,8 @@ export const TimersView: React.FC<TimersViewProps> = ({
               onClick={() => setActiveTab(t.id)}
               className={`rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                 activeTab === t.id
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {t.label}
@@ -861,18 +965,238 @@ export const TimersView: React.FC<TimersViewProps> = ({
         </div>
       </div>
 
+      {/* TAB: EXAM COUNTDOWNS */}
+      {activeTab === 'countdowns' && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit">
+            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <Timer className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Create Custom Exam Countdown
+              </h2>
+            </div>
+
+            <form onSubmit={handleCreateCustomCountdown} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Exam / Milestone Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cdTitle}
+                  onChange={(e) => setCdTitle(e.target.value)}
+                  placeholder="e.g., Physics Pre-Board or JEE Mock Target"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Category (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={cdCategory}
+                  onChange={(e) => setCdCategory(e.target.value)}
+                  placeholder="e.g., Board Exam, Mock Test, Viva"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                    Target Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={cdDate}
+                    onChange={(e) => setCdDate(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                    Time (Optional)
+                  </label>
+                  <input
+                    type="time"
+                    value={cdTime}
+                    onChange={(e) => setCdTime(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {cdFeedback && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 px-3 py-2 text-xs text-blue-800 dark:text-blue-200">
+                  {cdFeedback}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={cdBusy}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                <Plus className="h-4 w-4" />
+                {cdBusy ? 'Saving...' : 'Create & Pin Countdown'}
+              </button>
+            </form>
+          </div>
+
+          <div className="lg:col-span-7 space-y-6">
+            {/* Top-Level Admin Exams */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+              <div>
+                <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Top-Level Upcoming Exams (Admin Curated)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Pin or unpin major national and board exam countdowns directly to your Dashboard.
+                </p>
+              </div>
+
+              {adminCountdowns.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No top-level exams published by Admin yet.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {adminCountdowns.map((item) => {
+                    const rem = getCountdownRemaining(item, countdownNowMs);
+                    const pinned = isCountdownPinned(item, pinState);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                            {item.category}
+                          </div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                            {item.title}
+                          </div>
+                          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                            {item.targetDate}
+                            {item.targetTime ? ` at ${item.targetTime}` : ''}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                          <div className="font-mono text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                            {rem.expired
+                              ? 'Reached'
+                              : `${rem.days}d ${String(rem.hours).padStart(2, '0')}h ${String(
+                                  rem.minutes
+                                ).padStart(2, '0')}m ${String(rem.seconds).padStart(2, '0')}s`}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPinState(toggleCountdownPin(userKey, item, pinned))}
+                            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              pinned
+                                ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                            {pinned ? 'Pinned' : 'Pin'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Personal Custom Countdowns */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+              <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                My Custom Countdowns ({customCountdowns.length})
+              </h3>
+              {customCountdowns.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Create your own custom exam or deadline countdown on the left.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {customCountdowns.map((item) => {
+                    const rem = getCountdownRemaining(item, countdownNowMs);
+                    const pinned = isCountdownPinned(item, pinState);
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {item.category}
+                          </div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                            {item.title}
+                          </div>
+                          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                            {item.targetDate}
+                            {item.targetTime ? ` at ${item.targetTime}` : ' (Date only)'}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <div className="font-mono text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mr-1">
+                            {rem.expired
+                              ? 'Reached'
+                              : `${rem.days}d ${String(rem.hours).padStart(2, '0')}h ${String(
+                                  rem.minutes
+                                ).padStart(2, '0')}m ${String(rem.seconds).padStart(2, '0')}s`}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPinState(toggleCountdownPin(userKey, item, pinned))}
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                              pinned
+                                ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                            {pinned ? 'Pinned' : 'Pin'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteCustomCountdown(item)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600"
+                            aria-label={`Delete ${item.title}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TAB 1: TEST TIMERS */}
       {activeTab === 'test' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Exam Configuration Form */}
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-            <h2 className="font-display text-base font-semibold text-slate-900">
+          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Configure Specialized Exam Timer
             </h2>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Subject
                 </label>
                 <input
@@ -880,11 +1204,11 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="e.g., Physics"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Paper Name (Optional)
                 </label>
                 <input
@@ -892,14 +1216,14 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   value={paperName}
                   onChange={(e) => setPaperName(e.target.value)}
                   placeholder="e.g., Paper 1 Set A"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Exam Type
                 </label>
                 <select
@@ -907,7 +1231,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   onChange={(e) =>
                     setExamType(e.target.value as (typeof EXAM_TYPES)[number])
                   }
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 >
                   {EXAM_TYPES.map((type) => (
                     <option key={type} value={type}>
@@ -919,7 +1243,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
               {examType === 'Other' ? (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                     Type Name
                   </label>
                   <input
@@ -927,19 +1251,19 @@ export const TimersView: React.FC<TimersViewProps> = ({
                     value={customExamType}
                     onChange={(e) => setCustomExamType(e.target.value)}
                     placeholder="Enter exam name..."
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                   />
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                     Seating Time (Optional)
                   </label>
                   <input
                     type="datetime-local"
                     value={seatingTime}
                     onChange={(e) => setSeatingTime(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                   />
                 </div>
               )}
@@ -947,21 +1271,21 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
             {examType === 'Other' && (
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Seating Time (Optional — Schedules Exam)
                 </label>
                 <input
                   type="datetime-local"
                   value={seatingTime}
                   onChange={(e) => setSeatingTime(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                 />
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Reading Time (Minutes)
                 </label>
                 <input
@@ -970,11 +1294,11 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   max={240}
                   value={readingMinutes}
                   onChange={(e) => setReadingMinutes(Math.max(0, Number(e.target.value)))}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Writing Time (Minutes)
                 </label>
                 <input
@@ -983,15 +1307,15 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   max={600}
                   value={writingMinutes}
                   onChange={(e) => setWritingMinutes(Math.max(1, Number(e.target.value)))}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-100 pt-3">
-              <label className="flex items-center justify-between text-xs font-medium text-slate-700 cursor-pointer">
+            <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+              <label className="flex items-center justify-between text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                 <span className="flex items-center gap-2">
-                  <Bell className="h-3.5 w-3.5 text-blue-600" />
+                  <Bell className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                   Enable Time Lapse Exam Alarms
                 </span>
                 <input
@@ -1001,7 +1325,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   className="h-4 w-4 rounded border-slate-300 text-blue-600"
                 />
               </label>
-              <label className="flex items-center justify-between text-xs font-medium text-slate-700 cursor-pointer">
+              <label className="flex items-center justify-between text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                 <span>Hourly Interval Alarm (if interval &gt; 1 hr)</span>
                 <input
                   type="checkbox"
@@ -1014,19 +1338,19 @@ export const TimersView: React.FC<TimersViewProps> = ({
               <button
                 type="button"
                 onClick={playPhaseStartBell}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
                 <Volume2 className="h-3.5 w-3.5" />
                 Test Exam Bell Sound
               </button>
             </div>
 
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-1">
-              <div className="text-[11px] font-semibold text-slate-700">
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 p-3 space-y-1">
+              <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                 Automated Alarm Checkpoints:
               </div>
               {checkpointPreview.map((cp, idx) => (
-                <div key={idx} className="text-[11px] text-slate-600 tabular-nums">
+                <div key={idx} className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
                   · {cp}
                 </div>
               ))}
@@ -1045,9 +1369,9 @@ export const TimersView: React.FC<TimersViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleScheduleOrStartExam('schedule')}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap"
                 >
-                  <CalendarClock className="h-4 w-4 text-blue-600" />
+                  <CalendarClock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   Schedule Seating
                 </button>
               )}
@@ -1190,16 +1514,16 @@ export const TimersView: React.FC<TimersViewProps> = ({
             </div>
 
             {/* Scheduled Exams List */}
-            <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-              <h3 className="font-display text-base font-semibold text-slate-900">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+              <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 Scheduled & Saved Exams
               </h3>
               {exams.length === 0 ? (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   No scheduled exams yet. Use "Schedule Seating" or "Start Exam Now" to store sessions.
                 </p>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {exams.map((ex) => {
                     const label =
                       ex.examType === 'Other'
@@ -1211,10 +1535,10 @@ export const TimersView: React.FC<TimersViewProps> = ({
                         className="flex flex-wrap items-center justify-between gap-3 py-3"
                       >
                         <div>
-                          <div className="text-sm font-medium text-slate-900">
+                          <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                             {ex.subject} {ex.paperName ? `— ${ex.paperName}` : ''}
                           </div>
-                          <div className="mt-0.5 text-xs text-slate-500 tabular-nums">
+                          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                             {label} · Read {ex.readingMinutes}m / Write{' '}
                             {ex.writingMinutes}m
                             {ex.seatingTime
@@ -1240,14 +1564,14 @@ export const TimersView: React.FC<TimersViewProps> = ({
                                 immediate: !ex.seatingTime,
                               })
                             }
-                            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                           >
                             Load Timer
                           </button>
                           <button
                             type="button"
                             onClick={() => setDeleteExamTarget(ex)}
-                            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            className="rounded p-1.5 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600"
                             aria-label="Delete scheduled exam"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1266,7 +1590,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* TAB 2: BASIC TIMERS */}
       {activeTab === 'basic' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-white p-8 flex flex-col items-center justify-center space-y-6">
+          <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 flex flex-col items-center justify-center space-y-6">
             <div className="flex flex-wrap items-center justify-center gap-2">
               {[
                 { label: 'Pomodoro (25m)', min: 25 },
@@ -1284,14 +1608,14 @@ export const TimersView: React.FC<TimersViewProps> = ({
                     setBasicMinutes(preset.min);
                     setBasicRemainingSec(preset.min * 60);
                   }}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   {preset.label}
                 </button>
               ))}
             </div>
 
-            <div className="font-mono text-6xl font-bold tracking-tight text-slate-900 tabular-nums">
+            <div className="font-mono text-6xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
               {formatHMS(basicRemainingSec)}
             </div>
 
@@ -1301,7 +1625,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                 value={basicLabel}
                 onChange={(e) => setBasicLabel(e.target.value)}
                 placeholder="Session Label"
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
               />
               <input
                 type="number"
@@ -1315,7 +1639,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   setBasicMinutes(m);
                   setBasicRemainingSec(m * 60);
                 }}
-                className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+                className="w-24 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
               />
             </div>
 
@@ -1354,7 +1678,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   setBasicTargetEndMs(null);
                   setBasicRemainingSec(basicMinutes * 60);
                 }}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
               >
                 <RotateCcw className="h-4 w-4" />
                 Reset
@@ -1362,28 +1686,30 @@ export const TimersView: React.FC<TimersViewProps> = ({
             </div>
           </div>
 
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-            <h3 className="font-display text-base font-semibold text-slate-900">
+          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Recent Study Timer Logs
             </h3>
             {studyLogs.length === 0 ? (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Completed timer and stopwatch sessions will appear here.
               </p>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-80 lg:overflow-y-auto">
                 {studyLogs.slice(0, 12).map((log) => (
                   <div
                     key={log.id}
                     className="flex items-center justify-between py-2.5 text-xs"
                   >
                     <div>
-                      <div className="font-medium text-slate-800">{log.label}</div>
-                      <div className="text-slate-400 capitalize">
+                      <div className="font-medium text-slate-800 dark:text-slate-100">
+                        {log.label}
+                      </div>
+                      <div className="text-slate-400 dark:text-slate-500 capitalize">
                         {log.mode.replace('_', ' ')}
                       </div>
                     </div>
-                    <span className="font-mono font-semibold text-slate-700 tabular-nums">
+                    <span className="font-mono font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
                       {formatHMS(log.durationSeconds)}
                     </span>
                   </div>
@@ -1396,7 +1722,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
       {/* TAB 3: MICROSECOND STOPWATCH */}
       {activeTab === 'stopwatch' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-8">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-8">
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center">
             <div className="text-xs font-medium text-slate-400">
               High-Precision Microsecond Stopwatch (HH:MM:SS · ms · µs)
@@ -1464,25 +1790,25 @@ export const TimersView: React.FC<TimersViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
+                  <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
                     <th className="py-2 pr-4 font-medium">Lap</th>
                     <th className="py-2 pr-4 font-medium">Split Time</th>
                     <th className="py-2 font-medium text-right">Total Elapsed</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono tabular-nums">
                   {laps.map((lap) => {
                     const split = formatMicrosecondStopwatch(lap.splitUs);
                     const total = formatMicrosecondStopwatch(lap.totalUs);
                     return (
                       <tr key={lap.index}>
-                        <td className="py-2.5 pr-4 font-semibold text-slate-700">
+                        <td className="py-2.5 pr-4 font-semibold text-slate-700 dark:text-slate-200">
                           Lap {lap.index}
                         </td>
-                        <td className="py-2.5 pr-4 text-slate-600">
+                        <td className="py-2.5 pr-4 text-slate-600 dark:text-slate-300">
                           {split.hms}.{split.ms}.{split.us} µs
                         </td>
-                        <td className="py-2.5 text-right text-slate-900">
+                        <td className="py-2.5 text-right text-slate-900 dark:text-slate-100">
                           {total.hms}.{total.ms}.{total.us} µs
                         </td>
                       </tr>
@@ -1498,39 +1824,39 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* TAB 4: PRO STUDY TIME LOGGER (IN/OUT - 2.5% DEDUCTION + OPTIONAL SLEEP) */}
       {activeTab === 'study-logger' &&
         (!isEffectiveProOrAdmin ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center space-y-3">
-            <Lock className="mx-auto h-6 w-6 text-blue-600" />
-            <h2 className="font-display text-lg font-bold text-slate-900">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-3">
+            <Lock className="mx-auto h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
               Study Time Logger Requires Pro Plan
             </h2>
-            <p className="mx-auto max-w-lg text-xs text-slate-600">
+            <p className="mx-auto max-w-lg text-xs text-slate-600 dark:text-slate-300">
               Track In &amp; Out study punches, optional sleep deductions, and automatic 2.5% break overhead subtraction with Pro (500 pts/month or 5,100 pts/year).
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <ClipboardCheck className="h-4 w-4 text-blue-600" />
-                <h2 className="font-display text-base font-semibold text-slate-900">
+            <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <ClipboardCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Study Time Logger (In / Out · Total − 2.5% − Optional Sleep)
                 </h2>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Session Label / Subject
                 </label>
                 <input
                   type="text"
                   value={loggerLabel}
                   onChange={(e) => setLoggerLabel(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Optional Sleep / Rest Time (Minutes)
                 </label>
                 <input
@@ -1538,19 +1864,19 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   min={0}
                   value={sleepMinutesInput}
                   onChange={(e) => setSleepMinutesInput(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:border-blue-500 focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                 />
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
-                <div className="text-xs font-semibold text-slate-800">
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-3">
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                   Live Punch In / Punch Out (Persists Even If Page Closes)
                 </div>
                 {punchInMs ? (
                   <div className="space-y-3">
-                    <div className="text-xs text-slate-600 tabular-nums">
+                    <div className="text-xs text-slate-600 dark:text-slate-300 tabular-nums">
                       Punched IN at:{' '}
-                      <strong className="text-slate-900">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {new Date(punchInMs).toLocaleString()}
                       </strong>
                     </div>
@@ -1569,7 +1895,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                           setPunchInMs(null);
                           localStorage.removeItem(STUDY_PUNCH_KEY);
                         }}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600"
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-600 dark:text-slate-300"
                       >
                         Cancel Punch
                       </button>
@@ -1586,27 +1912,31 @@ export const TimersView: React.FC<TimersViewProps> = ({
                 )}
               </div>
 
-              <div className="border-t border-slate-100 pt-4 space-y-3">
-                <div className="text-xs font-semibold text-slate-800">
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-100">
                   Or Enter Manual In &amp; Out Window
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-[11px] text-slate-500">In Time</label>
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400">
+                      In Time
+                    </label>
                     <input
                       type="datetime-local"
                       value={manualInTime}
                       onChange={(e) => setManualInTime(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500">Out Time</label>
+                    <label className="block text-[11px] text-slate-500 dark:text-slate-400">
+                      Out Time
+                    </label>
                     <input
                       type="datetime-local"
                       value={manualOutTime}
                       onChange={(e) => setManualOutTime(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs tabular-nums focus:border-blue-500 focus:outline-none"
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100 tabular-nums focus:border-blue-500 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -1619,32 +1949,32 @@ export const TimersView: React.FC<TimersViewProps> = ({
                       new Date(manualOutTime).getTime()
                     )
                   }
-                  className="rounded-lg border border-slate-300 bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                  className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-900 dark:bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50"
                 >
                   Calculate &amp; Log (-2.5% Deduction)
                 </button>
               </div>
 
               {loggerMsg && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-xs text-blue-900">
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 px-3.5 py-2.5 text-xs text-blue-900 dark:text-blue-200">
                   {loggerMsg}
                 </div>
               )}
             </div>
 
-            <div className="lg:col-span-6 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-              <h3 className="font-display text-base font-semibold text-slate-900">
+            <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+              <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 Logged Study Time History
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Formula: <code className="font-mono">Net Study = (Total − Optional Sleep) × 0.975</code> (−2.5% adjustment).
               </p>
               {studyLogs.filter((l) => l.mode === 'study_logger').length === 0 ? (
-                <p className="py-8 text-center text-xs text-slate-500">
+                <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
                   No study logger entries yet.
                 </p>
               ) : (
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-96 lg:overflow-y-auto">
                   {studyLogs
                     .filter((l) => l.mode === 'study_logger')
                     .map((log) => (
@@ -1653,12 +1983,14 @@ export const TimersView: React.FC<TimersViewProps> = ({
                         className="flex items-center justify-between gap-3 py-3 text-xs"
                       >
                         <div className="min-w-0">
-                          <div className="font-semibold text-slate-900">{log.label}</div>
-                          <div className="text-[11px] text-slate-400 tabular-nums">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">
+                            {log.label}
+                          </div>
+                          <div className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">
                             {new Date(log.createdAt).toLocaleString()}
                           </div>
                         </div>
-                        <span className="font-mono font-bold text-emerald-700 tabular-nums shrink-0">
+                        <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 tabular-nums shrink-0">
                           {formatHMS(log.durationSeconds)}
                         </span>
                       </div>
@@ -1672,16 +2004,16 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* Fullscreen Exit Warning Modal */}
       {fullscreenWarningOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/75 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-md rounded-xl border border-red-200 dark:border-red-900 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400">
                 <ShieldAlert className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-display text-base font-bold text-slate-900">
+                <h3 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
                   Fullscreen Exited — Exam Paused
                 </h3>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   Exam conditions require fullscreen mode. Your exam timer has been paused automatically to preserve integrity.
                 </p>
               </div>
@@ -1690,7 +2022,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
               <button
                 type="button"
                 onClick={() => setFullscreenWarningOpen(false)}
-                className="rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
               >
                 Stay Paused
               </button>

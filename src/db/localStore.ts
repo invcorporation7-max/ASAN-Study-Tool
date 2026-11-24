@@ -268,6 +268,19 @@ export interface StoreContributorFile {
   createdAt: Date;
 }
 
+export interface StoreExamCountdown {
+  id: number;
+  userId: number | null;
+  scope: string;
+  title: string;
+  category: string;
+  targetDate: string;
+  targetTime: string;
+  pinnedByDefault: boolean;
+  createdByLabel: string;
+  createdAt: Date;
+}
+
 interface LocalStoreData {
   seq: Record<string, number>;
   settings: {
@@ -291,6 +304,7 @@ interface LocalStoreData {
   examBlueprints: StoreExamBlueprint[];
   contributorFolders: StoreContributorFolder[];
   contributorFiles: StoreContributorFile[];
+  examCountdowns: StoreExamCountdown[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
@@ -379,6 +393,9 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
   (data.contributorFiles || []).forEach((cfi) => {
     cfi.createdAt = toDate(cfi.createdAt);
   });
+  (data.examCountdowns || []).forEach((ec) => {
+    ec.createdAt = toDate(ec.createdAt);
+  });
   if (!data.settings || typeof data.settings.contributorWeeklyPoints !== 'number') {
     data.settings = { contributorWeeklyPoints: 120 };
   }
@@ -412,6 +429,7 @@ export function getLocalStore(): LocalStoreData {
         examBlueprints: parsed.examBlueprints || [],
         contributorFolders: parsed.contributorFolders || [],
         contributorFiles: parsed.contributorFiles || [],
+        examCountdowns: parsed.examCountdowns || [],
       });
       return cachedStore;
     } catch {
@@ -438,6 +456,7 @@ export function getLocalStore(): LocalStoreData {
     examBlueprints: [],
     contributorFolders: [],
     contributorFiles: [],
+    examCountdowns: [],
   };
   persistLocalStore();
   return cachedStore;

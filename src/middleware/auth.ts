@@ -3,7 +3,12 @@ import type { NextFunction, Request, Response } from 'express';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import firebaseConfig from '../../firebase-applet-config.json' with { type: 'json' };
 import { adminAuth } from '../lib/firebase-admin.ts';
-import { ADMIN_OWNER_EMAIL } from '../db/localStore.ts';
+import {
+  ensureDatabaseSchema,
+  getDatabaseStatus,
+  isPostgresConfigured,
+} from '../db/index.ts';
+import { ADMIN_OWNER_EMAIL, isDbUnavailableError } from '../db/localStore.ts';
 import { getOrCreateUser, getUserById } from '../db/users.ts';
 
 const SESSION_SECRET =
@@ -144,6 +149,18 @@ export const requireAuth = async (
 
   const token = authHeader.split('Bearer ')[1];
 
+  // Ensure configured Postgres is awake before loading user permissions/roles
+  if (isPostgresConfigured() && !getDatabaseStatus().connected) {
+    const connected = await ensureDatabaseSchema();
+    if (!connected) {
+      return res.status(503).json({
+        error: 'Database is waking up / connecting. Please wait a moment...',
+        code: 'DB_CONNECTING',
+        database: getDatabaseStatus(),
+      });
+    }
+  }
+
   // 1. Non-Google Email+Password Local Session Token
   if (token.startsWith('local.')) {
     const session = verifyLocalSessionToken(token);
@@ -167,6 +184,16 @@ export const requireAuth = async (
       return next();
     } catch (error) {
       console.error('Error synchronizing password session:', error);
+      if (
+        (error as { code?: string })?.code === 'DB_CONNECTING' ||
+        (isPostgresConfigured() && isDbUnavailableError(error))
+      ) {
+        return res.status(503).json({
+          error: 'Database is waking up / connecting. Please wait a moment...',
+          code: 'DB_CONNECTING',
+          database: getDatabaseStatus(),
+        });
+      }
       return res.status(500).json({ error: 'Unable to load account profile.' });
     }
   }
@@ -210,8 +237,86 @@ export const requireAuth = async (
     next();
   } catch (error) {
     console.error('Error synchronizing user workspace profile:', error);
+    if (
+      (error as { code?: string })?.code === 'DB_CONNECTING' ||
+      (isPostgresConfigured() && isDbUnavailableError(error))
+    ) {
+      return res.status(503).json({
+        error: 'Database is waking up / connecting. Please wait a moment...',
+        code: 'DB_CONNECTING',
+        database: getDatabaseStatus(),
+      });
+    }
     return res.status(500).json({ error: 'Unable to load workspace profile. Please try again.' });
   }
+};
+
+export const optionalAuth = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+  const token = authHeader.split('Bearer ')[1];
+  if (!token) return next();
+
+  if (token.startsWith('local.')) {
+    const session = verifyLocalSessionToken(token);
+    if (!session) return next();
+    try {
+      const existing = await getUserById(session.userId);
+      if (!existing) return next();
+      const synced = await getOrCreateUser(
+        existing.uid,
+        existing.email,
+        existing.displayName,
+        existing.photoUrl
+      );
+      req.user = { uid: synced.uid, email: synced.email };
+      req.dbUser = { ...(synced as unknown as AuthUserRecord), authMode: 'password' };
+      req.authMode = 'password';
+    } catch {
+      // fallback as guest
+    }
+    return next();
+  }
+
+  try {
+    let verifiedUser: {
+      uid: string;
+      email?: string;
+      name?: string;
+      picture?: string;
+    } | null = null;
+    try {
+      const decodedToken = await adminAuth.verifyIdToken(token);
+      verifiedUser = {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        name: decodedToken.name,
+        picture: decodedToken.picture,
+      };
+    } catch {
+      verifiedUser = await verifyFirebaseViaRest(token);
+    }
+    if (verifiedUser) {
+      req.user = verifiedUser;
+      req.authMode = 'google';
+      const dbUser = await getOrCreateUser(
+        verifiedUser.uid,
+        verifiedUser.email || '',
+        verifiedUser.name || undefined,
+        verifiedUser.picture || undefined
+      );
+      req.dbUser = { ...(dbUser as unknown as AuthUserRecord), authMode: 'google' };
+    }
+  } catch {
+    // ignore optional auth failures and treat as guest
+  }
+  return next();
 };
 
 export const requireAdmin = (

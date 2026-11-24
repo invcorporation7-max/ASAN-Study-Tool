@@ -414,28 +414,28 @@ export const ContributorConsoleView: React.FC = () => {
   if (!isApprovedContributor) {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 text-red-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400">
               <FolderUp className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="font-display text-lg font-bold text-slate-900">
+              <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
                 Contributors&apos; Console
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Requires an approved Contributor Tag to create contribution folders, organize PDFs/Word docs/images, and upload full folders.
               </p>
             </div>
           </div>
 
           {dbUser?.contributorRequested ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="rounded-lg border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 p-4 text-sm text-amber-800 dark:text-amber-300">
               Your Contributor Tag request is pending Admin / Super review. You will receive Tool Mail and a red contributor glow badge once approved.
             </div>
           ) : (
-            <div className="space-y-3 border-t border-slate-100 pt-4">
-              <label className="block text-xs font-medium text-slate-700">
+            <div className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                 Request Admin for Contributor Tag (sends Tool Mail to Admin &amp; Super)
               </label>
               <textarea
@@ -443,7 +443,7 @@ export const ContributorConsoleView: React.FC = () => {
                 value={requestNote}
                 onChange={(e) => setRequestNote(e.target.value)}
                 placeholder="Briefly mention the subjects, PDFs, or folders you plan to contribute..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
               />
               <button
                 type="button"
@@ -458,12 +458,12 @@ export const ContributorConsoleView: React.FC = () => {
           )}
 
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
           {notice && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
               {notice}
             </div>
           )}
@@ -475,20 +475,20 @@ export const ContributorConsoleView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h2 className="font-display text-xl font-bold text-slate-900">
+              <h2 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
                 Contributors&apos; Console
               </h2>
-              <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+              <span className="rounded border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/50 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
                 @{dbUser?.username || 'contributor'}
               </span>
             </div>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-slate-600 dark:text-slate-400">
               Organize PDFs, Word docs, and images inside nested subfolders.
-              Personal Drive target: <code className="rounded bg-slate-100 px-1 py-0.5">ASAN-user-content/Contributions</code> · Master Drive folder: <code className="rounded bg-slate-100 px-1 py-0.5">ASAN-Master-Folder/{dbUser?.username || 'username'}</code>
+              Personal Drive target: <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-slate-800 dark:text-slate-200">ASAN-user-content/Contributions</code> · Master Drive folder: <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-slate-800 dark:text-slate-200">ASAN-Master-Folder/{dbUser?.username || 'username'}</code>
             </p>
           </div>
 
@@ -496,7 +496,7 @@ export const ContributorConsoleView: React.FC = () => {
             <button
               type="button"
               onClick={() => void loadWorkspace()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
@@ -529,39 +529,39 @@ export const ContributorConsoleView: React.FC = () => {
         </div>
 
         {!isWorkspaceEnabled && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs text-slate-600">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-xs text-slate-600 dark:text-slate-300">
             Logged in with Email &amp; Password: Google Drive sync is hidden. All subfolders and uploaded files are stored cleanly in ASAN storage and queued for Admin Master Folder sync.
           </div>
         )}
 
         {busyMessage && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-medium text-blue-700">
+          <div className="rounded-lg border border-blue-200 dark:border-blue-800/70 bg-blue-50 dark:bg-blue-950/40 px-3.5 py-2 text-xs font-medium text-blue-700 dark:text-blue-300">
             {busyMessage}
           </div>
         )}
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2 text-xs text-red-700">
+          <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3.5 py-2 text-xs text-red-700 dark:text-red-300">
             {error}
           </div>
         )}
         {notice && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs text-emerald-700">
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2 text-xs text-emerald-700 dark:text-emerald-300">
             {notice}
           </div>
         )}
       </div>
 
       {/* Controls Toolbar: Breadcrumbs + Create Subfolder + Upload Files / Upload Whole Folder */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
           <nav className="flex flex-wrap items-center gap-1 text-xs font-medium">
             <button
               type="button"
               onClick={() => setCurrentFolderId(null)}
               className={`rounded px-2 py-1 ${
                 currentFolderId === null
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               Contributions Root ({dbUser?.username})
@@ -574,8 +574,8 @@ export const ContributorConsoleView: React.FC = () => {
                   onClick={() => setCurrentFolderId(bc.id)}
                   className={`rounded px-2 py-1 ${
                     currentFolderId === bc.id
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   {bc.name}
@@ -584,7 +584,7 @@ export const ContributorConsoleView: React.FC = () => {
             ))}
           </nav>
 
-          <div className="flex items-center gap-1 border border-slate-200 rounded-lg p-0.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5 text-xs">
             {(
               [
                 ['all', 'All'],
@@ -600,8 +600,8 @@ export const ContributorConsoleView: React.FC = () => {
                 onClick={() => setTypeFilter(k)}
                 className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
                   typeFilter === k
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 {lbl}
@@ -617,14 +617,14 @@ export const ContributorConsoleView: React.FC = () => {
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder={`New subfolder inside "${currentFolder?.name || 'Root'}"...`}
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
             <button
               type="submit"
               disabled={creatingFolder || !newFolderName.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
             >
-              <FolderPlus className="h-4 w-4 text-blue-600" />
+              <FolderPlus className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               Create Subfolder
             </button>
           </form>
@@ -650,7 +650,7 @@ export const ContributorConsoleView: React.FC = () => {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={Boolean(busyMessage)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 px-3.5 py-2 text-sm font-medium text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
               Upload PDFs / Docs / Images
@@ -669,22 +669,22 @@ export const ContributorConsoleView: React.FC = () => {
       </div>
 
       {/* Subfolders Grid */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-sm font-semibold text-slate-900">
+          <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
             Subfolders ({childFolders.length})
           </h3>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
             Total folders: {folders.length} · Total files: {files.length}
           </span>
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-sm text-slate-500">
+          <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             Loading contributor directory...
           </div>
         ) : childFolders.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 py-5 text-center text-xs text-slate-500">
+          <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 py-5 text-center text-xs text-slate-500 dark:text-slate-400">
             No subfolders inside this directory yet. Create one above or upload a whole folder!
           </div>
         ) : (
@@ -692,7 +692,7 @@ export const ContributorConsoleView: React.FC = () => {
             {childFolders.map((folder) => (
               <div
                 key={folder.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3.5 py-3 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors"
               >
                 <button
                   type="button"
@@ -701,10 +701,10 @@ export const ContributorConsoleView: React.FC = () => {
                 >
                   <Folder className="h-5 w-5 text-amber-500 shrink-0" />
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-slate-900">
+                    <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {folder.name}
                     </div>
-                    <div className="truncate text-[11px] text-slate-500">
+                    <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                       {folder.path}
                     </div>
                   </div>
@@ -714,7 +714,7 @@ export const ContributorConsoleView: React.FC = () => {
                   onClick={() =>
                     setConfirmDelete({ kind: 'folder', id: folder.id, label: folder.name })
                   }
-                  className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  className="rounded p-1.5 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
                   title="Delete folder"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -725,20 +725,20 @@ export const ContributorConsoleView: React.FC = () => {
         )}
 
         {/* Files Table */}
-        <div className="pt-3 border-t border-slate-100 space-y-3">
-          <h3 className="font-display text-sm font-semibold text-slate-900">
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+          <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
             Files in {currentFolder ? `"${currentFolder.name}"` : 'Contributions Root'} ({childFiles.length})
           </h3>
 
           {childFiles.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-xs text-slate-500">
+            <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 py-8 text-center text-xs text-slate-500 dark:text-slate-400">
               No files matching this filter in the current folder. Upload PDFs, Word documents (.doc/.docx), or images above.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wide">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                     <th className="py-2 pr-3 font-semibold">File</th>
                     <th className="py-2 pr-3 font-semibold">Type</th>
                     <th className="py-2 pr-3 font-semibold">Size</th>
@@ -746,31 +746,31 @@ export const ContributorConsoleView: React.FC = () => {
                     <th className="py-2 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {childFiles.map((f) => {
                     const kind = classifyFileKind(f.fileName, f.mimeType);
                     return (
-                      <tr key={f.id} className="hover:bg-slate-50">
+                      <tr key={f.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="py-2.5 pr-3">
                           <div className="flex items-center gap-2">
                             {kind === 'image' ? (
-                              <FileImage className="h-4 w-4 text-emerald-600 shrink-0" />
+                              <FileImage className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             ) : (
                               <FileText
                                 className={`h-4 w-4 shrink-0 ${
                                   kind === 'pdf'
-                                    ? 'text-red-600'
+                                    ? 'text-red-600 dark:text-red-400'
                                     : kind === 'word'
-                                      ? 'text-blue-600'
-                                      : 'text-slate-500'
+                                      ? 'text-blue-600 dark:text-blue-400'
+                                      : 'text-slate-500 dark:text-slate-400'
                                 }`}
                               />
                             )}
-                            <span className="font-medium text-slate-900">{f.fileName}</span>
+                            <span className="font-medium text-slate-900 dark:text-slate-100">{f.fileName}</span>
                           </div>
                         </td>
-                        <td className="py-2.5 pr-3 uppercase text-slate-500">{kind}</td>
-                        <td className="py-2.5 pr-3 text-slate-600 tabular-nums">
+                        <td className="py-2.5 pr-3 uppercase text-slate-500 dark:text-slate-400">{kind}</td>
+                        <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300 tabular-nums">
                           {formatBytes(f.fileSizeBytes)}
                         </td>
                         <td className="py-2.5 pr-3">
@@ -780,24 +780,24 @@ export const ContributorConsoleView: React.FC = () => {
                                 href={f.driveWebLink}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                                className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
                               >
                                 My Drive <ExternalLink className="h-3 w-3" />
                               </a>
                             ) : (
-                              <span className="text-slate-400">ASAN Storage</span>
+                              <span className="text-slate-400 dark:text-slate-500">ASAN Storage</span>
                             )}
                             {f.masterDriveWebLink ? (
                               <a
                                 href={f.masterDriveWebLink}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-violet-700 hover:underline"
+                                className="inline-flex items-center gap-1 text-violet-700 dark:text-violet-400 hover:underline"
                               >
                                 Master Folder <ExternalLink className="h-3 w-3" />
                               </a>
                             ) : (
-                              <span className="text-amber-600">· Queued for Master</span>
+                              <span className="text-amber-600 dark:text-amber-400">· Queued for Master</span>
                             )}
                           </div>
                         </td>
@@ -806,7 +806,7 @@ export const ContributorConsoleView: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => void downloadContributorFile(f.id, f.fileName)}
-                              className="rounded border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
+                              className="rounded border border-slate-200 dark:border-slate-700 p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                               title="Download file"
                             >
                               <Download className="h-3.5 w-3.5" />
@@ -816,7 +816,7 @@ export const ContributorConsoleView: React.FC = () => {
                               onClick={() =>
                                 setConfirmDelete({ kind: 'file', id: f.id, label: f.fileName })
                               }
-                              className="rounded border border-slate-200 p-1.5 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                              className="rounded border border-slate-200 dark:border-slate-700 p-1.5 text-slate-400 hover:border-red-200 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400"
                               title="Delete file"
                             >
                               <Trash2 className="h-3.5 w-3.5" />

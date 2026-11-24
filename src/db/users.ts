@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { desc, eq, or } from 'drizzle-orm';
-import { db } from './index.ts';
+import { db, isPostgresConfigured } from './index.ts';
 import {
   ADMIN_OWNER_EMAIL,
   CONSTANT_ADMIN_LICENSE_KEY,
@@ -847,8 +847,15 @@ export async function getOrCreateUser(
       console.error('getOrCreateUser failed:', error);
       throw new Error('Failed to synchronize user profile.', { cause: error });
     }
+    if (isPostgresConfigured()) {
+      const dbErr = new Error(
+        'Database is waking up or temporarily unreachable. Please wait until connected.'
+      ) as Error & { code?: string };
+      dbErr.code = 'DB_CONNECTING';
+      throw dbErr;
+    }
 
-    // Fallback to localStore
+    // Fallback to localStore (only when Postgres is not configured)
     const store = getLocalStore();
     let user =
       store.users.find((u) => u.uid === uid) ||
@@ -1154,13 +1161,13 @@ export async function listPublicCreditsContributors() {
         photoUrl: users.photoUrl,
       })
       .from(users);
-    return rows.filter((u) => u.role === 'contributor' && u.contributorApproved);
+    return rows.filter((u) => Boolean(u.contributorApproved));
   } catch (error) {
     if (!isDbUnavailableError(error)) {
       throw new Error('Failed to load contributors list.', { cause: error });
     }
     return getLocalStore()
-      .users.filter((u) => u.role === 'contributor' && u.contributorApproved)
+      .users.filter((u) => Boolean(u.contributorApproved))
       .map((u) => ({
         id: u.id,
         displayName: u.displayName,
@@ -2010,6 +2017,13 @@ export async function getUserById(userId: number) {
     return u || null;
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
+    if (isPostgresConfigured()) {
+      const dbErr = new Error(
+        'Database is waking up or temporarily unreachable. Please wait until connected.'
+      ) as Error & { code?: string };
+      dbErr.code = 'DB_CONNECTING';
+      throw dbErr;
+    }
     return getLocalStore().users.find((u) => u.id === userId) || null;
   }
 }

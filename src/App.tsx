@@ -11,6 +11,7 @@ import {
   Cloud,
   CreditCard,
   Crown,
+  Database,
   FolderOpen,
   FolderUp,
   Globe,
@@ -19,18 +20,24 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  Loader2,
   LogIn,
   LogOut,
   Mail,
   Menu,
   MessageSquare,
+  Moon,
   MoreHorizontal,
   Pin,
   PinOff,
+  RefreshCw,
   Search,
   ShieldCheck,
+  Sigma,
   Sparkles,
+  Sun,
   Users,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { AdminView } from './components/AdminView';
@@ -52,20 +59,24 @@ import { NotificationsView } from './components/NotificationsView';
 import { PdfStudioView } from './components/PdfStudioView';
 import { ProGateCard } from './components/ProGateCard';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallBanner';
+import { SpecializedCalculatorsView } from './components/SpecializedCalculatorsView';
 import { StudyMaterialView } from './components/StudyMaterialView';
 import { SubscriptionsView } from './components/SubscriptionsView';
 import { SuperView } from './components/SuperView';
 import { TasksView } from './components/TasksView';
+import { TechnicalLoadingScreen } from './components/TechnicalLoadingScreen';
 import { TimersView } from './components/TimersView';
 import { UserAvatarBadge } from './components/UserAvatarBadge';
 import { WorkspaceView } from './components/WorkspaceView';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { initGoogleAnalytics, trackGa4PageView } from './lib/analytics';
-import { apiFetch } from './lib/api';
+import { apiFetch, apiOptionalAuthFetch, getPasswordSessionToken } from './lib/api';
 import { loadGuestWorkspace } from './lib/guestStore';
 import type {
   CalendarEventItem,
   ExamBlueprintItem,
+  ExamCountdownItem,
   ExamScheduleItem,
   InAppMessageItem,
   NavSection,
@@ -152,6 +163,15 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
     icon: Bell,
   },
   {
+    id: 'specialized-calculators',
+    label: 'Specialized Calculators',
+    description:
+      'Deterministic solvers for Calculus, Coordinate Geometry, Algebra, Vectors & 3D, and Trigonometry.',
+    category: 'Pro & Extended Tools',
+    icon: Sigma,
+    proOnly: true,
+  },
+  {
     id: 'pdf-tool',
     label: 'PDF Tool',
     description: 'A4 booklet imposition, whole PDF import, camera scan & cropping.',
@@ -170,10 +190,9 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
   {
     id: 'spectra',
     label: 'Spectra AI',
-    description: 'Connect and launch your external Spectra study portal.',
+    description: 'Currently unavailable — under development.',
     category: 'Pro & Extended Tools',
     icon: Globe,
-    proOnly: true,
   },
   {
     id: 'more',
@@ -226,6 +245,7 @@ const SECTION_LABELS: Record<NavSection, string> = {
   notes: 'My Notes',
   timers: 'Timers',
   calculator: 'fx-82MS Calc',
+  'specialized-calculators': 'Specialized Calculators',
   messages: 'Tool Mail',
   'study-materials': 'Study Material Notes',
   'contributor-console': "Contributors' Console",
@@ -282,6 +302,12 @@ const MainShell: React.FC = () => {
     isEffectiveProOrAdmin,
     setViewPlanMode,
     loading,
+    error: authError,
+    dbStatus,
+    dbStatusMessage,
+    dbRetryCount,
+    dbWaitSeconds,
+    retryDbConnection,
     permissionStep,
     savedAccounts,
     acceptDriveFolderPermissionStep,
@@ -291,10 +317,13 @@ const MainShell: React.FC = () => {
     switchAccount,
     startSwitchToNewLogin,
     removeSavedAccount,
+    continueFreeGuest,
     exitGuestToSignIn,
     signOutUser,
   } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const isProOrAdmin = isEffectiveProOrAdmin;
+  const hasSessionToken = Boolean(firebaseUser || dbUser || getPasswordSessionToken());
   const isSignedIn = Boolean(firebaseUser || dbUser);
 
   const [section, setSection] = useState<NavSection>('dashboard');
@@ -320,6 +349,7 @@ const MainShell: React.FC = () => {
   const [notebooks, setNotebooks] = useState<StudyNotebook[]>([]);
   const [notePages, setNotePages] = useState<StudyNotePage[]>([]);
   const [exams, setExams] = useState<ExamScheduleItem[]>([]);
+  const [countdowns, setCountdowns] = useState<ExamCountdownItem[]>([]);
   const [studyLogs, setStudyLogs] = useState<StudyLogItem[]>([]);
   const [studyMaterials, setStudyMaterials] = useState<StudyMaterialItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -371,11 +401,15 @@ const MainShell: React.FC = () => {
   const loadAllStudyData = useCallback(async () => {
     if (isGuest) {
       const guest = loadGuestWorkspace();
+      const serverCountdowns = await apiOptionalAuthFetch<ExamCountdownItem[]>(
+        '/api/countdowns'
+      ).catch(() => []);
       setTasks(guest.tasks);
       setEvents(guest.events);
       setNotebooks(guest.notebooks);
       setNotePages(guest.notePages);
       setExams(guest.exams);
+      setCountdowns([...serverCountdowns, ...(guest.countdowns || [])]);
       setStudyLogs(guest.studyLogs);
       setStudyMaterials([]);
       setNotifications([]);
@@ -387,7 +421,7 @@ const MainShell: React.FC = () => {
       return;
     }
 
-    if (!isSignedIn) return;
+    if (!dbUser) return;
     setDataLoading(true);
     setDataError(null);
     try {
@@ -396,6 +430,7 @@ const MainShell: React.FC = () => {
         eventsRes,
         nbRes,
         examsRes,
+        countdownsRes,
         logsRes,
         matRes,
         notifRes,
@@ -407,6 +442,7 @@ const MainShell: React.FC = () => {
         apiFetch<CalendarEventItem[]>('/api/events'),
         apiFetch<{ notebooks: StudyNotebook[]; pages: StudyNotePage[] }>('/api/notebooks'),
         apiFetch<ExamScheduleItem[]>('/api/exams'),
+        apiOptionalAuthFetch<ExamCountdownItem[]>('/api/countdowns').catch(() => []),
         apiFetch<StudyLogItem[]>('/api/study-logs'),
         apiFetch<{ materials: StudyMaterialItem[] }>('/api/study-materials').catch(() => ({
           materials: [],
@@ -421,6 +457,7 @@ const MainShell: React.FC = () => {
       setNotebooks(nbRes.notebooks);
       setNotePages(nbRes.pages);
       setExams(examsRes);
+      setCountdowns(countdownsRes);
       setStudyLogs(logsRes);
       setStudyMaterials(matRes.materials || []);
       setNotifications(notifRes);
@@ -435,13 +472,13 @@ const MainShell: React.FC = () => {
     } finally {
       setDataLoading(false);
     }
-  }, [isSignedIn, isGuest]);
+  }, [dbUser, isGuest]);
 
   useEffect(() => {
-    if (isSignedIn || isGuest) {
-      loadAllStudyData();
+    if (dbUser || isGuest) {
+      void loadAllStudyData();
     }
-  }, [isSignedIn, isGuest, loadAllStudyData]);
+  }, [dbUser, isGuest, loadAllStudyData]);
 
   // Close navbar popovers on outside click
   useEffect(() => {
@@ -697,15 +734,102 @@ const MainShell: React.FC = () => {
   }, [searchResults, searchCategory]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-600">
-        Loading ASAN-Study_tool...
-      </div>
-    );
+    return <TechnicalLoadingScreen />;
   }
 
-  if (!isSignedIn && !isGuest) {
+  if (!hasSessionToken && !isGuest) {
     return <AuthGate />;
+  }
+
+  // Prevent showing a misleading "0 pts · BASIC / non-admin / non-contributor" workspace while the database is still waking up
+  if (!isGuest && hasSessionToken && !dbUser) {
+    const isDelayedWake =
+      dbStatus === 'connecting' || dbStatus === 'offline' || dbWaitSeconds >= 2;
+    return (
+      <TechnicalLoadingScreen>
+        {isDelayedWake && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 text-slate-900">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100">
+                {dbStatus === 'offline' ? (
+                  <WifiOff className="h-5 w-5 text-amber-600" />
+                ) : (
+                  <Database className="h-5 w-5" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-600">
+                  Cloud Sync
+                </div>
+                <h1 className="font-display text-base font-bold text-slate-900">
+                  {dbStatus === 'offline'
+                    ? 'You Appear to Be Offline'
+                    : 'Connecting to Database — Please Wait'}
+                </h1>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed text-slate-600">
+              {dbStatus === 'offline'
+                ? 'An internet connection is required to restore your Pro plan, points, and Admin / Contributor roles from the database.'
+                : 'The server or PostgreSQL database is waking up after inactivity. Please wait until connected so your Pro plan, points, and Admin / Contributor permissions load accurately.'}
+            </p>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-600">1. Sign-In Session</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Verified{firebaseUser?.email ? ` (${firebaseUser.email})` : ''}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-600">2. Database &amp; Roles</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 tabular-nums">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {dbStatus === 'offline'
+                    ? 'Offline'
+                    : `Connecting${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : '...'}`}
+                </span>
+              </div>
+              {(dbStatusMessage || authError) && (
+                <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-500">
+                  {dbStatusMessage || authError}
+                  {dbRetryCount > 0 ? ` · Retry #${dbRetryCount}` : ''}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => void retryDbConnection()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-sky-700"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry Connection
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={continueFreeGuest}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Use Local Mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void signOutUser()}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </TechnicalLoadingScreen>
+    );
   }
 
   const handleNavClick = (id: NavSection) => {
@@ -727,17 +851,19 @@ const MainShell: React.FC = () => {
   };
 
   const renderSidebarContent = () => (
-    <div className="flex h-full flex-col justify-between bg-white border-r border-slate-200 px-4 py-5 overflow-y-auto">
+    <div className="flex h-full flex-col justify-between bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 px-4 py-5 overflow-y-auto">
       <div className="space-y-5">
-        <div className="flex items-center gap-2.5 px-2">
-          <img
-            src="/pwa-192x192.png"
-            alt="ASAN-Study_tool"
-            className="h-7 w-7 rounded-md object-cover shadow-xs shrink-0"
-          />
-          <span className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">
-            ASAN-Study_tool
-          </span>
+        <div className="flex items-center justify-between gap-2 px-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src="/pwa-192x192.png"
+              alt="ASAN-Study_tool"
+              className="h-7 w-7 rounded-md object-cover shadow-xs shrink-0"
+            />
+            <span className="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap truncate">
+              ASAN-Study_tool
+            </span>
+          </div>
         </div>
 
         <nav className="space-y-1" aria-label="Main navigation">
@@ -747,14 +873,14 @@ const MainShell: React.FC = () => {
             onClick={() => handleNavClick('dashboard')}
             className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               section === 'dashboard'
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <span className="flex items-center gap-3 min-w-0">
               <LayoutDashboard
                 className={`h-4 w-4 shrink-0 ${
-                  section === 'dashboard' ? 'text-blue-600' : 'text-slate-400'
+                  section === 'dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'
                 }`}
               />
               <span className="truncate">Dashboard</span>
@@ -766,14 +892,14 @@ const MainShell: React.FC = () => {
             onClick={() => handleNavClick('all-apps')}
             className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               section === 'all-apps'
-                ? 'bg-blue-50 text-blue-700'
-                : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <span className="flex items-center gap-3 min-w-0">
               <LayoutGrid
                 className={`h-4 w-4 shrink-0 ${
-                  section === 'all-apps' ? 'text-blue-600' : 'text-slate-400'
+                  section === 'all-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'
                 }`}
               />
               <span className="truncate">All Apps</span>
@@ -800,14 +926,14 @@ const MainShell: React.FC = () => {
                 onClick={() => handleNavClick(item.id)}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   active
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <span className="flex items-center gap-3 min-w-0">
                   <Icon
                     className={`h-4 w-4 shrink-0 ${
-                      active ? 'text-blue-600' : 'text-slate-400'
+                      active ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'
                     }`}
                   />
                   <span className="truncate">{item.label}</span>
@@ -832,16 +958,16 @@ const MainShell: React.FC = () => {
               onClick={() => handleNavClick('contributor-console')}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                 section === 'contributor-console'
-                  ? 'bg-emerald-50 text-emerald-800'
-                  : 'text-slate-700 hover:bg-emerald-50/60 hover:text-emerald-900'
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/30 hover:text-emerald-900 dark:hover:text-emerald-200'
               }`}
             >
               <span className="flex items-center gap-3 min-w-0">
                 <FolderUp
                   className={`h-4 w-4 shrink-0 ${
                     section === 'contributor-console'
-                      ? 'text-emerald-700'
-                      : 'text-emerald-600'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-emerald-600 dark:text-emerald-400'
                   }`}
                 />
                 <span className="truncate">Contributors&apos; Console</span>
@@ -855,19 +981,19 @@ const MainShell: React.FC = () => {
               onClick={() => handleNavClick('super')}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                 section === 'super'
-                  ? 'bg-violet-50 text-violet-900'
-                  : 'text-slate-700 hover:bg-violet-50/70 hover:text-violet-900'
+                  ? 'bg-violet-50 text-violet-900 dark:bg-violet-950/60 dark:text-violet-300'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-violet-50/70 dark:hover:bg-violet-950/30 hover:text-violet-900 dark:hover:text-violet-200'
               }`}
             >
               <span className="flex items-center gap-3 min-w-0">
                 <Crown
                   className={`h-4 w-4 shrink-0 ${
-                    section === 'super' ? 'text-violet-700' : 'text-violet-600'
+                    section === 'super' ? 'text-violet-700 dark:text-violet-400' : 'text-violet-600 dark:text-violet-400'
                   }`}
                 />
                 <span className="truncate">Super Console</span>
               </span>
-              <span className="text-[10px] font-bold text-rose-600">
+              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">
                 SUPER
               </span>
             </button>
@@ -879,14 +1005,14 @@ const MainShell: React.FC = () => {
               onClick={() => handleNavClick('admin')}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                 section === 'admin'
-                  ? 'bg-amber-50 text-amber-800'
-                  : 'text-slate-700 hover:bg-amber-50/60 hover:text-amber-900'
+                  ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-amber-50/60 dark:hover:bg-amber-950/30 hover:text-amber-900 dark:hover:text-amber-200'
               }`}
             >
               <span className="flex items-center gap-3 min-w-0">
                 <ShieldCheck
                   className={`h-4 w-4 shrink-0 ${
-                    section === 'admin' ? 'text-amber-700' : 'text-amber-600'
+                    section === 'admin' ? 'text-amber-700 dark:text-amber-400' : 'text-amber-600 dark:text-amber-400'
                   }`}
                 />
                 <span className="truncate">Admin Console</span>
@@ -896,7 +1022,7 @@ const MainShell: React.FC = () => {
         </nav>
       </div>
 
-      <div className="space-y-4 border-t border-slate-100 pt-4 mt-4">
+      <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
         <nav className="space-y-1" aria-label="Information navigation">
           {SECONDARY_NAV.map((item) => {
             const Icon = item.icon;
@@ -908,8 +1034,8 @@ const MainShell: React.FC = () => {
                 onClick={() => handleNavClick(item.id)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                   active
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -917,15 +1043,33 @@ const MainShell: React.FC = () => {
               </button>
             );
           })}
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              {theme === 'dark' ? (
+                <Sun className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              ) : (
+                <Moon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+              )}
+              <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-slate-400">
+              {theme === 'dark' ? 'ON' : 'OFF'}
+            </span>
+          </button>
         </nav>
 
         {isGuest ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-slate-900">
+              <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                 Free Tier (Local)
               </div>
-              <div className="truncate text-[11px] text-slate-500">
+              <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                 10 Notes · 150 Tasks max
               </div>
             </div>
@@ -941,7 +1085,7 @@ const MainShell: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 {dbUser && (
@@ -955,10 +1099,10 @@ const MainShell: React.FC = () => {
                   />
                 )}
                 <div className="min-w-0">
-                  <div className="truncate text-xs font-semibold text-slate-900">
+                  <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                     {dbUser?.displayName || firebaseUser?.displayName || 'Student'}
                   </div>
-                  <div className="truncate text-[11px] text-slate-500 tabular-nums">
+                  <div className="truncate text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                     {dbUser?.shortUid ? `${dbUser.shortUid} · ` : ''}
                     {effectivePlan.toUpperCase()}
                     {isSuper ? ' · SUPER' : dbUser?.role === 'admin' ? ' · ADMIN' : ''}
@@ -971,7 +1115,7 @@ const MainShell: React.FC = () => {
                   onClick={() => setSwitchModalOpen(true)}
                   title="Switch Account"
                   aria-label="Switch Account"
-                  className="rounded-md p-1.5 text-slate-500 hover:bg-white hover:text-blue-600"
+                  className="rounded-md p-1.5 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400"
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5" />
                 </button>
@@ -980,13 +1124,13 @@ const MainShell: React.FC = () => {
                   onClick={signOutUser}
                   title="Sign out"
                   aria-label="Sign out"
-                  className="rounded-md p-1.5 text-slate-500 hover:bg-white hover:text-red-600"
+                  className="rounded-md p-1.5 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-400"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-200/70 pt-1.5">
+            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-200/70 dark:border-slate-700 pt-1.5">
               <span className="truncate">
                 @{dbUser?.username} ·{' '}
                 {authMode === 'password' ? 'Password Auth' : 'Google Auth'}
@@ -994,7 +1138,7 @@ const MainShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSwitchModalOpen(true)}
-                className="font-semibold text-blue-600 hover:underline shrink-0 ml-2"
+                className="font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0 ml-2"
               >
                 Switch
               </button>
@@ -1006,7 +1150,7 @@ const MainShell: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-x-hidden">
       {/* Desktop Sidebar (256px) */}
       <aside className="no-print hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
         {renderSidebarContent()}
@@ -1025,28 +1169,28 @@ const MainShell: React.FC = () => {
 
       {/* Main Content Shell */}
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Top Navbar: Breadcrumb | Advanced Search | Notifications Bell + Switch/Plan CTA */}
-        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 sm:py-3">
+        {/* Top Navbar: Breadcrumb | Advanced Search | Theme Toggle + Notifications + Switch/Plan */}
+        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 sm:px-6 py-2.5 sm:py-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
-              className="lg:hidden rounded-lg border border-slate-200 p-1.5 text-slate-700"
+              className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-200"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
-            <div className="flex items-center gap-2 text-sm text-slate-500 truncate">
+            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 truncate">
               <img
                 src="/pwa-192x192.png"
                 alt=""
                 className="hidden sm:block h-6 w-6 rounded-md object-cover shrink-0"
               />
-              <span className="font-medium text-slate-800 whitespace-nowrap">
+              <span className="font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
                 ASAN-Study_tool
               </span>
               <span aria-hidden="true">/</span>
-              <span className="font-semibold text-slate-900 truncate">
+              <span className="font-semibold text-slate-900 dark:text-white truncate">
                 {SECTION_LABELS[section]}
               </span>
             </div>
@@ -1074,13 +1218,13 @@ const MainShell: React.FC = () => {
                   }
                 }}
                 placeholder="Search notes, tasks, mail, @users, UID..."
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-9 pr-3 py-1.5 text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none"
               />
             </div>
 
             {searchOpen && searchQuery.trim().length > 0 && (
-              <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:left-0 sm:right-0 sm:top-full mt-1.5 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-40">
-                <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px]">
+              <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:left-0 sm:right-0 sm:top-full mt-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden z-40">
+                <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/70 px-3 py-2 text-[11px]">
                   {(
                     [
                       { id: 'all', label: `All (${searchResults.length})` },
@@ -1098,7 +1242,7 @@ const MainShell: React.FC = () => {
                       className={`rounded-md px-2 py-1 font-medium transition-colors ${
                         searchCategory === cat.id
                           ? 'bg-blue-600 text-white'
-                          : 'text-slate-600 hover:bg-slate-200/70'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700'
                       }`}
                     >
                       {cat.label}
@@ -1107,11 +1251,11 @@ const MainShell: React.FC = () => {
                 </div>
 
                 {filteredSearchResults.length === 0 ? (
-                  <div className="px-4 py-3 text-xs text-slate-500">
+                  <div className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                     No matching items found for &ldquo;{searchQuery}&rdquo; in this category.
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto">
                     {filteredSearchResults.map((res) => (
                       <button
                         key={res.id}
@@ -1120,22 +1264,22 @@ const MainShell: React.FC = () => {
                           handleNavClick(res.section);
                           setSearchQuery('');
                         }}
-                        className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
+                        className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
                       >
                         <div className="min-w-0 space-y-0.5">
-                          <div className="truncate text-xs font-semibold text-slate-900">
+                          <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                             {res.title}
                           </div>
-                          <div className="truncate text-[11px] text-slate-500">
+                          <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                             {res.subtitle}
                           </div>
                           {res.snippet && (
-                            <div className="truncate text-[11px] text-blue-700/90">
+                            <div className="truncate text-[11px] text-blue-700/90 dark:text-blue-400">
                               {res.snippet}
                             </div>
                           )}
                         </div>
-                        <span className="text-[11px] font-medium text-blue-600 shrink-0 pt-0.5">
+                        <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 shrink-0 pt-0.5">
                           Open
                         </span>
                       </button>
@@ -1146,14 +1290,28 @@ const MainShell: React.FC = () => {
             )}
           </div>
 
-          {/* Right: Notification Bell Popover + Switch + Points/Plan CTA */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Right: Theme Toggle + Notification Bell + Switch + Points/Plan CTA */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              {theme === 'dark' ? (
+                <Sun className="h-4 w-4 text-amber-400" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
+
             <div ref={bellRef} className="relative">
               <button
                 type="button"
                 onClick={() => setBellOpen((v) => !v)}
                 aria-label="Notifications"
-                className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                className="relative rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-900"
               >
                 <Bell className="h-4 w-4" />
                 {unreadNotifCount > 0 && (
@@ -1164,21 +1322,21 @@ const MainShell: React.FC = () => {
               </button>
 
               {bellOpen && (
-                <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full mt-2 sm:w-80 rounded-xl border border-slate-200 bg-white shadow-lg z-40 overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-                    <span className="text-xs font-semibold text-slate-900">
+                <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full mt-2 sm:w-80 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg z-40 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-4 py-2.5">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                       Notifications
                     </span>
                     <button
                       type="button"
                       onClick={() => handleNavClick('notifications')}
-                      className="text-[11px] font-medium text-blue-600 hover:underline"
+                      className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       Send / View All
                     </button>
                   </div>
                   {isGuest ? (
-                    <div className="p-4 text-xs text-slate-500 space-y-2">
+                    <div className="p-4 text-xs text-slate-500 dark:text-slate-400 space-y-2">
                       <p>Sign in to send and receive real-time study notifications.</p>
                       <button
                         type="button"
@@ -1189,24 +1347,24 @@ const MainShell: React.FC = () => {
                       </button>
                     </div>
                   ) : notifications.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-slate-500">
+                    <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400">
                       No notifications yet.
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto">
                       {notifications.slice(0, 6).map((n) => (
                         <div key={n.id} className="px-4 py-2.5 space-y-0.5">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-xs font-semibold text-slate-900">
+                            <span className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                               {n.title}
                             </span>
                             {!n.isRead && (
-                              <span className="text-[10px] font-semibold text-blue-600 shrink-0">
+                              <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 shrink-0">
                                 New
                               </span>
                             )}
                           </div>
-                          <p className="line-clamp-2 text-[11px] text-slate-600">
+                          <p className="line-clamp-2 text-[11px] text-slate-600 dark:text-slate-400">
                             {n.message}
                           </p>
                         </div>
@@ -1225,7 +1383,7 @@ const MainShell: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setViewPlanMode('auto')}
-                  className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 whitespace-nowrap shrink-0"
+                  className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 whitespace-nowrap shrink-0"
                 >
                   Basic Preview · Exit
                 </button>
@@ -1245,15 +1403,15 @@ const MainShell: React.FC = () => {
                   type="button"
                   onClick={() => setSwitchModalOpen(true)}
                   title="Switch Account"
-                  className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                  className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
                 >
-                  <ArrowRightLeft className="h-3.5 w-3.5 text-slate-500" />
+                  <ArrowRightLeft className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
                   Switch
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNavClick('subscriptions')}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-800 hover:bg-slate-100 whitespace-nowrap shrink-0 tabular-nums"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap shrink-0 tabular-nums"
                 >
                   {dbUser && (
                     <UserAvatarBadge
@@ -1276,20 +1434,38 @@ const MainShell: React.FC = () => {
         </header>
 
         <main className="flex-1 p-3 sm:p-5 lg:p-8 max-w-[1440px] w-full mx-auto">
-          {dataError && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-              {dataError}
+          {(dbStatus === 'connecting' || dataError) && (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+                <span>
+                  {dbStatus === 'connecting'
+                    ? `Reconnecting to database${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : ''}... Please wait before making plan or role changes.`
+                    : dataError}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void retryDbConnection();
+                  void loadAllStudyData();
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-slate-800 shrink-0"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Retry Sync
+              </button>
             </div>
           )}
 
           {dataLoading && tasks.length === 0 && notePages.length === 0 ? (
             <div className="space-y-4">
-              <div className="h-10 w-64 animate-pulse rounded-lg bg-slate-200" />
+              <div className="h-10 w-64 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-                <div className="h-24 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-24 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-24 animate-pulse rounded-xl bg-slate-200" />
-                <div className="h-24 animate-pulse rounded-xl bg-slate-200" />
+                <div className="h-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
+                <div className="h-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
+                <div className="h-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
+                <div className="h-24 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800" />
               </div>
             </div>
           ) : (
@@ -1302,6 +1478,7 @@ const MainShell: React.FC = () => {
                   notebooks={notebooks}
                   notePages={notePages}
                   exams={exams}
+                  countdowns={countdowns}
                   studyLogs={studyLogs}
                   onNavigate={setSection}
                 />
@@ -1310,35 +1487,35 @@ const MainShell: React.FC = () => {
                 <div className="space-y-6">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h1 className="font-display text-2xl font-bold text-slate-900">
+                      <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">
                         All Apps &amp; Sidebar Pins
                       </h1>
-                      <p className="mt-1 text-sm text-slate-500">
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                         Browse every tool in ASAN-Study_tool and hand-select any number of apps to pin to your left sidebar.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="font-medium text-slate-600 tabular-nums mr-1">
+                      <span className="font-medium text-slate-600 dark:text-slate-300 tabular-nums mr-1">
                         {pinnedTools.length} of {availableTools.length} pinned
                       </span>
                       <button
                         type="button"
                         onClick={() => setPinnedAppIds([...DEFAULT_PINNED_APPS])}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                       >
                         Reset Default
                       </button>
                       <button
                         type="button"
                         onClick={() => setPinnedAppIds(availableTools.map((t) => t.id))}
-                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 font-medium text-blue-700 hover:bg-blue-100"
+                        className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 px-3 py-1.5 font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100"
                       >
                         Pin All
                       </button>
                       <button
                         type="button"
                         onClick={() => setPinnedAppIds([])}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50"
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
                       >
                         Unpin All
                       </button>
@@ -1356,7 +1533,7 @@ const MainShell: React.FC = () => {
                     if (groupItems.length === 0) return null;
                     return (
                       <section key={category} className="space-y-3">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           {category}
                         </h2>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1367,16 +1544,16 @@ const MainShell: React.FC = () => {
                             return (
                               <div
                                 key={tool.id}
-                                className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300"
+                                className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
                               >
                                 <div className="space-y-2">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-blue-600">
+                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400">
                                         <Icon className="h-4 w-4" />
                                       </div>
                                       <div className="min-w-0">
-                                        <div className="truncate text-sm font-semibold text-slate-900">
+                                        <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                                           {tool.label}
                                         </div>
                                         {tool.proOnly && (
@@ -1384,20 +1561,25 @@ const MainShell: React.FC = () => {
                                             {isLocked ? 'Pro Plan Feature' : 'Pro Unlocked'}
                                           </div>
                                         )}
+                                        {tool.id === 'spectra' && (
+                                          <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                            Under Development
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                     {tool.id === 'notifications' && unreadNotifCount > 0 && (
-                                      <span className="text-xs font-semibold text-blue-600 tabular-nums shrink-0">
+                                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 tabular-nums shrink-0">
                                         {unreadNotifCount} unread
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-xs leading-relaxed text-slate-500">
+                                  <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                                     {tool.description}
                                   </p>
                                 </div>
 
-                                <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                                <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
                                   <button
                                     type="button"
                                     onClick={() => handleNavClick(tool.id)}
@@ -1410,8 +1592,8 @@ const MainShell: React.FC = () => {
                                     onClick={() => togglePinnedApp(tool.id)}
                                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                                       isPinned
-                                        ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                        ? 'border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100'
+                                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                                   >
                                     {isPinned ? (
@@ -1461,11 +1643,22 @@ const MainShell: React.FC = () => {
               {section === 'timers' && (
                 <TimersView
                   exams={exams}
+                  countdowns={countdowns}
                   studyLogs={studyLogs}
                   onRefresh={loadAllStudyData}
                 />
               )}
               {section === 'calculator' && <CasioFx82MsView />}
+              {section === 'specialized-calculators' &&
+                (isProOrAdmin ? (
+                  <SpecializedCalculatorsView />
+                ) : (
+                  <ProGateCard
+                    featureName="Specialized Math Calculators Suite"
+                    description="Solve Calculus, Coordinate Geometry, Algebra, Vectors & 3D Geometry, and Trigonometry problems deterministically with step-by-step exact & numerical results. Available exclusively for Pro & Admin accounts."
+                    onNavigate={setSection}
+                  />
+                ))}
               {section === 'messages' && (
                 <MessagesView
                   notePages={notePages}
@@ -1479,7 +1672,9 @@ const MainShell: React.FC = () => {
                 <NotificationsView onCountChange={setUnreadNotifCount} />
               )}
               {section === 'super' && isSuper && <SuperView />}
-              {section === 'admin' && <AdminView />}
+              {section === 'admin' && (
+                <AdminView onRefreshCountdowns={loadAllStudyData} />
+              )}
               {section === 'pdf-tool' &&
                 (isProOrAdmin ? (
                   <PdfStudioView />
@@ -1501,16 +1696,7 @@ const MainShell: React.FC = () => {
                     onNavigate={setSection}
                   />
                 ))}
-              {section === 'spectra' &&
-                (isProOrAdmin ? (
-                  <SpectraView />
-                ) : (
-                  <ProGateCard
-                    featureName="Spectra AI External Portal"
-                    description="Configure and launch your external Spectra AI portal directly from your study workspace. Excluded from Free & Basic plans."
-                    onNavigate={setSection}
-                  />
-                ))}
+              {section === 'spectra' && <SpectraView />}
               {section === 'more' && <MoreFeaturesView />}
               {section === 'plans' && <PlansView onNavigate={setSection} />}
               {section === 'about' && <AboutCreatorsView />}
@@ -1523,26 +1709,26 @@ const MainShell: React.FC = () => {
       {/* Sequential On-Login Permission Modal (One step at a time, singular site scope) */}
       {!isGuest && isWorkspaceEnabled && permissionStep && (
         <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-xl space-y-4">
             {permissionStep === 'drive' ? (
               <>
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
                     <Cloud className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
                       Step 1 · Google Drive Storage
                     </div>
-                    <h2 className="font-display text-base font-bold text-slate-900">
+                    <h2 className="font-display text-base font-bold text-slate-900 dark:text-white">
                       Create an ASAN folder in Google Drive?
                     </h2>
                   </div>
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600">
+                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   Do you want to make a Google Drive folder (<strong>ASAN-user-content</strong>) and store all the files you create using ASAN on your Drive within one folder?
                 </p>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300">
                   We only request the single <code className="font-mono">drive.file</code> scope for this site so ASAN can access only the folder &amp; files it creates.
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
@@ -1550,7 +1736,7 @@ const MainShell: React.FC = () => {
                     type="button"
                     disabled={permBusy}
                     onClick={skipPermissionStep}
-                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                   >
                     Skip for Now
                   </button>
@@ -1575,19 +1761,19 @@ const MainShell: React.FC = () => {
             ) : (
               <>
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
                     <Sparkles className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
                       Step 2 · Optional Workspace Sync
                     </div>
-                    <h2 className="font-display text-base font-bold text-slate-900">
+                    <h2 className="font-display text-base font-bold text-slate-900 dark:text-white">
                       Enable Google Docs, Sheets &amp; Meet?
                     </h2>
                   </div>
                 </div>
-                <p className="text-xs leading-relaxed text-slate-600">
+                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   Do you want to authorize Google Docs, Sheets, and Meet for your Pro/Admin workspace (for Schedule Sheet sync, Study Note Doc exports, and study rooms)?
                 </p>
                 <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
@@ -1595,7 +1781,7 @@ const MainShell: React.FC = () => {
                     type="button"
                     disabled={permBusy}
                     onClick={skipPermissionStep}
-                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                   >
                     No Thanks
                   </button>
@@ -1625,18 +1811,18 @@ const MainShell: React.FC = () => {
       {/* Switch Account Modal */}
       {switchModalOpen && (
         <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-blue-600" />
-                <h2 className="font-display text-base font-bold text-slate-900">
+                <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <h2 className="font-display text-base font-bold text-slate-900 dark:text-white">
                   Switch Account
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setSwitchModalOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
                 aria-label="Close switch account modal"
               >
                 <X className="h-4 w-4" />
@@ -1644,7 +1830,7 @@ const MainShell: React.FC = () => {
             </div>
 
             {dbUser && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 flex items-center justify-between gap-2">
+              <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/40 p-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <UserAvatarBadge
                     name={dbUser.displayName}
@@ -1655,10 +1841,10 @@ const MainShell: React.FC = () => {
                     size="sm"
                   />
                   <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-slate-900">
+                    <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                       {dbUser.displayName} (Active)
                     </div>
-                    <div className="truncate text-[11px] text-slate-600">
+                    <div className="truncate text-[11px] text-slate-600 dark:text-slate-400">
                       @{dbUser.username} · {dbUser.shortUid} ·{' '}
                       {authMode === 'password' ? 'Email/Password' : 'Google'}
                     </div>
@@ -1671,7 +1857,7 @@ const MainShell: React.FC = () => {
                       setSwitchModalOpen(false);
                       openPermissionFlow();
                     }}
-                    className="rounded-md border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-50 shrink-0"
+                    className="rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700 shrink-0"
                   >
                     Link Drive
                   </button>
@@ -1680,11 +1866,11 @@ const MainShell: React.FC = () => {
             )}
 
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Saved Accounts
               </div>
               {savedAccounts.filter((a) => a.uid !== dbUser?.uid).length === 0 ? (
-                <p className="text-xs text-slate-500 py-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400 py-2">
                   No other saved accounts on this browser yet. Sign into another Google or Email/Password account below.
                 </p>
               ) : (
@@ -1693,7 +1879,7 @@ const MainShell: React.FC = () => {
                   .map((acc) => (
                     <div
                       key={acc.uid}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800"
                     >
                       <button
                         type="button"
@@ -1711,10 +1897,10 @@ const MainShell: React.FC = () => {
                           size="sm"
                         />
                         <div className="min-w-0">
-                          <div className="truncate text-xs font-semibold text-slate-900">
+                          <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
                             {acc.displayName}
                           </div>
-                          <div className="truncate text-[11px] text-slate-500">
+                          <div className="truncate text-[11px] text-slate-500 dark:text-slate-400">
                             @{acc.username} · {acc.shortUid} ·{' '}
                             {acc.authMode === 'password' ? 'Password' : 'Google'}
                           </div>
@@ -1733,7 +1919,7 @@ const MainShell: React.FC = () => {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
               <button
                 type="button"
                 onClick={async () => {
@@ -1748,7 +1934,7 @@ const MainShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSwitchModalOpen(false)}
-                className="rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
               >
                 Close
               </button>
@@ -1764,8 +1950,10 @@ const MainShell: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainShell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <MainShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

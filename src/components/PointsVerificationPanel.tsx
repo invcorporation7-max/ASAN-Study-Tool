@@ -143,17 +143,17 @@ export const PointsVerificationPanel: React.FC<{
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+    <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
         <div className="flex items-start gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400">
             <ShieldCheck className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="font-display text-base font-bold text-slate-900">
+            <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
               Admin Point Award &amp; Deduction Verification
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Inspect every point award (+pts) and deduction (−pts). Verify justified activity or revert/dismiss unjustified transactions with automatic balance reversal &amp; Tool Mail notice.
             </p>
           </div>
@@ -163,7 +163,7 @@ export const PointsVerificationPanel: React.FC<{
           type="button"
           onClick={() => void loadTransactions()}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 min-h-[38px] shrink-0"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 min-h-[38px] shrink-0"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Queue
@@ -172,33 +172,33 @@ export const PointsVerificationPanel: React.FC<{
 
       {data && (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5 text-xs tabular-nums">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="text-[11px] text-slate-500">Total Logged</div>
-            <div className="font-display text-base font-bold text-slate-900">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Total Logged</div>
+            <div className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
               {data.summary.total}
             </div>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2">
-            <div className="text-[11px] text-amber-800">Pending Review</div>
-            <div className="font-display text-base font-bold text-amber-900">
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/35 px-3 py-2">
+            <div className="text-[11px] text-amber-800 dark:text-amber-300">Pending Review</div>
+            <div className="font-display text-base font-bold text-amber-900 dark:text-amber-200">
               {data.summary.pending}
             </div>
           </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2">
-            <div className="text-[11px] text-emerald-800">Verified</div>
-            <div className="font-display text-base font-bold text-emerald-900">
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/70 dark:bg-emerald-950/35 px-3 py-2">
+            <div className="text-[11px] text-emerald-800 dark:text-emerald-300">Verified</div>
+            <div className="font-display text-base font-bold text-emerald-900 dark:text-emerald-200">
               {data.summary.verified}
             </div>
           </div>
-          <div className="rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-2">
-            <div className="text-[11px] text-rose-800">Reverted</div>
-            <div className="font-display text-base font-bold text-rose-900">
+          <div className="rounded-lg border border-rose-200 dark:border-rose-800/70 bg-rose-50/70 dark:bg-rose-950/35 px-3 py-2">
+            <div className="text-[11px] text-rose-800 dark:text-rose-300">Reverted</div>
+            <div className="font-display text-base font-bold text-rose-900 dark:text-rose-200">
               {data.summary.reverted}
             </div>
           </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-100/80 px-3 py-2 col-span-2 sm:col-span-1">
-            <div className="text-[11px] text-slate-600">Dismissed</div>
-            <div className="font-display text-base font-bold text-slate-900">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-800/80 px-3 py-2 col-span-2 sm:col-span-1">
+            <div className="text-[11px] text-slate-600 dark:text-slate-400">Dismissed</div>
+            <div className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
               {data.summary.dismissed}
             </div>
           </div>
@@ -206,7 +206,7 @@ export const PointsVerificationPanel: React.FC<{
       )}
 
       <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 text-xs">
+        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-xs">
           {(
             [
               { id: 'pending', label: `Pending (${data?.summary.pending ?? 0})` },
@@ -223,8 +223,8 @@ export const PointsVerificationPanel: React.FC<{
               onClick={() => setFilter(tab.id)}
               className={`rounded-md px-2.5 py-1.5 font-medium whitespace-nowrap transition-colors ${
                 filter === tab.id
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {tab.label}
@@ -239,18 +239,18 @@ export const PointsVerificationPanel: React.FC<{
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by @user, UID, reason..."
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-xs focus:border-blue-500 focus:bg-white focus:outline-none"
+            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 pl-9 pr-3 py-2 text-xs focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
           />
         </div>
       </div>
 
       {statusMsg && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800">
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
           {statusMsg}
         </div>
       )}
       {errorMsg && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3.5 py-2.5 text-xs text-red-700 dark:text-red-300">
           {errorMsg}
         </div>
       )}
@@ -258,10 +258,10 @@ export const PointsVerificationPanel: React.FC<{
       {activeTx && (
         <form
           onSubmit={handleConfirmRevertOrDismiss}
-          className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 space-y-3"
+          className="rounded-xl border border-rose-200 dark:border-rose-800/70 bg-rose-50/60 dark:bg-rose-950/35 p-4 space-y-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-bold text-rose-950">
+            <div className="text-xs font-bold text-rose-950 dark:text-rose-200">
               {activeTx.action === 'dismiss' ? 'Dismiss & Reverse' : 'Revert & Reverse'} Tx #
               {activeTx.tx.id} — @{activeTx.tx.username} ({activeTx.tx.amount >= 0 ? `+${activeTx.tx.amount}` : activeTx.tx.amount} pts)
             </div>
@@ -271,12 +271,12 @@ export const PointsVerificationPanel: React.FC<{
                 setActiveTx(null);
                 setReviewNote('');
               }}
-              className="text-xs font-medium text-slate-600 hover:text-slate-900"
+              className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
             >
               Cancel
             </button>
           </div>
-          <p className="text-[11px] text-rose-900">
+          <p className="text-[11px] text-rose-900 dark:text-rose-300">
             Original reason: <strong>{activeTx.tx.reason}</strong>. Reversing this will adjust @{activeTx.tx.username}&apos;s balance by{' '}
             <strong>
               {activeTx.tx.amount >= 0
@@ -293,7 +293,7 @@ export const PointsVerificationPanel: React.FC<{
               value={reviewNote}
               onChange={(e) => setReviewNote(e.target.value)}
               placeholder="Explain why this transaction is not justified (required)..."
-              className="flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs focus:border-rose-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-rose-200 dark:border-rose-800/70 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs focus:border-rose-500 focus:outline-none"
             />
             <button
               type="submit"
@@ -311,18 +311,18 @@ export const PointsVerificationPanel: React.FC<{
       )}
 
       {loading && !data ? (
-        <p className="py-6 text-center text-xs text-slate-500">
+        <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
           Loading point audit queue...
         </p>
       ) : filtered.length === 0 ? (
-        <p className="py-6 text-center text-xs text-slate-500">
+        <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
           No transactions match this filter.
         </p>
       ) : (
-        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+        <div className="overflow-x-auto lg:max-h-96 lg:overflow-y-auto">
           <table className="w-full min-w-[740px] text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                 <th className="py-2 pr-3 font-medium">Tx / User</th>
                 <th className="py-2 pr-3 font-medium">Delta</th>
                 <th className="py-2 pr-3 font-medium">Category &amp; Reason</th>
@@ -330,21 +330,21 @@ export const PointsVerificationPanel: React.FC<{
                 <th className="py-2 text-right font-medium">Admin Decision</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 tabular-nums">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
               {filtered.map((tx) => {
                 const st = tx.verificationStatus || 'pending';
                 const isReversalRow = tx.category === 'admin_reversal';
                 const alreadyReversed = st === 'reverted' || st === 'dismissed';
                 return (
-                  <tr key={tx.id} className="align-top hover:bg-slate-50/70">
+                  <tr key={tx.id} className="align-top hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
                     <td className="py-2.5 pr-3">
-                      <div className="font-semibold text-slate-900">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
                         #{tx.id} · @{tx.username}
                       </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                         {tx.shortUid || `U${tx.userId}`} · Bal: {tx.currentBalance ?? 0} pts
                       </div>
-                      <div className="text-[10px] text-slate-400">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500">
                         {new Date(tx.createdAt).toLocaleString()}
                       </div>
                     </td>
@@ -352,40 +352,40 @@ export const PointsVerificationPanel: React.FC<{
                       <span
                         className={`inline-block rounded px-2 py-0.5 font-mono font-bold ${
                           tx.amount >= 0
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-rose-50 text-rose-700'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
                         }`}
                       >
                         {tx.amount >= 0 ? `+${tx.amount}` : tx.amount} pts
                       </span>
                     </td>
                     <td className="py-2.5 pr-3 max-w-xs">
-                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         {tx.category.replace(/_/g, ' ')}
                       </div>
-                      <div className="text-slate-800">{tx.reason}</div>
+                      <div className="text-slate-800 dark:text-slate-200">{tx.reason}</div>
                     </td>
                     <td className="py-2.5 pr-3">
                       <span
                         className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
                           st === 'verified'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/70'
                             : st === 'reverted'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/70'
                               : st === 'dismissed'
-                                ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
+                                : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/70'
                         }`}
                       >
                         {st}
                       </span>
                       {tx.verifiedByLabel && (
-                        <div className="mt-1 text-[10px] text-slate-500">
+                        <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                           {tx.verifiedByLabel}
                         </div>
                       )}
                       {tx.verificationNote && (
-                        <div className="text-[10px] text-slate-600 italic">
+                        <div className="text-[10px] text-slate-600 dark:text-slate-400 italic">
                           &ldquo;{tx.verificationNote}&rdquo;
                         </div>
                       )}
@@ -398,7 +398,7 @@ export const PointsVerificationPanel: React.FC<{
                               type="button"
                               disabled={busyId === tx.id}
                               onClick={() => void handleVerify(tx)}
-                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
                             >
                               <CheckCircle2 className="h-3 w-3" />
                               Verify
@@ -411,7 +411,7 @@ export const PointsVerificationPanel: React.FC<{
                               setActiveTx({ tx, action: 'revert' });
                               setReviewNote('');
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"
+                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 dark:border-rose-800/70 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/50"
                           >
                             <RotateCcw className="h-3 w-3" />
                             Revert
@@ -423,14 +423,14 @@ export const PointsVerificationPanel: React.FC<{
                               setActiveTx({ tx, action: 'dismiss' });
                               setReviewNote('');
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                           >
                             <XCircle className="h-3 w-3" />
                             Dismiss
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500">
                           {isReversalRow ? 'Audit Reversal' : 'Closed'}
                         </span>
                       )}

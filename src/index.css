@@ -20,10 +20,51 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+
+  html.dark {
+    color-scheme: dark;
+  }
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+@keyframes asan-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes asan-spin-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.asan-hud-cw {
+  transform-box: view-box;
+  transform-origin: 220px 220px;
+  animation: asan-spin-cw var(--hud-dur, 20s) linear infinite;
+}
+
+.asan-hud-ccw {
+  transform-box: view-box;
+  transform-origin: 220px 220px;
+  animation: asan-spin-ccw var(--hud-dur, 20s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asan-hud-cw,
+  .asan-hud-ccw {
+    animation-duration: 120s;
+  }
 }
 
 /* Official Google Sign-In Material Button styling */

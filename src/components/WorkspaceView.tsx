@@ -321,10 +321,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
             Google Workspace (Opt-In Folder Sync)
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Accesses only files inside a dedicated <code className="font-mono">ASAN-user-content</code> Google Drive folder when you choose to connect.
           </p>
         </div>
@@ -340,7 +340,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             Connect Google Drive &amp; Workspace
           </button>
         ) : (
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-4 w-4" />
             Workspace Connected (ASAN-user-content)
           </div>
@@ -351,21 +351,21 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         !workspacePermissions.sheetsSync ||
         !workspacePermissions.meetRooms ||
         !workspacePermissions.docsExport) && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-900">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/40 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-300">
           One or more Google Workspace functions are turned off under <strong>View Plans → Google Workspace Function Permissions</strong>. Re-enable them anytime in View Plans.
         </div>
       )}
 
       {!workspaceToken && (
-        <div className="rounded-xl border border-slate-200 bg-white p-5 flex items-start gap-3 text-xs text-slate-600">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex items-start gap-3 text-xs text-slate-600 dark:text-slate-300">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
           <div>
-            <div className="font-semibold text-slate-900">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
               Folder-Isolated Google Drive Access
             </div>
             <p className="mt-0.5 leading-relaxed">
               Workspace permissions are never requested on sign-in. Connecting creates a single
-              <strong className="text-slate-800"> ASAN-user-content </strong>
+              <strong className="text-slate-800 dark:text-slate-100"> ASAN-user-content </strong>
               folder in your Google Drive using <code className="font-mono">drive.file</code> scope, so every Sheet, Doc, and export created by this app stays strictly inside that folder.
             </p>
           </div>
@@ -373,25 +373,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       )}
 
       {statusMsg && (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-xs text-slate-700 dark:text-slate-300">
           {statusMsg}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Folder-Scoped Google Drive */}
-        <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <HardDrive className="h-4 w-4 text-blue-600" />
-              <h2 className="font-display text-base font-semibold text-slate-900">
+              <HardDrive className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 ASAN-user-content Drive Folder
               </h2>
             </div>
             <div className="flex items-center gap-2">
               {workspacePermissions.driveSync ? (
                 <>
-                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">
                     <Upload className="h-3.5 w-3.5" />
                     Upload
                     <input
@@ -405,28 +405,28 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     type="button"
                     onClick={handleConnectAndLoadFolder}
                     disabled={busy}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                   >
                     <FolderOpen className="h-3.5 w-3.5" />
                     Open App Folder
                   </button>
                 </>
               ) : (
-                <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans</span>
               )}
             </div>
           </div>
 
           {folderInfo?.webViewLink && (
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-              <span className="font-medium text-slate-700">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs">
+              <span className="font-medium text-slate-700 dark:text-slate-200">
                 Folder: {folderInfo.name}
               </span>
               <a
                 href={folderInfo.webViewLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
                 View in Drive
                 <ExternalLink className="h-3 w-3" />
@@ -435,19 +435,19 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           )}
 
           {driveFiles.length === 0 ? (
-            <p className="text-xs text-slate-500 py-4">
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-4">
               Click "Open App Folder" to create or browse files strictly inside your ASAN-user-content Drive folder.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-64 lg:overflow-y-auto">
               {driveFiles.map((f) => (
                 <div
                   key={f.id}
                   className="flex items-center justify-between gap-2 py-2.5 text-xs"
                 >
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-slate-900">{f.name}</div>
-                    <div className="truncate text-slate-400">{f.mimeType}</div>
+                    <div className="truncate font-medium text-slate-900 dark:text-slate-100">{f.name}</div>
+                    <div className="truncate text-slate-400 dark:text-slate-500">{f.mimeType}</div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {f.webViewLink && (
@@ -455,7 +455,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                         href={f.webViewLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
                       >
                         Open
                       </a>
@@ -463,7 +463,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setDeleteFileTarget(f)}
-                      className="p-1 text-slate-400 hover:text-red-600"
+                      className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                       aria-label={`Delete ${f.name}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -477,11 +477,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
         {/* Google Sheets Schedule & Tasks + Meet */}
         <div className="space-y-6">
-          <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                <h2 className="font-display text-base font-semibold text-slate-900">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Google Sheets Schedule &amp; Tasks
                 </h2>
               </div>
@@ -508,17 +508,17 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                       type="button"
                       onClick={handleExportTasksSheet}
                       disabled={busy}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                     >
                       Export Tasks ({tasks.length})
                     </button>
                   </>
                 ) : (
-                  <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans</span>
                 )}
               </div>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Maintain schedules, tasks, and the 3-row Exam Blueprint (<code className="font-mono">master</code> → <code className="font-mono">test_dates</code>) strictly inside your <code className="font-mono">ASAN-user-content</code> folder.
             </p>
             {createdSheetUrl && (
@@ -526,7 +526,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 href={createdSheetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Open Google Schedule Sheet
                 <ExternalLink className="h-3 w-3" />
@@ -534,11 +534,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Video className="h-4 w-4 text-emerald-600" />
-                <h2 className="font-display text-base font-semibold text-slate-900">
+                <Video className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Google Meet Study Room
                 </h2>
               </div>
@@ -547,31 +547,31 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   type="button"
                   onClick={handleCreateMeet}
                   disabled={busy}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   Create Meet Room
                 </button>
               ) : (
-                <span className="text-xs font-medium text-slate-400">Disabled in View Plans</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans</span>
               )}
             </div>
             {meetRoom ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-xs space-y-1">
-                <div className="font-semibold text-emerald-900">
+              <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/30 p-3 text-xs space-y-1">
+                <div className="font-semibold text-emerald-900 dark:text-emerald-300">
                   Room Ready · Code: {meetRoom.meetingCode}
                 </div>
                 <a
                   href={meetRoom.meetingUri}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                  className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   {meetRoom.meetingUri}
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Launch an instant Google Meet room for collaborative study sessions or doubt clearing.
               </p>
             )}
@@ -579,10 +579,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         </div>
 
         {/* Google Docs */}
-        <section className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <FileText className="h-4 w-4 text-blue-600" />
-            <h2 className="font-display text-base font-semibold text-slate-900">
+        <section className="lg:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Create Google Doc
             </h2>
           </div>
@@ -593,14 +593,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               value={docTitle}
               onChange={(e) => setDocTitle(e.target.value)}
               placeholder="Document title"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
             <textarea
               rows={3}
               value={docBody}
               onChange={(e) => setDocBody(e.target.value)}
               placeholder="Initial content for your Google Doc..."
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             />
             <div className="flex items-center justify-between">
               <button
@@ -615,7 +615,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   href={createdDocUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   Open Document
                   <ExternalLink className="h-3 w-3" />

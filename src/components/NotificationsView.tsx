@@ -103,14 +103,14 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
           <div className="flex items-start gap-3">
-            <Lock className="mt-1 h-5 w-5 text-blue-600 shrink-0" />
+            <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
-              <h1 className="font-display text-xl font-bold text-slate-900">
+              <h1 className="font-display text-xl font-bold text-slate-900 dark:text-white">
                 Notifications Require Sign-In
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 Sign in with Google to receive points alerts, license key notifications, Tool Mail alerts, and send study pings to teammates.
               </p>
             </div>
@@ -131,10 +131,10 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900">
+          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">
             Notifications Center
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Real-time alerts for points rewards, Tool Mail, license keys, and direct study notifications.
           </p>
         </div>
@@ -144,9 +144,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
             type="button"
             onClick={handleRequestBrowserNotifications}
             disabled={browserPerm === 'granted'}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 whitespace-nowrap shrink-0"
           >
-            <BellRing className="h-3.5 w-3.5 text-blue-600" />
+            <BellRing className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
             {browserPerm === 'granted'
               ? 'Browser Alerts Active'
               : 'Enable Browser Alerts'}
@@ -155,12 +155,12 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       </div>
 
       {statusMsg && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800">
+        <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/50 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
           {statusMsg}
         </div>
       )}
       {errorMsg && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
+        <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/50 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
           {errorMsg}
         </div>
       )}
@@ -169,17 +169,17 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         {/* Send Notification Form */}
         <form
           onSubmit={handleSendNotification}
-          className="lg:col-span-5 h-fit rounded-xl border border-slate-200 bg-white p-6 space-y-4"
+          className="lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
         >
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Send className="h-4 w-4 text-blue-600" />
-            <h2 className="font-display text-base font-semibold text-slate-900">
+          <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <Send className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
               Send Notification
             </h2>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
               Target User (@username, 5-char UID, Email{isAdmin ? ', or "all" to broadcast' : ''})
             </label>
             <input
@@ -193,7 +193,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   ? 'Leave blank or "all" for broadcast, @username, or 5-char UID...'
                   : 'e.g. @rahul or K7P9M'
               }
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
             <datalist id="notif-user-suggestions">
               {isAdmin && <option value="all">All Users (Broadcast)</option>}
@@ -206,7 +206,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
               Notification Title
             </label>
             <input
@@ -215,19 +215,19 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g., Physics Mock Exam at 6 PM"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600">Message</label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">Message</label>
             <textarea
               rows={3}
               required
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Short alert message..."
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
@@ -242,23 +242,23 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         </form>
 
         {/* Notification Inbox */}
-        <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h2 className="font-display text-base font-semibold text-slate-900">
+        <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
               Your Alerts ({notifications.length})
             </h2>
           </div>
 
           {loading ? (
-            <p className="py-8 text-center text-xs text-slate-500">
+            <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
               Loading notifications...
             </p>
           ) : notifications.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-500">
+            <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
               No notifications yet.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-[540px] lg:overflow-y-auto">
               {notifications.map((n) => (
                 <div
                   key={n.id}
@@ -269,19 +269,19 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                       <span
                         className={`text-sm ${
                           n.isRead
-                            ? 'font-medium text-slate-800'
-                            : 'font-bold text-slate-900'
+                            ? 'font-medium text-slate-800 dark:text-slate-200'
+                            : 'font-bold text-slate-900 dark:text-white'
                         }`}
                       >
                         {n.title}
                       </span>
                       {!n.isRead && (
-                        <span className="text-[11px] font-semibold text-blue-600">
+                        <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
                           New
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600">{n.message}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">{n.message}</p>
                     <div className="text-[11px] text-slate-400 tabular-nums">
                       {n.senderLabel} · {new Date(n.createdAt).toLocaleString()}
                     </div>
@@ -290,7 +290,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleMarkRead(n.id)}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 shrink-0"
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0"
                     >
                       <Check className="h-3 w-3" />
                       Read

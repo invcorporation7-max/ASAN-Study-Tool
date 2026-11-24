@@ -73,24 +73,149 @@ async function safeJson<T = Record<string, any>>(res: Response): Promise<T> {
 
 function gatewayColdStartMessage(status: number): string | null {
   if (status === 502 || status === 503 || status === 504) {
-    return `Server is waking up or temporarily unavailable (HTTP ${status}). Please retry in a few seconds.`;
+    return `Server or database is waking up (HTTP ${status}). Please wait a few seconds...`;
   }
   return null;
 }
 
+export interface BackendHealthStatus {
+  expressReachable: boolean;
+  wakingUp: boolean;
+  dbConfigured: boolean;
+  dbConnected: boolean;
+  mode: 'postgres' | 'local-fallback' | 'connecting' | 'inbuilt-offline';
+  reason?: string;
+}
+
+let cachedExpressMode: 'express' | 'static-inbuilt' | null = null;
+
+export function resetExpressBackendCache(): void {
+  expressAvailablePromise = null;
+  if (cachedExpressMode === 'static-inbuilt') {
+    cachedExpressMode = null;
+  }
+}
+
+export async function checkBackendHealth(timeoutMs = 8000): Promise<BackendHealthStatus> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false && !API_BASE) {
+    return {
+      expressReachable: false,
+      wakingUp: false,
+      dbConfigured: false,
+      dbConnected: false,
+      mode: 'inbuilt-offline',
+      reason: 'Device appears to be offline.',
+    };
+  }
+  try {
+    const res = await fetchWithTimeout(
+      apiUrl('/api/health'),
+      { method: 'GET', cache: 'no-store' },
+      timeoutMs
+    );
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      return {
+        expressReachable: false,
+        wakingUp: true,
+        dbConfigured: true,
+        dbConnected: false,
+        mode: 'connecting',
+        reason: `Server is waking up (HTTP ${res.status}).`,
+      };
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (res.status === 404 || !ct.includes('application/json')) {
+      if (!API_BASE) {
+        cachedExpressMode = 'static-inbuilt';
+      }
+      return {
+        expressReachable: false,
+        wakingUp: false,
+        dbConfigured: false,
+        dbConnected: false,
+        mode: 'inbuilt-offline',
+        reason: 'Running in local PWA mode without Express server.',
+      };
+    }
+    const data = await safeJson<{
+      status?: string;
+      database?: {
+        configured?: boolean;
+        connected?: boolean;
+        mode?: 'postgres' | 'local-fallback';
+        reason?: string;
+      };
+    }>(res);
+    if (res.ok && data?.status === 'ok') {
+      cachedExpressMode = 'express';
+      const dbConfigured = Boolean(data.database?.configured);
+      const dbConnected = Boolean(data.database?.connected);
+      return {
+        expressReachable: true,
+        wakingUp: dbConfigured && !dbConnected,
+        dbConfigured,
+        dbConnected,
+        mode: dbConnected ? 'postgres' : dbConfigured ? 'connecting' : 'local-fallback',
+        reason: data.database?.reason,
+      };
+    }
+    return {
+      expressReachable: false,
+      wakingUp: true,
+      dbConfigured: true,
+      dbConnected: false,
+      mode: 'connecting',
+      reason: 'Waiting for server health check.',
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Server connection pending';
+    return {
+      expressReachable: false,
+      wakingUp: true,
+      dbConfigured: true,
+      dbConnected: false,
+      mode: 'connecting',
+      reason: msg,
+    };
+  }
+}
+
 export async function isExpressBackendAvailable(): Promise<boolean> {
   if (API_BASE) return true;
+  if (cachedExpressMode === 'express') return true;
+  if (cachedExpressMode === 'static-inbuilt') return false;
   if (!expressAvailablePromise) {
     expressAvailablePromise = (async () => {
       try {
-        const res = await fetchWithTimeout(apiUrl('/api/health'), { method: 'GET' }, 2500);
-        if (!res.ok) return false;
+        const res = await fetchWithTimeout(
+          apiUrl('/api/health'),
+          { method: 'GET', cache: 'no-store' },
+          6000
+        );
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          // Gateway indicates backend server exists and is waking up; do not lock into inbuilt fallback
+          expressAvailablePromise = null;
+          return true;
+        }
         const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) return false;
+        if (res.status === 404 || !ct.includes('application/json')) {
+          cachedExpressMode = 'static-inbuilt';
+          return false;
+        }
         const data = await safeJson<{ status?: string }>(res);
-        return data?.status === 'ok';
+        if (res.ok && data?.status === 'ok') {
+          cachedExpressMode = 'express';
+          return true;
+        }
+        expressAvailablePromise = null;
+        return true;
       } catch {
-        return false;
+        // Timeout or transient network failure during cold start: clear probe so future calls retry Express
+        expressAvailablePromise = null;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          return false;
+        }
+        return true;
       }
     })();
   }
@@ -129,6 +254,12 @@ export async function apiPublicFetch<T>(
         ...(options.headers as Record<string, string> | undefined),
       },
     });
+    if (res.status === 503) {
+      const errData = await safeJson<{ error?: string }>(res);
+      throw new Error(
+        errData?.error || 'Database is waking up or connecting. Please wait a few seconds...'
+      );
+    }
     const coldMsg = gatewayColdStartMessage(res.status);
     if (coldMsg) {
       throw new Error(coldMsg);
@@ -136,7 +267,7 @@ export async function apiPublicFetch<T>(
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       if (!API_BASE) {
-        expressAvailablePromise = Promise.resolve(false);
+        cachedExpressMode = 'static-inbuilt';
         return handleInbuiltApiRequest<T>(path, options, null);
       }
       throw new Error('Backend API returned HTML instead of JSON.');
@@ -147,8 +278,7 @@ export async function apiPublicFetch<T>(
     }
     return data as T;
   } catch (err) {
-    if (!API_BASE && err instanceof TypeError) {
-      expressAvailablePromise = Promise.resolve(false);
+    if (!API_BASE && err instanceof TypeError && typeof navigator !== 'undefined' && navigator.onLine === false) {
       return handleInbuiltApiRequest<T>(path, options, null);
     }
     throw err;
@@ -157,6 +287,25 @@ export async function apiPublicFetch<T>(
 
 export async function fetchPublicCredits<T = { contributors: any[] }>(): Promise<T> {
   return apiPublicFetch<T>('/api/credits');
+}
+
+export async function apiOptionalAuthFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = await getActiveAuthToken(false);
+  if (!token) {
+    return apiPublicFetch<T>(path, options);
+  }
+  const useExpress = await isExpressBackendAvailable();
+  if (!useExpress || token.startsWith('inbuilt.')) {
+    return handleInbuiltApiRequest<T>(path, options, token);
+  }
+  try {
+    return await apiFetch<T>(path, options);
+  } catch {
+    return apiPublicFetch<T>(path, options);
+  }
 }
 
 export async function apiFetch<T>(
@@ -190,15 +339,24 @@ export async function apiFetch<T>(
   try {
     res = await execute(false);
   } catch (err) {
-    if (!API_BASE && err instanceof TypeError) {
-      expressAvailablePromise = Promise.resolve(false);
+    if (!API_BASE && err instanceof TypeError && typeof navigator !== 'undefined' && navigator.onLine === false) {
       return handleInbuiltApiRequest<T>(path, options, token);
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Server or database is waking up. Please wait a moment and retry.');
     }
     throw err;
   }
 
   if (res.status === 401 && !getPasswordSessionToken()) {
     res = await execute(true);
+  }
+
+  if (res.status === 503) {
+    const data = await safeJson<{ error?: string }>(res);
+    throw new Error(
+      data?.error || 'Database is waking up / connecting. Please wait a moment...'
+    );
   }
 
   const coldMsg = gatewayColdStartMessage(res.status);
@@ -209,7 +367,7 @@ export async function apiFetch<T>(
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     if (!API_BASE) {
-      expressAvailablePromise = Promise.resolve(false);
+      cachedExpressMode = 'static-inbuilt';
       return handleInbuiltApiRequest<T>(path, options, token);
     }
     throw new Error(

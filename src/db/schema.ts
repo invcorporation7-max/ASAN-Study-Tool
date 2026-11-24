@@ -335,6 +335,19 @@ export const contributorFiles = pgTable('contributor_files', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const examCountdowns = pgTable('exam_countdowns', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull().default('user'), // 'admin' | 'user'
+  title: text('title').notNull(),
+  category: text('category').notNull().default(''),
+  targetDate: text('target_date').notNull(), // YYYY-MM-DD
+  targetTime: text('target_time').notNull().default(''), // '' or HH:mm
+  pinnedByDefault: boolean('pinned_by_default').notNull().default(false),
+  createdByLabel: text('created_by_label').notNull().default(''),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
   calendarEvents: many(calendarEvents),

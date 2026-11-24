@@ -1145,6 +1145,38 @@ export const AboutCreatorsView: React.FC = () => {
           </ul>
         )}
       </div>
+
+      {/* Legal & Compliance Links */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between asan-card-hover">
+        <div>
+          <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
+            Privacy Policy &amp; Terms of Service
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Public legal documents for ASAN-Study_tool data handling, Google Workspace Limited Use, and subscriptions.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <a
+            href="/privacy-policy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            Privacy Policy
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+          <a
+            href="/terms-of-service.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            Terms of Service
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      </div>
     </div>
   );
 };

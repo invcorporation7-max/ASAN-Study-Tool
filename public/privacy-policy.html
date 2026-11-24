@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — ASAN-Study_tool</title>
+    <meta
+      name="description"
+      content="Privacy Policy for ASAN-Study_tool detailing account data, local browser storage, PostgreSQL persistence, Google Analytics, and optional Google Workspace API Limited Use compliance."
+    />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      try {
+        if (localStorage.getItem('asan_theme_v1') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --surface-alt: #f1f5f9;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --muted: #475569;
+        --accent: #2563eb;
+        --accent-soft: #eff6ff;
+      }
+      html.dark {
+        --bg: #020617;
+        --surface: #0f172a;
+        --surface-alt: #1e293b;
+        --border: #1e293b;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --accent: #60a5fa;
+        --accent-soft: rgba(30, 58, 138, 0.35);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .nav {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 14px 24px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        color: var(--text);
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 16px;
+      }
+      .brand img {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .nav-links a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      .nav-links a:hover,
+      .nav-links a.active {
+        color: var(--accent);
+      }
+      main {
+        max-width: 920px;
+        margin: 32px auto;
+        padding: 0 24px 48px;
+      }
+      article {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 32px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .meta {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 24px;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      h2 {
+        margin: 28px 0 10px;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      ul {
+        margin: 8px 0 16px;
+        padding-left: 20px;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      strong {
+        color: var(--text);
+      }
+      code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        background: var(--surface-alt);
+        padding: 2px 6px;
+        border-radius: 5px;
+        color: var(--text);
+      }
+      .callout {
+        margin: 16px 0;
+        padding: 14px 18px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--accent-soft);
+        font-size: 14px;
+        color: var(--text);
+      }
+      footer {
+        max-width: 920px;
+        margin: 0 auto 36px;
+        padding: 0 24px;
+        font-size: 12.5px;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      footer a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      @media (max-width: 640px) {
+        article {
+          padding: 22px 18px;
+        }
+        h1 {
+          font-size: 23px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="nav">
+        <a class="brand" href="/">
+          <img src="/pwa-192x192.png" alt="ASAN-Study_tool" />
+          <span>ASAN-Study_tool</span>
+        </a>
+        <nav class="nav-links" aria-label="Legal navigation">
+          <a href="/privacy-policy.html" class="active">Privacy Policy</a>
+          <a href="/terms-of-service.html">Terms of Service</a>
+          <a href="/">Open App</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <article>
+        <h1>Privacy Policy</h1>
+        <div class="meta">
+          <strong>Effective Date:</strong> November 24, 2026 &nbsp;·&nbsp;
+          <strong>Application:</strong> ASAN-Study_tool &nbsp;·&nbsp;
+          <strong>Contact:</strong> <a href="mailto:invcorporation7@gmail.com">invcorporation7@gmail.com</a>
+        </div>
+
+        <p>
+          ASAN-Study_tool (&ldquo;we&rdquo;, &ldquo;our&rdquo;, or &ldquo;the Application&rdquo;),
+          created by <strong>Arham Imam</strong>, is an academic productivity and A4 study workspace.
+          This Privacy Policy explains how we collect, use, store, and protect information when you use
+          ASAN-Study_tool on the web or as an installed Progressive Web App (PWA).
+        </p>
+
+        <h2>1. Information We Collect</h2>
+        <ul>
+          <li>
+            <strong>Free Tier (No Login):</strong> When you use the Free Tier without signing in, your
+            notebooks, tasks, calendar events, custom countdowns, and timer logs are stored locally inside
+            your browser&rsquo;s <code>localStorage</code> and remain on your device.
+          </li>
+          <li>
+            <strong>Account &amp; Profile Information:</strong> When you sign in using Google Sign-In
+            (via Firebase Authentication) or Email &amp; Password authentication, we store your display
+            name, email address, generated username, 5-character UID, profile photo URL (if provided by
+            Google), plan tier, points ledger, and assigned role in our PostgreSQL database. Passwords
+            for Email &amp; Password accounts are salted and hashed with cryptographic <code>scrypt</code>
+            and are never stored in plain text.
+          </li>
+          <li>
+            <strong>Study Workspace Content:</strong> When signed in, we store the A4 notebooks, note pages,
+            tasks, calendar events, exam blueprints, countdown timers, study session logs, Tool Mail messages,
+            Study Material uploads, and Contact support inquiries that you explicitly create or submit.
+          </li>
+          <li>
+            <strong>Analytics &amp; Diagnostics:</strong> We use Google Analytics 4 (Measurement ID
+            <code>G-ZLDZEPQJX2</code>) to measure aggregate page views, active sessions, and app stability.
+            We do not send note contents, passwords, or OAuth tokens to analytics.
+          </li>
+        </ul>
+
+        <h2>2. Optional Google Workspace API Access &amp; Limited Use Policy</h2>
+        <p>
+          Google Workspace integrations are <strong>strictly optional</strong>. Standard sign-in does not
+          request Drive, Docs, Sheets, or Meet scopes. You are only asked for Google Workspace permissions
+          when you explicitly opt in via the permission prompts or under
+          <strong>View Plans and Settings &rarr; Google Workspace Function Permissions</strong>:
+        </p>
+        <ul>
+          <li>
+            <code>https://www.googleapis.com/auth/drive.file</code> &mdash; Used solely to create and
+            manage the dedicated <code>ASAN-user-content</code> folder and files created or opened by
+            ASAN-Study_tool (PDF exports, <code>.txt</code> task/note backups, and study materials). The
+            app cannot access unrelated files in your Google Drive.
+          </li>
+          <li>
+            <code>https://www.googleapis.com/auth/documents</code> &mdash; Used when you explicitly click
+            to export A4 study notes as Google Docs.
+          </li>
+          <li>
+            <code>https://www.googleapis.com/auth/spreadsheets</code> &mdash; Used when you explicitly
+            sync your calendar schedule, tasks table, or <code>master</code> &rarr; <code>test_dates</code>
+            exam master sheets with Google Sheets.
+          </li>
+          <li>
+            <code>https://www.googleapis.com/auth/meetings.space.created</code> &amp;
+            <code>https://www.googleapis.com/auth/meetings.space.readonly</code> &mdash; Used only when
+            you explicitly click to generate or view an instant Google Meet study room link.
+          </li>
+        </ul>
+
+        <div class="callout">
+          <strong>Google API Services User Data Policy (Limited Use):</strong> ASAN-Study_tool&rsquo;s use
+          and transfer to any other app of information received from Google APIs will adhere to the
+          <a
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Google API Services User Data Policy
+          </a>
+          , including the Limited Use requirements. Google OAuth access tokens are held <strong>in memory only</strong>
+          for your active session, are never written to <code>localStorage</code> or <code>sessionStorage</code>,
+          and Google Workspace data is never sold, used for advertising, or used to train generalized AI/ML models.
+        </div>
+
+        <h2>3. How We Use Information</h2>
+        <ul>
+          <li>To provide, synchronize, and persist your notes, tasks, calendars, timers, and PDF exports across devices.</li>
+          <li>To compute and verify study reward points, Pro plan entitlements, license key activations, and contributor royalties.</li>
+          <li>To deliver in-app Tool Mail, notifications, and support inquiry responses.</li>
+          <li>To prevent abuse, verify point transactions, and maintain service reliability and security.</li>
+        </ul>
+
+        <h2>4. Data Sharing &amp; Service Providers</h2>
+        <p>
+          We do not sell or rent your personal information. Data is processed only by core infrastructure
+          providers required to operate the service:
+        </p>
+        <ul>
+          <li><strong>Google / Firebase Authentication &amp; Google APIs:</strong> Identity verification and user-authorized Drive, Docs, Sheets, and Meet actions.</li>
+          <li><strong>PostgreSQL / Supabase &amp; Application Hosting (Render / Cloud Run):</strong> Encrypted database and application runtime storage for signed-in user records.</li>
+          <li><strong>Google Analytics (GA4):</strong> Aggregate traffic and usage metrics.</li>
+        </ul>
+        <p>
+          Study Materials published publicly by approved contributors and public Tool Mail broadcasts are
+          visible to other signed-in users as intended by those features.
+        </p>
+
+        <h2>5. Data Retention, Controls &amp; Deletion</h2>
+        <ul>
+          <li>
+            <strong>Granular Workspace Toggles:</strong> You can disable individual Google Workspace
+            capabilities (Drive Sync, Docs Export, Sheets Sync, Meet Rooms) at any time in
+            <strong>View Plans and Settings</strong>.
+          </li>
+          <li>
+            <strong>Revoke Google Access:</strong> You may revoke ASAN-Study_tool&rsquo;s Google permissions
+            at any time from your
+            <a
+              href="https://myaccount.google.com/permissions"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Google Account Third-Party Access Settings
+            </a>.
+          </li>
+          <li>
+            <strong>Delete Your Data:</strong> You can delete individual notebooks, tasks, calendar events,
+            countdowns, messages, and uploaded materials inside the app, clear local Free Tier storage in
+            your browser settings, or request full account deletion by contacting
+            <a href="mailto:invcorporation7@gmail.com">invcorporation7@gmail.com</a>.
+          </li>
+        </ul>
+
+        <h2>6. Children&rsquo;s Privacy</h2>
+        <p>
+          ASAN-Study_tool is built for students preparing for board and competitive examinations. Users under
+          the minimum digital consent age in their jurisdiction should use the Free Tier locally or obtain
+          parent/guardian permission before creating an account or linking a Google account.
+        </p>
+
+        <h2>7. Updates &amp; Contact</h2>
+        <p>
+          We may update this Privacy Policy as features evolve. Material changes will update the Effective Date
+          above. If you have questions or privacy requests, please contact <strong>Arham Imam</strong> at
+          <a href="mailto:invcorporation7@gmail.com">invcorporation7@gmail.com</a> or via the in-app
+          <strong>Contact</strong> page.
+        </p>
+      </article>
+    </main>
+
+    <footer>
+      <span>&copy; 2026 ASAN-Study_tool · Arham Imam</span>
+      <span>
+        <a href="/privacy-policy.html">Privacy Policy</a> &nbsp;·&nbsp;
+        <a href="/terms-of-service.html">Terms of Service</a> &nbsp;·&nbsp;
+        <a href="/">Return to Workspace</a>
+      </span>
+    </footer>
+  </body>
+</html>

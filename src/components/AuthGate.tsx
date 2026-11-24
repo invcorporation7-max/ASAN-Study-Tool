@@ -460,6 +460,25 @@ export const AuthGate: React.FC = () => {
           </div>
         </div>
       </main>
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+          <span>&copy; 2026 ASAN-Study_tool · Arham Imam</span>
+          <div className="flex items-center gap-4">
+            <a
+              href="/privacy-policy.html"
+              className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Privacy Policy
+            </a>
+            <a
+              href="/terms-of-service.html"
+              className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Terms of Service
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

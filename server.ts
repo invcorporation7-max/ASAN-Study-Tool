@@ -2047,6 +2047,24 @@ async function startServer() {
     return html.replace('</head>', `${snippet}\n  </head>`);
   };
 
+  // Public legal pages (accessible via /privacy-policy(.html) and /terms-of-service(.html) in dev & prod)
+  const sendLegalPage = (filename: string, res: express.Response) => {
+    const prodCandidate = path.resolve(__dirname, 'dist', filename);
+    const devCandidate = path.resolve(__dirname, 'public', filename);
+    const target = fs.existsSync(prodCandidate) && process.env.NODE_ENV === 'production' ? prodCandidate : devCandidate;
+    if (fs.existsSync(target)) {
+      res.status(200).sendFile(target);
+    } else {
+      res.status(404).send('Not found');
+    }
+  };
+  app.get(['/privacy-policy', '/privacy-policy.html', '/privacy'], (_req, res) => {
+    sendLegalPage('privacy-policy.html', res);
+  });
+  app.get(['/terms-of-service', '/terms-of-service.html', '/terms'], (_req, res) => {
+    sendLegalPage('terms-of-service.html', res);
+  });
+
   // Vite middleware for dev or static dist for production (Render Web Service + PWA)
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

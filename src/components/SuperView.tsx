@@ -38,8 +38,16 @@ type UserFilter = 'all' | 'pro' | 'basic' | 'contributors' | 'admins' | 'google'
 type UserSort = 'points_desc' | 'points_asc' | 'newest' | 'name_asc';
 
 export const SuperView: React.FC = () => {
-  const { dbUser, isSuper, isWorkspaceEnabled, workspaceToken, connectBasicDrive, refreshProfile } =
-    useAuth();
+  const {
+    dbUser,
+    isSuper,
+    isWorkspaceEnabled,
+    workspaceToken,
+    connectBasicDrive,
+    error: authError,
+    clearError,
+    refreshProfile,
+  } = useAuth();
 
   const [ledger, setLedger] = useState<SuperUsersPointsResponse | null>(null);
   const [licenseKeys, setLicenseKeys] = useState<LicenseKeyItem[]>([]);
@@ -160,7 +168,7 @@ export const SuperView: React.FC = () => {
   if (!isSuper) {
     return (
       <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-xl border border-violet-200 dark:border-violet-800/70 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
+        <div className="asan-card-hover rounded-xl border border-violet-200 dark:border-violet-800/70 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
           <Crown className="mx-auto h-6 w-6 text-violet-600 dark:text-violet-400" />
           <h1 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
             Super Developer Mode Restricted
@@ -306,6 +314,7 @@ export const SuperView: React.FC = () => {
     setSyncingMaster(true);
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectBasicDrive();
@@ -477,9 +486,9 @@ export const SuperView: React.FC = () => {
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
+      {(errorMsg || authError) && (
         <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-          {errorMsg}
+          {errorMsg || authError}
         </div>
       )}
 
@@ -494,7 +503,7 @@ export const SuperView: React.FC = () => {
         <>
           {/* Economy Summary Strip */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 tabular-nums">
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+            <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Total Users</span>
                 <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -507,7 +516,7 @@ export const SuperView: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/30 p-4">
+            <div className="asan-card-hover rounded-xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/30 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-amber-800 dark:text-amber-300">
                 <span>Points Circulating</span>
                 <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -518,7 +527,7 @@ export const SuperView: React.FC = () => {
               <div className="text-[11px] text-amber-700 dark:text-amber-400">Combined user balances</div>
             </div>
 
-            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/40 dark:bg-emerald-950/30 p-4">
+            <div className="asan-card-hover rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/40 dark:bg-emerald-950/30 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-emerald-800 dark:text-emerald-300">
                 <span>Total Awarded</span>
                 <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -529,7 +538,7 @@ export const SuperView: React.FC = () => {
               <div className="text-[11px] text-emerald-700 dark:text-emerald-400">Rewards, bonuses &amp; stipends</div>
             </div>
 
-            <div className="rounded-xl border border-rose-200 dark:border-rose-800/70 bg-rose-50/40 dark:bg-rose-950/30 p-4">
+            <div className="asan-card-hover rounded-xl border border-rose-200 dark:border-rose-800/70 bg-rose-50/40 dark:bg-rose-950/30 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-rose-800 dark:text-rose-300">
                 <span>Spent / Deducted</span>
                 <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
@@ -540,7 +549,7 @@ export const SuperView: React.FC = () => {
               <div className="text-[11px] text-rose-700 dark:text-rose-400">Plans, materials &amp; deductions</div>
             </div>
 
-            <div className="rounded-xl border border-violet-200 dark:border-violet-800/70 bg-violet-50/40 dark:bg-violet-950/30 p-4 col-span-2 lg:col-span-1">
+            <div className="asan-card-hover rounded-xl border border-violet-200 dark:border-violet-800/70 bg-violet-50/40 dark:bg-violet-950/30 p-4 col-span-2 lg:col-span-1">
               <div className="flex items-center justify-between text-xs font-medium text-violet-800 dark:text-violet-300">
                 <span>Contributors</span>
                 <Sliders className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -555,7 +564,7 @@ export const SuperView: React.FC = () => {
           </div>
 
           {/* All Users & Their Points Directory */}
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+          <section className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -762,7 +771,7 @@ export const SuperView: React.FC = () => {
             {/* Adjust Points */}
             <form
               onSubmit={handleAdjustPoints}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -823,7 +832,7 @@ export const SuperView: React.FC = () => {
             {/* Terminate / Cancel Plans & Approvals */}
             <form
               onSubmit={handleSuperAction}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
@@ -877,7 +886,7 @@ export const SuperView: React.FC = () => {
             {/* Contributor Weekly Income */}
             <form
               onSubmit={handleUpdateWeeklyStipend}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
             >
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -911,7 +920,7 @@ export const SuperView: React.FC = () => {
           {/* Configure Action Point Rewards */}
           <form
             onSubmit={handleSavePointRewards}
-            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4"
+            className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
@@ -1000,7 +1009,7 @@ export const SuperView: React.FC = () => {
           />
 
           {/* Global Point Transactions Audit Log */}
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+          <section className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -1072,7 +1081,7 @@ export const SuperView: React.FC = () => {
 
           {/* License Key Cancellation Control */}
           {licenseKeys.length > 0 && (
-            <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
+            <section className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
                   License Key Cancellation Control ({licenseKeys.length})

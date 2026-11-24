@@ -23,17 +23,21 @@ import { CONSTANT_ADMIN_LICENSE_KEY, UPLOADS_DIR } from './src/db/localStore.ts'
 import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
 import {
   authorizeAdminEmail,
+  cancelProAndRequestRefund,
   generateProLicenseKey,
   getPointRewardsConfig,
   getPointTransactions,
   getUserLicenseKeys,
+  getUserRefundRequests,
   listPublicCreditsContributors,
+  listRefundRequestsForAdmin,
   listToolUsers,
   loginPasswordUser,
   purchaseProWithPoints,
   redeemLicenseKey,
   registerPasswordUser,
   requestContributorRole,
+  reviewProRefundRequest,
   sanitizeUserForClient,
   setContributorStatus,
   setContributorWeeklyPoints,
@@ -513,7 +517,11 @@ async function startServer() {
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to update profile';
-      const status = msg.includes('already taken') || msg.includes('at least 3') ? 400 : 500;
+      const status = msg.includes('Pro users cannot')
+        ? 403
+        : msg.includes('already taken') || msg.includes('at least 3')
+          ? 400
+          : 500;
       res.status(status).json({ error: msg });
     }
   });
@@ -533,9 +541,8 @@ async function startServer() {
         authMode: req.authMode || req.dbUser?.authMode || 'google',
       });
     } catch (error: unknown) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to update plan',
-      });
+      const msg = error instanceof Error ? error.message : 'Failed to update plan';
+      res.status(msg.includes('Pro users cannot') ? 403 : 500).json({ error: msg });
     }
   });
 
@@ -553,9 +560,10 @@ async function startServer() {
 
   app.get('/api/subscriptions', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const [keys, transactions] = await Promise.all([
+      const [keys, transactions, refundRequests] = await Promise.all([
         getUserLicenseKeys(req.dbUser!.id, req.dbUser!.email),
         getPointTransactions(req.dbUser!.id),
+        getUserRefundRequests(req.dbUser!.id),
       ]);
       res.json({
         plan: req.dbUser!.plan,
@@ -565,6 +573,7 @@ async function startServer() {
         proExpiresAt: req.dbUser!.proExpiresAt,
         keys,
         transactions,
+        refundRequests,
       });
     } catch (error: unknown) {
       res.status(500).json({
@@ -633,6 +642,25 @@ async function startServer() {
           ? 400
           : 500;
       res.status(status).json({ error: msg });
+    }
+  });
+
+  app.post('/api/subscriptions/cancel-pro', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { reason, purchaseType } = req.body || {};
+      const result = await cancelProAndRequestRefund({
+        userId: req.dbUser!.id,
+        reason: typeof reason === 'string' ? reason : '',
+        purchaseType: purchaseType === 'non_timed' ? 'non_timed' : 'timed',
+      });
+      res.json({
+        user: sanitizeUserForClient(result.user),
+        refundRequest: result.refundRequest,
+        message: result.message,
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to cancel Pro subscription';
+      res.status(msg.includes('Only active Pro') ? 400 : 500).json({ error: msg });
     }
   });
 
@@ -1427,9 +1455,13 @@ async function startServer() {
   // Admin Console Endpoints (role === 'admin' or 'super')
   app.get('/api/admin/overview', requireAuth, requireAdmin, async (_req: AuthRequest, res) => {
     try {
-      const data = await getAdminAnalytics();
+      const [data, refundRequests] = await Promise.all([
+        getAdminAnalytics(),
+        listRefundRequestsForAdmin(),
+      ]);
       res.json({
         ...data,
+        refundRequests,
         constantAdminKey: CONSTANT_ADMIN_LICENSE_KEY,
       });
     } catch (error: unknown) {
@@ -1622,6 +1654,51 @@ async function startServer() {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : 'Failed to review point transaction';
         const status = msg.includes('not found') ? 404 : msg.includes('already') || msg.includes('cannot') || msg.includes('Please enter') ? 400 : 500;
+        res.status(status).json({ error: msg });
+      }
+    }
+  );
+
+  app.get('/api/admin/refund-requests', requireAuth, requireAdmin, async (_req: AuthRequest, res) => {
+    try {
+      const rows = await listRefundRequestsForAdmin();
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load refund requests',
+      });
+    }
+  });
+
+  app.post(
+    '/api/admin/refund-requests/:id/review',
+    requireAuth,
+    requireAdmin,
+    async (req: AuthRequest, res) => {
+      try {
+        const requestId = Number(req.params.id);
+        if (!Number.isFinite(requestId)) {
+          return res.status(400).json({ error: 'Invalid refund request ID.' });
+        }
+        const action = req.body?.action === 'approve' ? 'approve' : req.body?.action === 'reject' ? 'reject' : null;
+        if (!action) {
+          return res.status(400).json({ error: 'Action must be approve or reject.' });
+        }
+        const adminNote = typeof req.body?.adminNote === 'string' ? req.body.adminNote : '';
+        const updated = await reviewProRefundRequest({
+          reviewerId: req.dbUser!.id,
+          reviewerEmail: req.dbUser!.email,
+          reviewerUsername: req.dbUser!.username,
+          reviewerShortUid: req.dbUser!.shortUid,
+          reviewerRole: req.dbUser!.role,
+          requestId,
+          action,
+          adminNote,
+        });
+        res.json(updated);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to review refund request';
+        const status = msg.includes('not found') ? 404 : msg.includes('already') ? 400 : 500;
         res.status(status).json({ error: msg });
       }
     }

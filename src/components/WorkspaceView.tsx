@@ -45,7 +45,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   events,
   exams,
 }) => {
-  const { dbUser, workspaceToken, workspacePermissions, connectWorkspace, updateProfile } =
+  const { dbUser, workspaceToken, workspacePermissions, connectWorkspace, updateProfile, error: authError, clearError } =
     useAuth();
   const anyPermEnabled =
     workspacePermissions.driveSync ||
@@ -100,6 +100,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -128,6 +129,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     if (!file) return;
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -169,6 +171,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -192,6 +195,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -245,6 +249,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -271,6 +276,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       const info = await ensureTokenAndFolder();
       if (!info) {
@@ -299,6 +305,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
     setBusy(true);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -321,9 +328,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
-            Google Workspace (Opt-In Folder Sync)
-          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Google Workspace (Opt-In Folder Sync)
+            </h1>
+            <span className="asan-pro-badge rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+              Pro Workspace
+            </span>
+          </div>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Accesses only files inside a dedicated <code className="font-mono">ASAN-user-content</code> Google Drive folder when you choose to connect.
           </p>
@@ -357,7 +369,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       )}
 
       {!workspaceToken && (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex items-start gap-3 text-xs text-slate-600 dark:text-slate-300">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex items-start gap-3 text-xs text-slate-600 dark:text-slate-300 asan-card-hover">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
           <div>
             <div className="font-semibold text-slate-900 dark:text-slate-100">
@@ -372,15 +384,21 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         </div>
       )}
 
-      {statusMsg && (
-        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-xs text-slate-700 dark:text-slate-300">
-          {statusMsg}
+      {(statusMsg || authError) && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-xs ${
+            !statusMsg && authError
+              ? 'border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          {statusMsg || authError}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Folder-Scoped Google Drive */}
-        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <section className="asan-pro-card asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <HardDrive className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -477,7 +495,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
         {/* Google Sheets Schedule & Tasks + Meet */}
         <div className="space-y-6">
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
+          <section className="asan-pro-card asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -534,7 +552,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
+          <section className="asan-pro-card asan-card-hover rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-slate-900 p-6 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Video className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -579,7 +597,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         </div>
 
         {/* Google Docs */}
-        <section className="lg:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <section className="asan-pro-card asan-card-hover lg:col-span-2 rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">

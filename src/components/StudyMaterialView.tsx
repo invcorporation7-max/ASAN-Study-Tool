@@ -68,6 +68,8 @@ export const StudyMaterialView: React.FC = () => {
     refreshProfile,
     workspaceToken,
     connectBasicDrive,
+    error: authError,
+    clearError,
   } = useAuth();
 
   const [materials, setMaterials] = useState<StudyMaterialItem[]>([]);
@@ -279,6 +281,7 @@ export const StudyMaterialView: React.FC = () => {
     }
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectBasicDrive();
@@ -321,7 +324,7 @@ export const StudyMaterialView: React.FC = () => {
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
+        <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
           <div className="flex items-start gap-3">
             <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -385,7 +388,7 @@ export const StudyMaterialView: React.FC = () => {
       {showRequestBox && !contributorAccess && !contributorRequested && (
         <form
           onSubmit={handleApplyContributor}
-          className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50/40 dark:bg-red-950/30 p-4 space-y-3"
+          className="asan-card-hover rounded-xl border border-red-200 dark:border-red-900 bg-red-50/40 dark:bg-red-950/30 p-4 space-y-3"
         >
           <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
             Send Contributor Tag Request to Admin &amp; Super (Tool Mail)
@@ -421,9 +424,9 @@ export const StudyMaterialView: React.FC = () => {
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
+      {(errorMsg || authError) && (
         <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/50 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-          {errorMsg}
+          {errorMsg || authError}
         </div>
       )}
 
@@ -431,7 +434,7 @@ export const StudyMaterialView: React.FC = () => {
         {/* Upload Card */}
         <form
           onSubmit={handleUpload}
-          className="lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
+          className="asan-card-hover lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
         >
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <FileUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -600,7 +603,7 @@ export const StudyMaterialView: React.FC = () => {
         </form>
 
         {/* Repository List */}
-        <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-blue-600 dark:text-blue-400" />

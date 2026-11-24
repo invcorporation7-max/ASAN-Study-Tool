@@ -64,6 +64,8 @@ export const NotesView: React.FC<NotesViewProps> = ({
     workspaceToken,
     connectBasicDrive,
     connectWorkspace,
+    error: authError,
+    clearError,
     refreshProfile,
     updateProfile,
   } = useAuth();
@@ -465,6 +467,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExporting(true);
     setStatusMsg(null);
     setExternalLink(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -495,6 +498,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExporting(true);
     setStatusMsg(null);
     setExternalLink(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -538,6 +542,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExporting(true);
     setStatusMsg(null);
     setExternalLink(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
@@ -699,9 +704,15 @@ export const NotesView: React.FC<NotesViewProps> = ({
         </div>
       </div>
 
-      {statusMsg && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200">
-          <span>{statusMsg}</span>
+      {(statusMsg || authError) && (
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-2.5 text-xs ${
+            !statusMsg && authError
+              ? 'border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
+          }`}
+        >
+          <span>{statusMsg || authError}</span>
           {externalLink && (
             <a
               href={externalLink.url}
@@ -718,7 +729,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
       {/* OneNote Three-Pane Layout: Notebooks/Sections | A4 Page Canvas */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 items-start">
         {/* Left Navigation Tree (Notebooks + Pages) */}
-        <aside className="lg:col-span-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-5 h-fit">
+        <aside className="asan-card-hover lg:col-span-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-5 h-fit">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Notebooks</span>
@@ -876,7 +887,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
         {/* Main A4 Page Distribution Workspace */}
         <div className="lg:col-span-9 space-y-4">
           {!activeDoc ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
+            <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center">
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Select or create a document in your notebook to start writing on A4 sheets.
               </p>
@@ -892,7 +903,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
           ) : (
             <>
               {/* Document Metadata & A4 Page Controls */}
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     type="text"
@@ -930,7 +941,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
               </div>
 
               {/* A4 Sheet Stream (210mm x 297mm proportion) */}
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-3 sm:p-6 space-y-6 sm:space-y-8 lg:overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
+              <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/60 p-3 sm:p-6 space-y-6 sm:space-y-8 lg:overflow-y-auto lg:max-h-[calc(100vh-12rem)]">
                 {pages.map((page, pageIdx) => (
                   <div
                     key={page.id}

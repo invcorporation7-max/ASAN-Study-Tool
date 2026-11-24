@@ -67,6 +67,8 @@ export const ContributorConsoleView: React.FC = () => {
     connectBasicDrive,
     updateProfile,
     refreshProfile,
+    error: authError,
+    clearError,
   } = useAuth();
 
   const [folders, setFolders] = useState<ContributorFolderItem[]>([]);
@@ -259,6 +261,7 @@ export const ContributorConsoleView: React.FC = () => {
     if (!isWorkspaceEnabled) return;
     setError(null);
     setNotice(null);
+    clearError();
     setBusyMessage(
       target === 'master'
         ? 'Syncing folder tree to ASAN-Master-Folder...'
@@ -414,7 +417,7 @@ export const ContributorConsoleView: React.FC = () => {
   if (!isApprovedContributor) {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400">
               <FolderUp className="h-5 w-5" />
@@ -475,7 +478,7 @@ export const ContributorConsoleView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 asan-card-hover">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -539,9 +542,9 @@ export const ContributorConsoleView: React.FC = () => {
             {busyMessage}
           </div>
         )}
-        {error && (
+        {(error || authError) && (
           <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3.5 py-2 text-xs text-red-700 dark:text-red-300">
-            {error}
+            {error || authError}
           </div>
         )}
         {notice && (
@@ -552,7 +555,7 @@ export const ContributorConsoleView: React.FC = () => {
       </div>
 
       {/* Controls Toolbar: Breadcrumbs + Create Subfolder + Upload Files / Upload Whole Folder */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 asan-card-hover">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
           <nav className="flex flex-wrap items-center gap-1 text-xs font-medium">
             <button
@@ -669,7 +672,7 @@ export const ContributorConsoleView: React.FC = () => {
       </div>
 
       {/* Subfolders Grid */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 asan-card-hover">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
             Subfolders ({childFolders.length})
@@ -692,7 +695,7 @@ export const ContributorConsoleView: React.FC = () => {
             {childFolders.map((folder) => (
               <div
                 key={folder.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors"
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors asan-card-hover"
               >
                 <button
                   type="button"

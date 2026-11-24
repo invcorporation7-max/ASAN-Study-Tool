@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Check,
+  ChevronDown,
   CloudUpload,
   ExternalLink,
   Globe,
@@ -41,14 +42,17 @@ export const SpectraView: React.FC = () => {
         </p>
       </div>
 
-      <div className="rounded-xl border border-amber-200 dark:border-amber-800/70 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-4">
+      <div className="asan-pro-card asan-card-hover rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-4">
         <div className="flex items-start gap-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
             <Globe className="h-5 w-5" />
           </div>
           <div className="space-y-1.5">
-            <div className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Unavailable
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                Unavailable
+              </span>
             </div>
             <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
               Spectra AI is currently under development
@@ -100,7 +104,7 @@ export const MoreFeaturesView: React.FC = () => {
         {upcoming.map((item) => (
           <div
             key={item.title}
-            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-2"
+            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-2 asan-card-hover"
           >
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
               <span className="font-medium text-blue-600 dark:text-blue-400">{item.tier} Roadmap</span>
@@ -138,9 +142,11 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
   } = useAuth();
   const currentPlan = effectivePlan;
   const isAdmin = !isGuest && (dbUser?.role === 'admin' || dbUser?.role === 'super');
-  const canPreviewBasic =
+  const isActivePro =
     !isGuest &&
-    (dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super');
+    dbUser?.plan === 'pro' &&
+    (!dbUser.proExpiresAt || new Date(dbUser.proExpiresAt).getTime() > Date.now());
+  const canPreviewBasic = !isGuest && !isActivePro && isAdmin;
   const [switching, setSwitching] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -257,6 +263,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         'PDF Tool: A4 Booklet & Imposition Studio (Full/Half/Quarter)',
         'Google Workspace (Sheets "master" / "test_dates" sync, Docs export, Meet rooms)',
         'Expirable 8-char Pro Key (1 yr activation window, 1 mo or 12 mo Pro term)',
+        'Locked until expiry or willing cancellation (Refund: 60% non-timed, remaining time − 5% timed; requires Admin approval)',
       ],
     },
   ];
@@ -341,21 +348,29 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
               <span className="px-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 Admin Account Plan:
               </span>
-              {(['basic', 'pro'] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  disabled={switching}
-                  onClick={() => handlePlanSwitch(p)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${
-                    dbUser?.plan === p
-                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+              {(['basic', 'pro'] as const).map((p) => {
+                const blocked = p === 'basic' && isActivePro;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    disabled={switching || blocked}
+                    title={
+                      blocked
+                        ? 'Active Pro accounts stay on Pro until expiry or willing cancellation in Subscriptions'
+                        : undefined
+                    }
+                    onClick={() => handlePlanSwitch(p)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize disabled:opacity-45 ${
+                      dbUser?.plan === p
+                        ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -364,19 +379,29 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {tiers.map((tier) => {
           const isCurrent = currentPlan === tier.id;
+          const isProTier = tier.id === 'pro';
           return (
             <div
               key={tier.id}
-              className={`rounded-xl border p-6 flex flex-col justify-between space-y-6 bg-white dark:bg-slate-900 ${
-                isCurrent ? 'border-blue-600 dark:border-blue-500' : 'border-slate-200 dark:border-slate-800'
+              className={`rounded-xl border p-6 flex flex-col justify-between space-y-6 asan-card-hover ${
+                isProTier
+                  ? 'asan-pro-card border-indigo-300 dark:border-indigo-700'
+                  : 'bg-white dark:bg-slate-900'
+              } ${
+                isCurrent && !isProTier ? 'border-blue-600 dark:border-blue-500' : !isProTier ? 'border-slate-200 dark:border-slate-800' : ''
               }`}
             >
               <div className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {tier.name}
-                    </h2>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {tier.name}
+                      </h2>
+                      {isProTier && (
+                        <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
+                      )}
+                    </div>
                     {isCurrent && (
                       <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                         Active
@@ -441,7 +466,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       {!isGuest && (
         <form
           onSubmit={handleRedeemKey}
-          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between asan-card-hover"
         >
           <div className="space-y-0.5">
             <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -475,7 +500,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       )}
 
       {/* Google Workspace Function Permissions */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4 asan-card-hover">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -540,7 +565,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
             return (
               <label
                 key={item.key}
-                className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 px-4 py-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600"
+                className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 px-4 py-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 asan-card-hover"
               >
                 <div className="min-w-0">
                   <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">{item.title}</div>
@@ -572,7 +597,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
 
       {/* Extra Responsibilities: Contributor & Hand-Selected Admin */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 asan-card-hover">
           <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
             Extra Role · Study Material Contributors
           </div>
@@ -581,7 +606,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           </p>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 asan-card-hover">
           <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">
             Extra Responsibility · Hand-Selected Admins (Not a Plan)
           </div>
@@ -597,6 +622,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
 export const AboutCreatorsView: React.FC = () => {
   const [contributors, setContributors] = useState<CreditContributorItem[]>([]);
   const [loadingCredits, setLoadingCredits] = useState(true);
+  const [olderVersionsOpen, setOlderVersionsOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -625,7 +651,7 @@ export const AboutCreatorsView: React.FC = () => {
       </div>
 
       {/* Primary Creator & Attribution */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5 asan-card-hover">
         <div className="flex items-start gap-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
             <Users className="h-5 w-5" />
@@ -644,7 +670,7 @@ export const AboutCreatorsView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 dark:border-slate-800 pt-5 sm:grid-cols-2 text-xs text-slate-600 dark:text-slate-300">
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1 asan-card-hover">
             <div className="font-semibold text-slate-900 dark:text-slate-100">
               Spectra AI Module
             </div>
@@ -652,7 +678,7 @@ export const AboutCreatorsView: React.FC = () => {
               Currently <strong>under development</strong> and temporarily unavailable in this release.
             </p>
           </div>
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-4 space-y-1 asan-card-hover">
             <div className="font-semibold text-slate-900 dark:text-slate-100">
               Application Engineering
             </div>
@@ -685,7 +711,7 @@ export const AboutCreatorsView: React.FC = () => {
       </div>
 
       {/* Currently Serving Contributors */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -711,7 +737,7 @@ export const AboutCreatorsView: React.FC = () => {
             {contributors.map((c) => (
               <div
                 key={c.id}
-                className="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 p-3"
+                className="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 p-3 asan-card-hover"
               >
                 <UserAvatarBadge
                   name={c.displayName}
@@ -741,7 +767,7 @@ export const AboutCreatorsView: React.FC = () => {
       </div>
 
       {/* About Site & Release Tag v1.7 */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -775,29 +801,43 @@ export const AboutCreatorsView: React.FC = () => {
         </ul>
       </div>
 
-      {/* About Site & Release Tag v1.6 (Older Version — Headings Only) */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+      {/* About Site & Release Tag v1.6 (Older Version — Headings Only Accordion) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 asan-card-hover">
+        <button
+          type="button"
+          onClick={() => setOlderVersionsOpen((v) => !v)}
+          aria-expanded={olderVersionsOpen}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
-              Previous Release · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.6</span>
+              Previous Releases · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.6</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Update headings from earlier release v1.6.
+              Click to {olderVersionsOpen ? 'collapse' : 'expand'} update headings from earlier release v1.6.
             </p>
           </div>
-          <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
-            Release v1.6
-          </span>
-        </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Release v1.6
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${
+                olderVersionsOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </div>
+        </button>
 
-        <ul className="space-y-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 list-disc pl-5">
-          <li>Casio fx-82MS Scientific Calculator Simulator</li>
-          <li>Admin Point Verification &amp; Super Action Point Control</li>
-          <li>PDF Studio Whole-PDF Import, Camera Scan &amp; Auto-Renumbering</li>
-          <li>Custom Sidebar App Pinning &amp; Workspace Function Permissions</li>
-          <li>Study Material 70% Owner Royalty &amp; Mobile/Tablet Layout Fixes</li>
-        </ul>
+        {olderVersionsOpen && (
+          <ul className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3.5 space-y-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 list-disc pl-5">
+            <li>Casio fx-82MS Scientific Calculator Simulator</li>
+            <li>Admin Point Verification &amp; Super Action Point Control</li>
+            <li>PDF Studio Whole-PDF Import, Camera Scan &amp; Auto-Renumbering</li>
+            <li>Custom Sidebar App Pinning &amp; Workspace Function Permissions</li>
+            <li>Study Material 70% Owner Royalty &amp; Mobile/Tablet Layout Fixes</li>
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -815,6 +855,8 @@ export const ContactView: React.FC = () => {
     connectWorkspace,
     connectBasicDrive,
     updateProfile,
+    error: authError,
+    clearError,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const isAdmin = !isGuest && (dbUser?.role === 'admin' || dbUser?.role === 'super');
@@ -867,6 +909,7 @@ export const ContactView: React.FC = () => {
   const handleBackupContactDrive = async () => {
     setBackupMsg(null);
     setError(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
@@ -892,7 +935,7 @@ export const ContactView: React.FC = () => {
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 asan-card-hover">
           <div className="flex items-start gap-3">
             <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -947,7 +990,7 @@ export const ContactView: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <form
           onSubmit={handleSubmit}
-          className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit"
+          className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit asan-card-hover"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
@@ -1001,9 +1044,9 @@ export const ContactView: React.FC = () => {
               Message saved to server database! View your submitted tickets below.
             </div>
           )}
-          {error && (
+          {(error || authError) && (
             <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-              {error}
+              {error || authError}
             </div>
           )}
 
@@ -1023,7 +1066,7 @@ export const ContactView: React.FC = () => {
           </div>
         </form>
 
-        <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               {isAdmin ? 'All User Contact Inquiries (Admin)' : 'Your Submitted Inquiries'}

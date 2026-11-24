@@ -968,7 +968,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* TAB: EXAM COUNTDOWNS */}
       {activeTab === 'countdowns' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit">
+          <div className="asan-card-hover lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 h-fit">
             <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <Timer className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -1049,7 +1049,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
           <div className="lg:col-span-7 space-y-6">
             {/* Top-Level Admin Exams */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
               <div>
                 <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                   Top-Level Upcoming Exams (Admin Curated)
@@ -1071,7 +1071,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                     return (
                       <div
                         key={item.id}
-                        className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        className="asan-card-hover flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="min-w-0">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
@@ -1115,7 +1115,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
             </div>
 
             {/* Personal Custom Countdowns */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 My Custom Countdowns ({customCountdowns.length})
               </h3>
@@ -1131,7 +1131,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                     return (
                       <div
                         key={item.id}
-                        className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        className="asan-card-hover flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div className="min-w-0">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -1189,7 +1189,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {activeTab === 'test' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Exam Configuration Form */}
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="asan-card-hover lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Configure Specialized Exam Timer
             </h2>
@@ -1382,7 +1382,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
           <div className="lg:col-span-7 space-y-6">
             <div
               ref={examConsoleRef}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-white flex flex-col justify-center"
+              className="asan-card-hover rounded-xl border border-slate-800 bg-slate-900 p-8 text-white flex flex-col justify-center"
             >
               {!activeExam ? (
                 <div className="py-10 text-center space-y-2">
@@ -1514,7 +1514,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
             </div>
 
             {/* Scheduled Exams List */}
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 Scheduled & Saved Exams
               </h3>
@@ -1590,7 +1590,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* TAB 2: BASIC TIMERS */}
       {activeTab === 'basic' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 flex flex-col items-center justify-center space-y-6">
+          <div className="asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 flex flex-col items-center justify-center space-y-6">
             <div className="flex flex-wrap items-center justify-center gap-2">
               {[
                 { label: 'Pomodoro (25m)', min: 25 },
@@ -1686,7 +1686,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
             </div>
           </div>
 
-          <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="asan-card-hover lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Recent Study Timer Logs
             </h3>
@@ -1722,7 +1722,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
 
       {/* TAB 3: MICROSECOND STOPWATCH */}
       {activeTab === 'stopwatch' && (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-8">
+        <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-8">
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center">
             <div className="text-xs font-medium text-slate-400">
               High-Precision Microsecond Stopwatch (HH:MM:SS · ms · µs)
@@ -1824,7 +1824,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
       {/* TAB 4: PRO STUDY TIME LOGGER (IN/OUT - 2.5% DEDUCTION + OPTIONAL SLEEP) */}
       {activeTab === 'study-logger' &&
         (!isEffectiveProOrAdmin ? (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-3">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-3">
             <Lock className="mx-auto h-6 w-6 text-blue-600 dark:text-blue-400" />
             <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
               Study Time Logger Requires Pro Plan
@@ -1835,7 +1835,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
+            <div className="asan-card-hover lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
               <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                 <ClipboardCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -1962,7 +1962,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
               )}
             </div>
 
-            <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+            <div className="asan-card-hover lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
               <h3 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 Logged Study Time History
               </h3>

@@ -281,6 +281,29 @@ export interface StoreExamCountdown {
   createdAt: Date;
 }
 
+export interface StoreProRefundRequest {
+  id: number;
+  userId: number;
+  userEmail: string;
+  username: string;
+  displayName: string;
+  shortUid: string;
+  planTerm: string;
+  refundBasis: string;
+  pointsPaid: number;
+  remainingPercent: number;
+  remainingDays: number;
+  totalDays: number;
+  requestedRefundPoints: number;
+  reason: string;
+  status: string;
+  adminNote: string;
+  reviewedByUserId: number | null;
+  reviewedByLabel: string;
+  reviewedAt: string;
+  createdAt: Date;
+}
+
 interface LocalStoreData {
   seq: Record<string, number>;
   settings: {
@@ -305,6 +328,7 @@ interface LocalStoreData {
   contributorFolders: StoreContributorFolder[];
   contributorFiles: StoreContributorFile[];
   examCountdowns: StoreExamCountdown[];
+  proRefundRequests: StoreProRefundRequest[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
@@ -396,6 +420,9 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
   (data.examCountdowns || []).forEach((ec) => {
     ec.createdAt = toDate(ec.createdAt);
   });
+  (data.proRefundRequests || []).forEach((rr) => {
+    rr.createdAt = toDate(rr.createdAt);
+  });
   if (!data.settings || typeof data.settings.contributorWeeklyPoints !== 'number') {
     data.settings = { contributorWeeklyPoints: 120 };
   }
@@ -430,6 +457,7 @@ export function getLocalStore(): LocalStoreData {
         contributorFolders: parsed.contributorFolders || [],
         contributorFiles: parsed.contributorFiles || [],
         examCountdowns: parsed.examCountdowns || [],
+        proRefundRequests: parsed.proRefundRequests || [],
       });
       return cachedStore;
     } catch {
@@ -457,6 +485,7 @@ export function getLocalStore(): LocalStoreData {
     contributorFolders: [],
     contributorFiles: [],
     examCountdowns: [],
+    proRefundRequests: [],
   };
   persistLocalStore();
   return cachedStore;

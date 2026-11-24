@@ -1,4 +1,4 @@
-import { auth, getAccessToken } from './firebase';
+import { auth, clearAccessToken, getAccessToken } from './firebase';
 import {
   handleInbuiltApiRequest,
   inbuiltGetContributorBlob,
@@ -603,6 +603,15 @@ function requireWorkspaceToken(): string {
   return token;
 }
 
+function checkGoogleApiUnauthorized(res: Response): void {
+  if (res.status === 401) {
+    clearAccessToken();
+    throw new Error(
+      'Google Drive / Workspace permission expired or was revoked. Click Connect again to re-authorize ASAN-user-content.'
+    );
+  }
+}
+
 // --- FOLDER-SCOPED GOOGLE DRIVE (STRICTLY INSIDE ASAN-user-content) ---
 export interface DriveFileItem {
   id: string;
@@ -626,6 +635,7 @@ export async function ensureNamedDriveFolder(
       `https://www.googleapis.com/drive/v3/files/${existingFolderId}?fields=id,name,trashed,webViewLink`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
+    checkGoogleApiUnauthorized(checkRes);
     if (checkRes.ok) {
       const existing = await safeJson<{ id?: string; trashed?: boolean; name?: string; webViewLink?: string }>(checkRes);
       if (existing?.id && !existing.trashed && existing.name === folderName) {
@@ -642,6 +652,7 @@ export async function ensureNamedDriveFolder(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,webViewLink)&pageSize=1`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  checkGoogleApiUnauthorized(searchRes);
   if (searchRes.ok) {
     const searchData = await safeJson<{ files?: { id: string; name: string; webViewLink?: string }[] }>(searchRes);
     if (searchData.files && searchData.files.length > 0) {
@@ -663,6 +674,7 @@ export async function ensureNamedDriveFolder(
       }),
     }
   );
+  checkGoogleApiUnauthorized(createRes);
   const created = await safeJson<{ id?: string; name?: string; webViewLink?: string; error?: { message?: string } }>(createRes);
   if (!createRes.ok || !created.id) {
     throw new Error(created.error?.message || `Failed to create Drive folder "${folderName}"`);
@@ -689,6 +701,7 @@ export async function ensureSubfolderInDrive(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,webViewLink)&pageSize=1`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  checkGoogleApiUnauthorized(searchRes);
   if (searchRes.ok) {
     const searchData = await safeJson<{ files?: { id: string; name: string; webViewLink?: string }[] }>(searchRes);
     if (searchData.files && searchData.files.length > 0) {
@@ -711,6 +724,7 @@ export async function ensureSubfolderInDrive(
       }),
     }
   );
+  checkGoogleApiUnauthorized(createRes);
   const created = await safeJson<{ id?: string; name?: string; webViewLink?: string; error?: { message?: string } }>(createRes);
   if (!createRes.ok || !created.id) {
     throw new Error(created.error?.message || `Failed to create subfolder "${folderName}"`);
@@ -739,6 +753,7 @@ async function createDriveWorkspaceFile(
       }),
     }
   );
+  checkGoogleApiUnauthorized(res);
   const data = await safeJson<{ id?: string; name?: string; webViewLink?: string; error?: { message?: string } }>(res);
   if (!res.ok || !data.id) {
     throw new Error(data.error?.message || `Failed to create "${name}" inside ASAN-user-content`);
@@ -757,6 +772,7 @@ export async function listDriveFilesInFolder(
       headers: { Authorization: `Bearer ${token}` },
     }
   );
+  checkGoogleApiUnauthorized(res);
   const data = await safeJson<{ files?: DriveFileItem[]; error?: { message?: string } }>(res);
   if (!res.ok) {
     throw new Error(
@@ -793,6 +809,7 @@ export async function uploadFileToDriveFolder(
     },
     60000
   );
+  checkGoogleApiUnauthorized(res);
   const data = await safeJson<{ id?: string; name?: string; webViewLink?: string; error?: { message?: string } }>(res);
   if (!res.ok || !data.id) {
     throw new Error(data.error?.message || 'Failed to upload file to app folder');
@@ -813,6 +830,7 @@ export async function saveTextToDriveFolder(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  checkGoogleApiUnauthorized(searchRes);
   const searchData = searchRes.ok ? await safeJson<{ files?: { id: string }[] }>(searchRes) : { files: [] };
   const existingId = searchData.files?.[0]?.id;
 
@@ -828,6 +846,7 @@ export async function saveTextToDriveFolder(
         body: textContent,
       }
     );
+    checkGoogleApiUnauthorized(updateRes);
     const updated = await safeJson<{ id?: string; name?: string; webViewLink?: string; error?: { message?: string } }>(updateRes);
     if (!updateRes.ok || !updated.id) {
       throw new Error(updated.error?.message || 'Failed to update Drive .txt file');
@@ -858,6 +877,7 @@ export async function deleteDriveFile(fileId: string): Promise<void> {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
+  checkGoogleApiUnauthorized(res);
   if (!res.ok) {
     const data = await safeJson<{ error?: { message?: string } }>(res);
     throw new Error(data.error?.message || 'Failed to delete Drive file');
@@ -900,6 +920,7 @@ export async function exportNoteToGoogleDoc(
         }),
       }
     );
+    checkGoogleApiUnauthorized(updateRes);
     if (!updateRes.ok) {
       const errData = await safeJson<{ error?: { message?: string } }>(updateRes);
       throw new Error(errData.error?.message || 'Created Doc inside ASAN-user-content but failed to insert text');
@@ -1114,6 +1135,7 @@ export async function pullScheduleFromGoogleSheet(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  checkGoogleApiUnauthorized(metaRes);
   const meta = await safeJson<{ sheets?: { properties?: { title?: string } }[]; error?: { message?: string } }>(metaRes);
   if (!metaRes.ok) {
     throw new Error(meta.error?.message || 'Could not access Schedule Sheet');
@@ -1126,6 +1148,7 @@ export async function pullScheduleFromGoogleSheet(
     )}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  checkGoogleApiUnauthorized(valRes);
   const valData = await safeJson<{ values?: string[][]; error?: { message?: string } }>(valRes);
   if (!valRes.ok) {
     throw new Error(valData.error?.message || 'Failed to read rows from Schedule Sheet');
@@ -1385,6 +1408,7 @@ export async function createGoogleMeetRoom(): Promise<{
     },
     body: JSON.stringify({}),
   });
+  checkGoogleApiUnauthorized(res);
   const data = await safeJson<{
     meetingUri?: string;
     meetingCode?: string;

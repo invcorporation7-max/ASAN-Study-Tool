@@ -456,9 +456,38 @@ export type DashboardWidgetId =
   | 'metrics'
   | 'tasks'
   | 'schedule'
+  | 'monthly-calendar'
   | 'quick-actions';
+
+export interface DashboardTileSize {
+  colSpan: 1 | 2;
+  rowSpan: 1 | 2;
+}
 
 export interface DashboardPreferences {
   order: DashboardWidgetId[];
   hidden: DashboardWidgetId[];
+  sizes?: Partial<Record<DashboardWidgetId, DashboardTileSize>>;
+}
+
+export interface ProRefundRequestItem {
+  id: number;
+  userId: number;
+  userEmail: string;
+  username: string;
+  displayName: string;
+  shortUid: string;
+  planTerm: string;
+  refundBasis: 'time_remaining_minus_5' | 'flat_60_percent' | string;
+  pointsPaid: number;
+  remainingPercent: number;
+  remainingDays: number;
+  totalDays: number;
+  requestedRefundPoints: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  adminNote: string;
+  reviewedByLabel: string;
+  reviewedAt: string;
+  createdAt: string;
 }

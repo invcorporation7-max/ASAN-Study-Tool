@@ -37,6 +37,7 @@ import type {
   ExamCountdownItem,
   LicenseKeyItem,
   MaterialPurchaseItem,
+  ProRefundRequestItem,
   StudyMaterialItem,
 } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -76,6 +77,7 @@ interface AdminOverviewResponse {
   licenseKeys: LicenseKeyItem[];
   contributorFolders?: ContributorFolderItem[];
   contributorFiles?: ContributorFileItem[];
+  refundRequests?: ProRefundRequestItem[];
 }
 
 function formatBytes(bytes: number): string {
@@ -97,6 +99,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
     isWorkspaceEnabled,
     workspaceToken,
     connectBasicDrive,
+    error: authError,
+    clearError,
     refreshProfile,
   } = useAuth();
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
@@ -138,6 +142,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
   const [syncingMaster, setSyncingMaster] = useState(false);
 
   const [busy, setBusy] = useState(false);
+  const [refundNotes, setRefundNotes] = useState<Record<number, string>>({});
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [deleteMaterialTarget, setDeleteMaterialTarget] = useState<StudyMaterialItem | null>(null);
@@ -174,7 +179,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
+        <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-2">
           <ShieldCheck className="mx-auto h-6 w-6 text-slate-400" />
           <h1 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
             Admin Responsibility Restricted
@@ -452,6 +457,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
     setSyncingMaster(true);
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectBasicDrive();
@@ -563,6 +569,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
     }
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectBasicDrive();
@@ -596,6 +603,34 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
       await loadOverview();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to delete material');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReviewRefundRequest = async (
+    reqItem: ProRefundRequestItem,
+    action: 'approve' | 'reject'
+  ) => {
+    setBusy(true);
+    setErrorMsg(null);
+    setStatusMsg(null);
+    try {
+      await apiFetch(`/api/admin/refund-requests/${reqItem.id}/review`, {
+        method: 'POST',
+        body: JSON.stringify({
+          action,
+          adminNote: refundNotes[reqItem.id] || '',
+        }),
+      });
+      setStatusMsg(
+        action === 'approve'
+          ? `Approved Pro refund (+${reqItem.requestedRefundPoints} pts) for @${reqItem.username}.`
+          : `Rejected Pro refund request for @${reqItem.username}.`
+      );
+      await Promise.all([loadOverview(), refreshProfile()]);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to review refund request');
     } finally {
       setBusy(false);
     }
@@ -640,9 +675,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
+      {(errorMsg || authError) && (
         <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-          {errorMsg}
+          {errorMsg || authError}
         </div>
       )}
 
@@ -654,7 +689,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
         <>
           {/* Storage & Analytics Metrics Strip */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 asan-card-hover">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Server Storage Pool</span>
                 <HardDrive className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -673,7 +708,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
               <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
                 <span>Registered Users</span>
                 <BarChart3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -687,7 +722,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
               <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Contributors &amp; Requests</div>
               <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {data.analytics.approvedContributors}
@@ -697,7 +732,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
               <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Workspace Activity</div>
               <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                 {data.analytics.totalPointsCirculating} pts
@@ -710,7 +745,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
           </div>
 
           {/* Top-Level National / Board Exam Countdown Timers */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
                 <h2 className="flex items-center gap-2 font-display text-base font-bold text-slate-900 dark:text-slate-100">
@@ -841,9 +876,114 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
             }}
           />
 
+          {/* Pro Cancellation & Refund Approvals Queue */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4 asan-card-hover">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="flex items-center gap-2 font-display text-base font-bold text-slate-900 dark:text-slate-100">
+                  <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  Pro Cancellation &amp; Refund Approvals ({data.refundRequests?.length ?? 0})
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Review willing Pro cancellations (60% non-time-dependent, or remaining time − 5% for timed subscriptions). Approve to credit refunded points automatically.
+                </p>
+              </div>
+              {(data.refundRequests || []).some((r) => r.status === 'pending') && (
+                <span className="rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300 tabular-nums">
+                  {(data.refundRequests || []).filter((r) => r.status === 'pending').length} Pending
+                </span>
+              )}
+            </div>
+
+            {!data.refundRequests || data.refundRequests.length === 0 ? (
+              <p className="py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                No Pro cancellation refund requests yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {data.refundRequests.map((reqItem) => (
+                  <div
+                    key={reqItem.id}
+                    className="flex flex-col gap-3 py-3.5 lg:flex-row lg:items-center lg:justify-between text-xs"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
+                          {reqItem.displayName} (@{reqItem.username} · {reqItem.shortUid})
+                        </span>
+                        <span
+                          className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                            reqItem.status === 'approved'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : reqItem.status === 'rejected'
+                                ? 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                          }`}
+                        >
+                          {reqItem.status}
+                        </span>
+                      </div>
+                      <div className="text-slate-600 dark:text-slate-300 tabular-nums">
+                        Policy:{' '}
+                        <strong>
+                          {reqItem.refundBasis === 'flat_60_percent'
+                            ? '60% Non-Time-Dependent'
+                            : `Remaining (${reqItem.remainingPercent}%) − 5%`}
+                        </strong>{' '}
+                        · Paid: <strong>{reqItem.pointsPaid} pts</strong> · Days Left:{' '}
+                        <strong>
+                          {reqItem.remainingDays}/{reqItem.totalDays}
+                        </strong>{' '}
+                        · Refund:{' '}
+                        <strong className="font-mono text-emerald-700 dark:text-emerald-400">
+                          +{reqItem.requestedRefundPoints} pts
+                        </strong>
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Reason: {reqItem.reason}
+                        {reqItem.reviewedByLabel ? ` · Reviewed by ${reqItem.reviewedByLabel}` : ''}
+                        {reqItem.adminNote ? ` · Note: "${reqItem.adminNote}"` : ''}
+                      </div>
+                    </div>
+
+                    {reqItem.status === 'pending' && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <input
+                          type="text"
+                          value={refundNotes[reqItem.id] || ''}
+                          onChange={(e) =>
+                            setRefundNotes((prev) => ({ ...prev, [reqItem.id]: e.target.value }))
+                          }
+                          placeholder="Optional Admin note..."
+                          className="w-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                        />
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void handleReviewRefundRequest(reqItem, 'approve')}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Approve (+{reqItem.requestedRefundPoints} pts)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void handleReviewRefundRequest(reqItem, 'reject')}
+                          className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/60 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* SUPER / DEVELOPER MODE SECTION (Strictly invcorporation7@gmail.com) */}
           {isSuper && (
-            <div className="rounded-xl border-2 border-violet-200 dark:border-violet-800/80 bg-violet-50/30 dark:bg-violet-950/20 p-6 space-y-5">
+            <div className="asan-card-hover rounded-xl border-2 border-violet-200 dark:border-violet-800/80 bg-violet-50/30 dark:bg-violet-950/20 p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-200/70 dark:border-violet-800/70 pb-3">
                 <div className="flex items-center gap-2.5">
                   <Crown className="h-5 w-5 text-violet-700 dark:text-violet-400" />
@@ -876,7 +1016,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                 {/* Add / Deduct Points with Reason */}
                 <form
                   onSubmit={handleSuperAdjustPoints}
-                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
+                  className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
                 >
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                     <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -937,7 +1077,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                 {/* Terminate Plans & Cancel Approvals */}
                 <form
                   onSubmit={handleSuperAction}
-                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
+                  className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3"
                 >
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                     <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
@@ -991,7 +1131,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                 {/* Weekly Contributor Stipend Setting */}
                 <form
                   onSubmit={handleUpdateWeeklyStipend}
-                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
+                  className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 flex flex-col justify-between"
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -1024,7 +1164,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
 
               {/* License Keys Oversight (Cancel Unused / Active Keys) */}
               {data.licenseKeys && data.licenseKeys.length > 0 && (
-                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
+                <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
                       License Key Cancellation Control ({data.licenseKeys.length})
@@ -1097,7 +1237,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
             {/* Issue Pro Key */}
             <form
               onSubmit={handleGenerateProKey}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -1162,7 +1302,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
             {/* Hand-Select Admin */}
             <form
               onSubmit={handleAuthorizeAdmin}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -1191,7 +1331,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
             {/* Quick Admin Mail */}
             <form
               onSubmit={handleSendAdminMail}
-              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
+              className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -1231,7 +1371,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
           </div>
 
           {/* Contributor & User Oversight */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
             <div>
               <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
                 Contributor Oversight &amp; User Directory ({data.users.length})
@@ -1365,7 +1505,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
           </div>
 
           {/* Server Storage Files & ASAN-user-content Mirror */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -1436,7 +1576,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
           </div>
 
           {/* Repository Purchases & Hourly Rentals (DB Log) */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">

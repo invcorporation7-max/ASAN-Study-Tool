@@ -32,6 +32,8 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     connectWorkspace,
     connectBasicDrive,
     updateProfile,
+    error: authError,
+    clearError,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const [driveTxtSaving, setDriveTxtSaving] = useState(false);
@@ -139,6 +141,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     if (isGuest) return;
     setDriveTxtSaving(true);
     setFeedback(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
@@ -178,6 +181,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     setSheetExporting(true);
     setFeedback(null);
     setSheetUrl(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -266,9 +270,15 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
         )}
       </div>
 
-      {feedback && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-          <span>{feedback}</span>
+      {(feedback || authError) && (
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 text-sm ${
+            !feedback && authError
+              ? 'border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
+          }`}
+        >
+          <span>{feedback || authError}</span>
           {sheetUrl && (
             <a
               href={sheetUrl}
@@ -286,7 +296,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
         {/* New Task Form */}
         <form
           onSubmit={handleCreate}
-          className="lg:col-span-4 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
+          className="lg:col-span-4 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover"
         >
           <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
             Add Study Task
@@ -360,7 +370,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
         </form>
 
         {/* Task List & Filters */}
-        <div className="lg:col-span-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
+        <div className="lg:col-span-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5 asan-card-hover">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 overflow-x-auto">
               {(['all', 'todo', 'in_progress', 'done'] as const).map((tab) => (

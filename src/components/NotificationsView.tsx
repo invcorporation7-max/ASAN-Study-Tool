@@ -103,7 +103,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 asan-card-hover">
           <div className="flex items-start gap-3">
             <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -169,7 +169,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         {/* Send Notification Form */}
         <form
           onSubmit={handleSendNotification}
-          className="lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
+          className="lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover"
         >
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <Send className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -242,7 +242,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         </form>
 
         {/* Notification Inbox */}
-        <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
               Your Alerts ({notifications.length})

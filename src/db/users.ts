@@ -17,11 +17,19 @@ import {
   notePages,
   notifications,
   pointTransactions,
+  proRefundRequests,
   userMessages,
   users,
 } from './schema.ts';
 
 import type { PointRewardsConfig, WorkspacePermissionsConfig } from '../types.ts';
+
+function isActiveProTenure(u: { plan?: string | null; proExpiresAt?: string | null }): boolean {
+  if (u.plan !== 'pro') return false;
+  if (!u.proExpiresAt) return true;
+  const expMs = new Date(u.proExpiresAt).getTime();
+  return !Number.isFinite(expMs) || expMs > Date.now();
+}
 
 export const DEFAULT_CONTRIBUTOR_WEEKLY_POINTS = 120;
 
@@ -1007,15 +1015,30 @@ export async function updateUserProfile(
         throw new Error(`Username "@${cleanUsername}" is already taken.`);
       }
     }
+    const [currentUserRow] = await db
+      .select({
+        plan: users.plan,
+        proExpiresAt: users.proExpiresAt,
+        workspacePermissions: users.workspacePermissions,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (
+      updates.viewPlanMode === 'basic' &&
+      currentUserRow &&
+      isActiveProTenure(currentUserRow)
+    ) {
+      throw new Error(
+        'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+      );
+    }
+
     let nextWorkspacePermJson: string | undefined;
     if (updates.workspacePermissions !== undefined) {
-      const [currentUser] = await db
-        .select({ workspacePermissions: users.workspacePermissions })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
       const merged = {
-        ...parseWorkspacePermissions(currentUser?.workspacePermissions),
+        ...parseWorkspacePermissions(currentUserRow?.workspacePermissions),
         ...updates.workspacePermissions,
       };
       nextWorkspacePermJson = JSON.stringify({
@@ -1047,6 +1070,11 @@ export async function updateUserProfile(
     const store = getLocalStore();
     const user = store.users.find((u) => u.id === userId);
     if (!user) throw new Error('User not found.');
+    if (updates.viewPlanMode === 'basic' && isActiveProTenure(user)) {
+      throw new Error(
+        'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+      );
+    }
     if (cleanUsername) {
       const clash = store.users.find(
         (u) => u.id !== userId && u.username.toLowerCase() === cleanUsername
@@ -1082,20 +1110,38 @@ export async function updateUserPlan(userId: number, plan: 'basic' | 'pro') {
   const proStartedAt = plan === 'pro' ? now.toISOString() : '';
   const proExpiresAt = plan === 'pro' ? addMonthsIso(now, 1) : '';
   try {
+    if (plan === 'basic') {
+      const [existing] = await db
+        .select({ plan: users.plan, proExpiresAt: users.proExpiresAt })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (existing && isActiveProTenure(existing)) {
+        throw new Error(
+          'Pro users cannot return to Basic until their term expires or they willingly cancel in Subscriptions.'
+        );
+      }
+    }
     const [updated] = await db
       .update(users)
-      .set({ plan, proStartedAt, proExpiresAt, updatedAt: now })
+      .set({ plan, viewPlanMode: 'auto', proStartedAt, proExpiresAt, updatedAt: now })
       .where(eq(users.id, userId))
       .returning();
     return updated;
   } catch (error) {
     if (!isDbUnavailableError(error)) {
-      throw new Error('Failed to update plan.', { cause: error });
+      throw error instanceof Error ? error : new Error('Failed to update plan.', { cause: error });
     }
     const store = getLocalStore();
     const user = store.users.find((u) => u.id === userId);
     if (!user) throw new Error('User not found.');
+    if (plan === 'basic' && isActiveProTenure(user)) {
+      throw new Error(
+        'Pro users cannot return to Basic until their term expires or they willingly cancel in Subscriptions.'
+      );
+    }
     user.plan = plan;
+    user.viewPlanMode = 'auto';
     user.proStartedAt = proStartedAt;
     user.proExpiresAt = proExpiresAt;
     user.updatedAt = now;
@@ -2624,5 +2670,488 @@ export async function superTerminateOrCancel(params: {
     });
     persistLocalStore();
     return { user: target, message: mailSubject };
+  }
+}
+
+function calculateProRefundMetrics(params: {
+  proStartedAt: string;
+  proExpiresAt: string;
+  pointsPaid: number;
+  purchaseType?: 'timed' | 'non_timed';
+}) {
+  const nowMs = Date.now();
+  const hasExpiry = Boolean(params.proExpiresAt && !Number.isNaN(new Date(params.proExpiresAt).getTime()));
+  const isNonTimed = params.purchaseType === 'non_timed' || !hasExpiry;
+  const pointsPaid = Math.max(0, Math.round(params.pointsPaid || 0));
+
+  if (isNonTimed) {
+    const requestedRefundPoints = Math.max(0, Math.round(pointsPaid * 0.6));
+    return {
+      refundBasis: 'flat_60_percent' as const,
+      planTerm: 'non_timed',
+      pointsPaid,
+      remainingPercent: 100,
+      remainingDays: 0,
+      totalDays: 0,
+      requestedRefundPoints,
+    };
+  }
+
+  const endMs = new Date(params.proExpiresAt).getTime();
+  const startMsRaw = params.proStartedAt ? new Date(params.proStartedAt).getTime() : NaN;
+  const fallbackSpanMs = 30 * 24 * 60 * 60 * 1000;
+  const startMs = Number.isFinite(startMsRaw) && startMsRaw < endMs ? startMsRaw : endMs - fallbackSpanMs;
+  const totalMs = Math.max(24 * 60 * 60 * 1000, endMs - startMs);
+  const remainingMs = Math.max(0, endMs - nowMs);
+  const remainingFraction = Math.min(1, remainingMs / totalMs);
+  const remainingPercent = Math.round(remainingFraction * 100);
+  // Remaining amount of time - 5%
+  const refundableFraction = Math.max(0, remainingFraction - 0.05);
+  const requestedRefundPoints = Math.max(0, Math.round(pointsPaid * refundableFraction));
+  const totalDays = Math.max(1, Math.round(totalMs / (24 * 60 * 60 * 1000)));
+  const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
+  const planTerm = totalDays >= 180 ? 'annual' : 'monthly';
+
+  return {
+    refundBasis: 'time_remaining_minus_5' as const,
+    planTerm,
+    pointsPaid,
+    remainingPercent,
+    remainingDays,
+    totalDays,
+    requestedRefundPoints,
+  };
+}
+
+export async function getUserRefundRequests(userId: number) {
+  try {
+    return await db
+      .select()
+      .from(proRefundRequests)
+      .where(eq(proRefundRequests.userId, userId))
+      .orderBy(desc(proRefundRequests.createdAt));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    return getLocalStore()
+      .proRefundRequests.filter((r) => r.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+}
+
+export async function listRefundRequestsForAdmin() {
+  try {
+    return await db
+      .select()
+      .from(proRefundRequests)
+      .orderBy(desc(proRefundRequests.createdAt));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    return [...getLocalStore().proRefundRequests].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+}
+
+export async function cancelProAndRequestRefund(params: {
+  userId: number;
+  reason?: string;
+  purchaseType?: 'timed' | 'non_timed';
+}) {
+  const cleanReason =
+    (params.reason || '').trim().slice(0, 500) ||
+    'User willingly cancelled Pro subscription.';
+  const now = new Date();
+
+  try {
+    const [u] = await db.select().from(users).where(eq(users.id, params.userId)).limit(1);
+    if (!u) throw new Error('Account not found.');
+    if (u.plan !== 'pro') {
+      throw new Error('Only active Pro accounts can cancel a Pro subscription.');
+    }
+
+    const txRows = await db
+      .select()
+      .from(pointTransactions)
+      .where(eq(pointTransactions.userId, u.id))
+      .orderBy(desc(pointTransactions.createdAt));
+
+    const recentProTx = txRows.find(
+      (t) =>
+        t.amount < 0 &&
+        (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+        t.verificationStatus !== 'reverted'
+    );
+
+    const selfKeys = await db
+      .select()
+      .from(licenseKeys)
+      .where(eq(licenseKeys.activatedByUserId, u.id));
+    const activeKey = selfKeys.find((k) => k.status === 'active');
+
+    let pointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
+    if (pointsPaid === 0 && activeKey && activeKey.issuedByUserId === u.id) {
+      pointsPaid = activeKey.durationMonths === 12 ? 5100 : 500;
+    }
+
+    const metrics = calculateProRefundMetrics({
+      proStartedAt: u.proStartedAt,
+      proExpiresAt: u.proExpiresAt,
+      pointsPaid,
+      purchaseType: params.purchaseType,
+    });
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        plan: 'basic',
+        viewPlanMode: 'auto',
+        proStartedAt: '',
+        proExpiresAt: '',
+        lastExpiryReminderFor: '',
+        updatedAt: now,
+      })
+      .where(eq(users.id, u.id))
+      .returning();
+
+    if (activeKey) {
+      await db
+        .update(licenseKeys)
+        .set({ status: 'cancelled' })
+        .where(eq(licenseKeys.id, activeKey.id));
+    }
+
+    const [refundReq] = await db
+      .insert(proRefundRequests)
+      .values({
+        userId: u.id,
+        userEmail: u.email,
+        username: u.username,
+        displayName: u.displayName,
+        shortUid: u.shortUid,
+        planTerm: metrics.planTerm,
+        refundBasis: metrics.refundBasis,
+        pointsPaid: metrics.pointsPaid,
+        remainingPercent: metrics.remainingPercent,
+        remainingDays: metrics.remainingDays,
+        totalDays: metrics.totalDays,
+        requestedRefundPoints: metrics.requestedRefundPoints,
+        reason: cleanReason,
+        status: 'pending',
+      })
+      .returning();
+
+    const admins = await db
+      .select()
+      .from(users)
+      .where(or(eq(users.role, 'admin'), eq(users.role, 'super')));
+
+    for (const adm of admins) {
+      await db.insert(notifications).values({
+        userId: adm.id,
+        senderId: u.id,
+        senderLabel: `@${u.username}`,
+        title: `Pro Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
+        message: `@${u.username} cancelled Pro (${metrics.refundBasis === 'flat_60_percent' ? '60% non-timed' : `${metrics.remainingPercent}% left − 5%`}). Approve or reject in Admin Console.`,
+        type: 'warning',
+      });
+    }
+
+    await db.insert(userMessages).values({
+      senderId: u.id,
+      recipientId: u.id,
+      senderEmail: ADMIN_OWNER_EMAIL,
+      senderUsername: 'asan_billing',
+      recipientEmail: u.email,
+      recipientUsername: u.username,
+      visibility: 'direct',
+      isAdminMail: true,
+      recipientSummary: `@${u.username}`,
+      subject: 'Pro Subscription Cancelled — Refund Pending Admin Approval',
+      body: `Hello ${u.displayName},\n\nYour Pro subscription has been willingly cancelled and your account has returned to Basic.\n\nRefund Policy Applied: ${
+        metrics.refundBasis === 'flat_60_percent'
+          ? '60% of points paid (non-time-dependent)'
+          : `Remaining time (${metrics.remainingPercent}%) − 5% = ${Math.max(0, metrics.remainingPercent - 5)}% of ${metrics.pointsPaid} pts`
+      }\nRequested Refund: ${metrics.requestedRefundPoints} points\nStatus: Pending Admin Approval\n\nOnce an Admin approves your refund request, the points will be credited to your account automatically.`,
+    });
+
+    await db.insert(notifications).values({
+      userId: u.id,
+      senderLabel: 'Subscriptions',
+      title: 'Pro Cancelled · Refund Pending Admin Approval',
+      message: `Your Pro plan is now Basic. Refund request for ${metrics.requestedRefundPoints} pts has been sent to Admin for approval.`,
+      type: 'info',
+    });
+
+    return {
+      user: updatedUser,
+      refundRequest: refundReq,
+      message: `Pro subscription cancelled. Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
+    };
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const u = store.users.find((x) => x.id === params.userId);
+    if (!u) throw new Error('Account not found.');
+    if (u.plan !== 'pro') {
+      throw new Error('Only active Pro accounts can cancel a Pro subscription.');
+    }
+
+    const recentProTx = store.pointTransactions.find(
+      (t) =>
+        t.userId === u.id &&
+        t.amount < 0 &&
+        (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+        t.verificationStatus !== 'reverted'
+    );
+    const activeKey = store.licenseKeys.find(
+      (k) => k.activatedByUserId === u.id && k.status === 'active'
+    );
+    let pointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
+    if (pointsPaid === 0 && activeKey && activeKey.issuedByUserId === u.id) {
+      pointsPaid = activeKey.durationMonths === 12 ? 5100 : 500;
+    }
+
+    const metrics = calculateProRefundMetrics({
+      proStartedAt: u.proStartedAt,
+      proExpiresAt: u.proExpiresAt,
+      pointsPaid,
+      purchaseType: params.purchaseType,
+    });
+
+    u.plan = 'basic';
+    u.viewPlanMode = 'auto';
+    u.proStartedAt = '';
+    u.proExpiresAt = '';
+    u.lastExpiryReminderFor = '';
+    u.updatedAt = now;
+    if (activeKey) activeKey.status = 'cancelled';
+
+    const refundReq = {
+      id: nextSeq('proRefundRequests'),
+      userId: u.id,
+      userEmail: u.email,
+      username: u.username,
+      displayName: u.displayName,
+      shortUid: u.shortUid,
+      planTerm: metrics.planTerm,
+      refundBasis: metrics.refundBasis,
+      pointsPaid: metrics.pointsPaid,
+      remainingPercent: metrics.remainingPercent,
+      remainingDays: metrics.remainingDays,
+      totalDays: metrics.totalDays,
+      requestedRefundPoints: metrics.requestedRefundPoints,
+      reason: cleanReason,
+      status: 'pending',
+      adminNote: '',
+      reviewedByUserId: null,
+      reviewedByLabel: '',
+      reviewedAt: '',
+      createdAt: now,
+    };
+    store.proRefundRequests.unshift(refundReq);
+
+    store.users
+      .filter((adm) => adm.role === 'admin' || adm.role === 'super')
+      .forEach((adm) => {
+        store.notifications.unshift({
+          id: nextSeq('notifications'),
+          userId: adm.id,
+          senderId: u.id,
+          senderLabel: `@${u.username}`,
+          title: `Pro Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
+          message: `@${u.username} cancelled Pro. Review refund in Admin Console.`,
+          type: 'warning',
+          isRead: false,
+          createdAt: now,
+        });
+      });
+
+    localSendSystemMail({
+      recipient: u,
+      senderLabel: 'Subscriptions',
+      subject: 'Pro Subscription Cancelled — Refund Pending Admin Approval',
+      body: `Hello ${u.displayName},\n\nYour Pro subscription has been willingly cancelled.\nRequested Refund: ${metrics.requestedRefundPoints} points (Pending Admin Approval).`,
+      notifTitle: 'Pro Cancelled · Refund Pending Admin Approval',
+      notifMessage: `Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
+      notifType: 'info',
+    });
+
+    persistLocalStore();
+    return {
+      user: u,
+      refundRequest: refundReq,
+      message: `Pro subscription cancelled. Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
+    };
+  }
+}
+
+export async function reviewProRefundRequest(params: {
+  reviewerId: number;
+  reviewerEmail: string;
+  reviewerUsername: string;
+  reviewerShortUid: string;
+  reviewerRole: string;
+  requestId: number;
+  action: 'approve' | 'reject';
+  adminNote?: string;
+}) {
+  const note = (params.adminNote || '').trim().slice(0, 400);
+  const now = new Date();
+  const reviewerLabel = `${params.reviewerRole.toUpperCase()} @${params.reviewerUsername} (${params.reviewerShortUid})`;
+
+  try {
+    const [reqRow] = await db
+      .select()
+      .from(proRefundRequests)
+      .where(eq(proRefundRequests.id, params.requestId))
+      .limit(1);
+    if (!reqRow) throw new Error('Refund request not found.');
+    if (reqRow.status !== 'pending') {
+      throw new Error(`Refund request has already been ${reqRow.status}.`);
+    }
+
+    const nextStatus = params.action === 'approve' ? 'approved' : 'rejected';
+    const [updatedReq] = await db
+      .update(proRefundRequests)
+      .set({
+        status: nextStatus,
+        adminNote: note,
+        reviewedByUserId: params.reviewerId,
+        reviewedByLabel: reviewerLabel,
+        reviewedAt: now.toISOString(),
+      })
+      .where(eq(proRefundRequests.id, reqRow.id))
+      .returning();
+
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, reqRow.userId))
+      .limit(1);
+
+    if (params.action === 'approve' && targetUser && reqRow.requestedRefundPoints > 0) {
+      await db
+        .update(users)
+        .set({
+          points: targetUser.points + reqRow.requestedRefundPoints,
+          updatedAt: now,
+        })
+        .where(eq(users.id, targetUser.id));
+
+      await db.insert(pointTransactions).values({
+        userId: targetUser.id,
+        amount: reqRow.requestedRefundPoints,
+        reason: `Pro Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts · ${
+          reqRow.refundBasis === 'flat_60_percent' ? '60% Non-Timed' : 'Remaining Time − 5%'
+        })`,
+        category: 'pro_refund',
+        verificationStatus: 'verified',
+        verifiedByUserId: params.reviewerId,
+        verifiedByLabel: reviewerLabel,
+        verificationNote: note || 'Approved Pro cancellation refund',
+        verifiedAt: now.toISOString(),
+      });
+    }
+
+    if (targetUser) {
+      await db.insert(userMessages).values({
+        senderId: params.reviewerId,
+        recipientId: targetUser.id,
+        senderEmail: params.reviewerEmail,
+        senderUsername: params.reviewerUsername,
+        recipientEmail: targetUser.email,
+        recipientUsername: targetUser.username,
+        visibility: 'direct',
+        isAdminMail: true,
+        recipientSummary: `@${targetUser.username}`,
+        subject:
+          params.action === 'approve'
+            ? `Pro Refund Approved (+${reqRow.requestedRefundPoints} pts)`
+            : 'Pro Refund Request Declined',
+        body:
+          params.action === 'approve'
+            ? `Hello ${targetUser.displayName},\n\nAn Admin (${reviewerLabel}) approved your Pro cancellation refund of +${reqRow.requestedRefundPoints} points.${note ? `\n\nAdmin Note: ${note}` : ''}`
+            : `Hello ${targetUser.displayName},\n\nYour Pro cancellation refund request for ${reqRow.requestedRefundPoints} points was declined by ${reviewerLabel}.${note ? `\n\nReason: ${note}` : ''}`,
+      });
+
+      await db.insert(notifications).values({
+        userId: targetUser.id,
+        senderId: params.reviewerId,
+        senderLabel: 'Admin Oversight',
+        title:
+          params.action === 'approve'
+            ? `Refund Approved: +${reqRow.requestedRefundPoints} pts`
+            : 'Pro Refund Request Declined',
+        message:
+          params.action === 'approve'
+            ? `+${reqRow.requestedRefundPoints} points credited to your balance.`
+            : note || 'Check Tool Mail for details.',
+        type: params.action === 'approve' ? 'points' : 'warning',
+      });
+    }
+
+    return updatedReq;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const reqRow = store.proRefundRequests.find((r) => r.id === params.requestId);
+    if (!reqRow) throw new Error('Refund request not found.');
+    if (reqRow.status !== 'pending') {
+      throw new Error(`Refund request has already been ${reqRow.status}.`);
+    }
+    reqRow.status = params.action === 'approve' ? 'approved' : 'rejected';
+    reqRow.adminNote = note;
+    reqRow.reviewedByUserId = params.reviewerId;
+    reqRow.reviewedByLabel = reviewerLabel;
+    reqRow.reviewedAt = now.toISOString();
+
+    const targetUser = store.users.find((u) => u.id === reqRow.userId);
+    if (params.action === 'approve' && targetUser && reqRow.requestedRefundPoints > 0) {
+      targetUser.points += reqRow.requestedRefundPoints;
+      targetUser.updatedAt = now;
+      store.pointTransactions.unshift({
+        id: nextSeq('pointTransactions'),
+        userId: targetUser.id,
+        amount: reqRow.requestedRefundPoints,
+        reason: `Pro Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts)`,
+        category: 'pro_refund',
+        verificationStatus: 'verified',
+        verifiedByUserId: params.reviewerId,
+        verifiedByLabel: reviewerLabel,
+        verificationNote: note || 'Approved Pro cancellation refund',
+        verifiedAt: now.toISOString(),
+        createdAt: now,
+      });
+    }
+
+    if (targetUser) {
+      localSendSystemMail({
+        recipient: targetUser,
+        senderId: params.reviewerId,
+        senderEmail: params.reviewerEmail,
+        senderUsername: params.reviewerUsername,
+        senderLabel: 'Admin Oversight',
+        isAdminMail: true,
+        subject:
+          params.action === 'approve'
+            ? `Pro Refund Approved (+${reqRow.requestedRefundPoints} pts)`
+            : 'Pro Refund Request Declined',
+        body:
+          params.action === 'approve'
+            ? `Approved refund of +${reqRow.requestedRefundPoints} pts.${note ? ` Note: ${note}` : ''}`
+            : `Refund request declined.${note ? ` Reason: ${note}` : ''}`,
+        notifTitle:
+          params.action === 'approve'
+            ? `Refund Approved: +${reqRow.requestedRefundPoints} pts`
+            : 'Pro Refund Request Declined',
+        notifMessage:
+          params.action === 'approve'
+            ? `+${reqRow.requestedRefundPoints} pts credited.`
+            : note || 'See Tool Mail.',
+        notifType: params.action === 'approve' ? 'points' : 'warning',
+      });
+    }
+    persistLocalStore();
+    return reqRow;
   }
 }

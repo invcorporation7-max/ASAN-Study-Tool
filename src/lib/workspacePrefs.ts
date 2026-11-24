@@ -1,5 +1,6 @@
 import type {
   DashboardPreferences,
+  DashboardTileSize,
   DashboardWidgetId,
   ExamCountdownItem,
 } from '../types';
@@ -9,8 +10,20 @@ export const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetId[] = [
   'exam-countdowns',
   'tasks',
   'schedule',
+  'monthly-calendar',
   'quick-actions',
 ];
+
+export const DEFAULT_HIDDEN_WIDGETS: DashboardWidgetId[] = ['monthly-calendar'];
+
+export const DEFAULT_WIDGET_SIZES: Record<DashboardWidgetId, DashboardTileSize> = {
+  metrics: { colSpan: 2, rowSpan: 1 },
+  'exam-countdowns': { colSpan: 2, rowSpan: 1 },
+  tasks: { colSpan: 1, rowSpan: 1 },
+  schedule: { colSpan: 1, rowSpan: 1 },
+  'monthly-calendar': { colSpan: 1, rowSpan: 1 },
+  'quick-actions': { colSpan: 2, rowSpan: 1 },
+};
 
 export const DASHBOARD_WIDGET_META: Record<
   DashboardWidgetId,
@@ -21,20 +34,24 @@ export const DASHBOARD_WIDGET_META: Record<
     description: 'Pending tasks, completed tasks, calendar events, and study time cards.',
   },
   'exam-countdowns': {
-    label: 'Pinned Exam Countdowns',
-    description: 'Live ticking timers for pinned top-level national exams and custom countdowns.',
+    label: 'Exam Countdowns (Optional)',
+    description: 'Optional live ticking cards for pinned national exams and custom countdowns.',
   },
   tasks: {
     label: 'Priority Study Tasks',
-    description: 'Quick view of upcoming study tasks and completion checkboxes.',
+    description: 'Quick view of upcoming study tasks and completion status.',
   },
   schedule: {
     label: 'Upcoming Schedule',
     description: 'Next upcoming calendar sessions, tuition classes, and exams.',
   },
+  'monthly-calendar': {
+    label: 'Current Month Calendar (Optional)',
+    description: 'Optional live monthly calendar highlighting today, events, tasks, and exams.',
+  },
   'quick-actions': {
     label: 'Quick Tool Launchers',
-    description: 'One-click shortcuts to A4 Notes, PDF Studio, Casio fx-82MS, and Calculators.',
+    description: 'One-click shortcuts to A4 Notes, PDF Studio, Math Solvers, and Tool Mail.',
   },
 };
 
@@ -46,26 +63,62 @@ function pinPrefKey(userKey: string): string {
   return `asan_countdown_pins_v1_${userKey || 'guest'}`;
 }
 
+function normalizeSizes(
+  rawSizes?: Partial<Record<DashboardWidgetId, DashboardTileSize>>
+): Partial<Record<DashboardWidgetId, DashboardTileSize>> {
+  const out: Partial<Record<DashboardWidgetId, DashboardTileSize>> = {};
+  for (const id of DEFAULT_DASHBOARD_WIDGET_ORDER) {
+    const def = DEFAULT_WIDGET_SIZES[id];
+    const s = rawSizes?.[id];
+    out[id] = {
+      colSpan: s?.colSpan === 1 || s?.colSpan === 2 ? s.colSpan : def.colSpan,
+      rowSpan: s?.rowSpan === 1 || s?.rowSpan === 2 ? s.rowSpan : def.rowSpan,
+    };
+  }
+  return out;
+}
+
 export function loadDashboardPrefs(userKey: string): DashboardPreferences {
   try {
     const raw = localStorage.getItem(dashPrefKey(userKey));
     if (!raw) {
-      return { order: [...DEFAULT_DASHBOARD_WIDGET_ORDER], hidden: [] };
+      return {
+        order: [...DEFAULT_DASHBOARD_WIDGET_ORDER],
+        hidden: [...DEFAULT_HIDDEN_WIDGETS],
+        sizes: normalizeSizes(),
+      };
     }
     const parsed = JSON.parse(raw) as Partial<DashboardPreferences>;
     const validSet = new Set<DashboardWidgetId>(DEFAULT_DASHBOARD_WIDGET_ORDER);
-    const cleanedOrder = Array.isArray(parsed.order)
+    const parsedOrder = Array.isArray(parsed.order)
       ? parsed.order.filter((id): id is DashboardWidgetId => validSet.has(id as DashboardWidgetId))
       : [];
-    for (const defId of DEFAULT_DASHBOARD_WIDGET_ORDER) {
-      if (!cleanedOrder.includes(defId)) cleanedOrder.push(defId);
-    }
+    const cleanedOrder = [...parsedOrder];
     const cleanedHidden = Array.isArray(parsed.hidden)
       ? parsed.hidden.filter((id): id is DashboardWidgetId => validSet.has(id as DashboardWidgetId))
       : [];
-    return { order: cleanedOrder, hidden: cleanedHidden };
+
+    for (const defId of DEFAULT_DASHBOARD_WIDGET_ORDER) {
+      if (!cleanedOrder.includes(defId)) {
+        cleanedOrder.push(defId);
+        // Opt-in migration for monthly-calendar on existing profiles
+        if (defId === 'monthly-calendar' && !cleanedHidden.includes(defId)) {
+          cleanedHidden.push(defId);
+        }
+      }
+    }
+
+    return {
+      order: cleanedOrder,
+      hidden: cleanedHidden,
+      sizes: normalizeSizes(parsed.sizes),
+    };
   } catch {
-    return { order: [...DEFAULT_DASHBOARD_WIDGET_ORDER], hidden: [] };
+    return {
+      order: [...DEFAULT_DASHBOARD_WIDGET_ORDER],
+      hidden: [...DEFAULT_HIDDEN_WIDGETS],
+      sizes: normalizeSizes(),
+    };
   }
 }
 

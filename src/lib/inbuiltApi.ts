@@ -202,6 +202,7 @@ interface InbuiltStore {
   contributorFolders: any[];
   contributorFiles: any[];
   examCountdowns: any[];
+  proRefundRequests: any[];
 }
 
 function emptyStore(): InbuiltStore {
@@ -229,6 +230,7 @@ function emptyStore(): InbuiltStore {
     contributorFolders: [],
     contributorFiles: [],
     examCountdowns: [],
+    proRefundRequests: [],
   };
 }
 
@@ -1049,8 +1051,18 @@ export async function handleInbuiltApiRequest<T>(
       if (typeof body.spectraUrl === 'string') user.spectraUrl = body.spectraUrl.slice(0, 300);
       if (typeof body.driveFolderId === 'string') user.driveFolderId = body.driveFolderId.slice(0, 160);
       if (typeof body.scheduleSheetId === 'string') user.scheduleSheetId = body.scheduleSheetId.slice(0, 160);
-      if (body.viewPlanMode === 'basic' || body.viewPlanMode === 'auto') {
-        user.viewPlanMode = body.viewPlanMode;
+      if (body.viewPlanMode === 'basic') {
+        const isActivePro =
+          user.plan === 'pro' &&
+          (!user.proExpiresAt || new Date(user.proExpiresAt).getTime() > Date.now());
+        if (isActivePro) {
+          throw new Error(
+            'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+          );
+        }
+        user.viewPlanMode = 'basic';
+      } else if (body.viewPlanMode === 'auto') {
+        user.viewPlanMode = 'auto';
       }
       if (body.workspacePermissions && typeof body.workspacePermissions === 'object') {
         const mergedPerms = {
@@ -1073,8 +1085,17 @@ export async function handleInbuiltApiRequest<T>(
   if (path === '/api/me/plan' && method === 'POST') {
     if (!isElevated) throw new Error('Forbidden: Admin responsibility required.');
     const plan = body.plan === 'pro' ? 'pro' : 'basic';
+    const isActivePro =
+      user.plan === 'pro' &&
+      (!user.proExpiresAt || new Date(user.proExpiresAt).getTime() > Date.now());
+    if (plan === 'basic' && isActivePro) {
+      throw new Error(
+        'Pro users cannot return to Basic until their term expires or they willingly cancel in Subscriptions.'
+      );
+    }
     const now = new Date();
     user.plan = plan;
+    user.viewPlanMode = 'auto';
     user.proStartedAt = plan === 'pro' ? now.toISOString() : '';
     user.proExpiresAt = plan === 'pro' ? addMonthsIso(now, 1) : '';
     user.updatedAt = now.toISOString();
@@ -1104,6 +1125,7 @@ export async function handleInbuiltApiRequest<T>(
           k.issuedToEmail.toLowerCase() === user.email.toLowerCase()
       ),
       transactions: store.pointTransactions.filter((t) => t.userId === user.id),
+      refundRequests: store.proRefundRequests.filter((r) => r.userId === user.id),
     } as T;
   }
 
@@ -1237,6 +1259,79 @@ export async function handleInbuiltApiRequest<T>(
       user: sanitizeUser(user, authMode),
       kind: 'pro',
       message: `Pro plan activated until ${subEndsAt.slice(0, 10)}.`,
+    } as T;
+  }
+
+  if (path === '/api/subscriptions/cancel-pro' && method === 'POST') {
+    if (user.plan !== 'pro') {
+      throw new Error('Only active Pro accounts can cancel a Pro subscription.');
+    }
+    const now = new Date();
+    const recentProTx = store.pointTransactions.find(
+      (t) =>
+        t.userId === user.id &&
+        t.amount < 0 &&
+        (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+        t.verificationStatus !== 'reverted'
+    );
+    const activeKey = store.licenseKeys.find(
+      (k) => k.activatedByUserId === user.id && k.status === 'active'
+    );
+    let pointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
+    if (pointsPaid === 0 && activeKey && activeKey.issuedByUserId === user.id) {
+      pointsPaid = activeKey.durationMonths === 12 ? 5100 : 500;
+    }
+
+    const startMs = user.proStartedAt ? new Date(user.proStartedAt).getTime() : now.getTime();
+    const expMs = user.proExpiresAt ? new Date(user.proExpiresAt).getTime() : 0;
+    const totalMs = expMs > startMs ? expMs - startMs : 30 * 24 * 60 * 60 * 1000;
+    const remMs = expMs > now.getTime() ? Math.min(totalMs, expMs - now.getTime()) : 0;
+    const totalDays = Math.max(1, Math.round(totalMs / (24 * 60 * 60 * 1000)));
+    const remainingDays = Math.max(0, Math.round(remMs / (24 * 60 * 60 * 1000)));
+    const remainingFraction = expMs > 0 && totalMs > 0 ? Math.max(0, Math.min(1, remMs / totalMs)) : 0;
+    const remainingPercent = Math.round(remainingFraction * 100);
+    const nonTimed = body.purchaseType === 'non_timed';
+    const refundBasis = nonTimed ? 'flat_60_percent' : 'time_remaining_minus_5';
+    const refundFraction = nonTimed ? 0.6 : Math.max(0, remainingFraction - 0.05);
+    const requestedRefundPoints =
+      pointsPaid > 0 ? Math.max(0, Math.round(pointsPaid * refundFraction)) : 0;
+
+    user.plan = 'basic';
+    user.viewPlanMode = 'auto';
+    user.proStartedAt = '';
+    user.proExpiresAt = '';
+    user.lastExpiryReminderFor = '';
+    user.updatedAt = now.toISOString();
+    if (activeKey) activeKey.status = 'cancelled';
+
+    const refundRequest = {
+      id: nextId(store, 'proRefundRequests'),
+      userId: user.id,
+      userEmail: user.email,
+      username: user.username,
+      displayName: user.displayName,
+      shortUid: user.shortUid,
+      planTerm: totalDays >= 300 || pointsPaid >= 4000 ? 'annual' : 'monthly',
+      refundBasis,
+      pointsPaid,
+      remainingPercent,
+      remainingDays,
+      totalDays,
+      requestedRefundPoints,
+      reason: String(body.reason || '').trim().slice(0, 500) || 'Willing Pro subscription cancellation',
+      status: 'pending',
+      adminNote: '',
+      reviewedByUserId: null,
+      reviewedByLabel: '',
+      reviewedAt: '',
+      createdAt: now.toISOString(),
+    };
+    store.proRefundRequests.unshift(refundRequest);
+    saveStore(store);
+    return {
+      user: sanitizeUser(user, authMode),
+      refundRequest,
+      message: `Pro subscription cancelled. Refund request for ${requestedRefundPoints} pts submitted for Admin approval.`,
     } as T;
   }
 
@@ -1989,7 +2084,54 @@ export async function handleInbuiltApiRequest<T>(
       licenseKeys: store.licenseKeys,
       contributorFolders: store.contributorFolders,
       contributorFiles: store.contributorFiles,
+      refundRequests: store.proRefundRequests,
     } as T;
+  }
+
+  if (path === '/api/admin/refund-requests' && method === 'GET') {
+    if (!isElevated) throw new Error('Forbidden');
+    return store.proRefundRequests as T;
+  }
+
+  const refundReviewMatch = path.match(/^\/api\/admin\/refund-requests\/(\d+)\/review$/);
+  if (refundReviewMatch && method === 'POST') {
+    if (!isElevated) throw new Error('Forbidden');
+    const reqId = Number(refundReviewMatch[1]);
+    const reqRow = store.proRefundRequests.find((r) => r.id === reqId);
+    if (!reqRow) throw new Error('Refund request not found.');
+    if (reqRow.status !== 'pending') {
+      throw new Error(`Refund request has already been ${reqRow.status}.`);
+    }
+    const action = body.action === 'approve' ? 'approve' : 'reject';
+    const note = String(body.adminNote || '').trim().slice(0, 400);
+    const now = new Date();
+    const reviewerLabel = `${user.role.toUpperCase()} @${user.username} (${user.shortUid})`;
+    reqRow.status = action === 'approve' ? 'approved' : 'rejected';
+    reqRow.adminNote = note;
+    reqRow.reviewedByUserId = user.id;
+    reqRow.reviewedByLabel = reviewerLabel;
+    reqRow.reviewedAt = now.toISOString();
+
+    const target = store.users.find((u) => u.id === reqRow.userId);
+    if (action === 'approve' && target && reqRow.requestedRefundPoints > 0) {
+      target.points += reqRow.requestedRefundPoints;
+      target.updatedAt = now.toISOString();
+      store.pointTransactions.unshift({
+        id: nextId(store, 'pointTransactions'),
+        userId: target.id,
+        amount: reqRow.requestedRefundPoints,
+        reason: `Pro Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts)`,
+        category: 'pro_refund',
+        verificationStatus: 'verified',
+        verifiedByUserId: user.id,
+        verifiedByLabel: reviewerLabel,
+        verificationNote: note || 'Approved Pro cancellation refund',
+        verifiedAt: now.toISOString(),
+        createdAt: now.toISOString(),
+      });
+    }
+    saveStore(store);
+    return reqRow as T;
   }
 
   if (path === '/api/admin/contributors' && method === 'POST') {

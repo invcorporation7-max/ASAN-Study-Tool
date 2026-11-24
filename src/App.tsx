@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
   ArrowRightLeft,
+  ArrowUp,
   Bell,
   BookOpen,
   Calculator,
@@ -11,10 +13,10 @@ import {
   Cloud,
   CreditCard,
   Crown,
-  Database,
   FolderOpen,
   FolderUp,
   Globe,
+  GripVertical,
   Info,
   KeyRound,
   Layers,
@@ -28,6 +30,8 @@ import {
   MessageSquare,
   Moon,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pin,
   PinOff,
   RefreshCw,
@@ -36,6 +40,7 @@ import {
   Sigma,
   Sparkles,
   Sun,
+  UserCheck,
   Users,
   WifiOff,
   X,
@@ -193,6 +198,7 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
     description: 'Currently unavailable — under development.',
     category: 'Pro & Extended Tools',
     icon: Globe,
+    proOnly: true,
   },
   {
     id: 'more',
@@ -303,6 +309,7 @@ const MainShell: React.FC = () => {
     setViewPlanMode,
     loading,
     error: authError,
+    clearError,
     dbStatus,
     dbStatusMessage,
     dbRetryCount,
@@ -329,6 +336,9 @@ const MainShell: React.FC = () => {
   const [section, setSection] = useState<NavSection>('dashboard');
   const [pinnedAppIds, setPinnedAppIds] = useState<NavSection[]>(() => loadPinnedApps());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [draggedPinId, setDraggedPinId] = useState<NavSection | null>(null);
+  const [dragOverPinId, setDragOverPinId] = useState<NavSection | null>(null);
   const [preselectedMessageNoteId, setPreselectedMessageNoteId] = useState<number | null>(
     null
   );
@@ -734,68 +744,83 @@ const MainShell: React.FC = () => {
   }, [searchResults, searchCategory]);
 
   if (loading) {
-    return <TechnicalLoadingScreen />;
+    return (
+      <TechnicalLoadingScreen>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm text-center space-y-3">
+          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+            Please wait while we load your account data.
+          </p>
+          <button
+            type="button"
+            onClick={continueFreeGuest}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            Continue Without Sign In
+          </button>
+        </div>
+      </TechnicalLoadingScreen>
+    );
   }
 
   if (!hasSessionToken && !isGuest) {
     return <AuthGate />;
   }
 
-  // Prevent showing a misleading "0 pts · BASIC / non-admin / non-contributor" workspace while the database is still waking up
+  // Wait cleanly for account data hydration without showing a partial Free/Basic state or mentioning backend internals
   if (!isGuest && hasSessionToken && !dbUser) {
     const isDelayedWake =
       dbStatus === 'connecting' || dbStatus === 'offline' || dbWaitSeconds >= 2;
     return (
       <TechnicalLoadingScreen>
-        {isDelayedWake && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 text-slate-900">
+        {isDelayedWake ? (
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-4 text-slate-900 dark:text-slate-100">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 border border-sky-100">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-800">
                 {dbStatus === 'offline' ? (
-                  <WifiOff className="h-5 w-5 text-amber-600" />
+                  <WifiOff className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 ) : (
-                  <Database className="h-5 w-5" />
+                  <UserCheck className="h-5 w-5" />
                 )}
               </div>
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-600">
-                  Cloud Sync
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                  Account Sync
                 </div>
-                <h1 className="font-display text-base font-bold text-slate-900">
+                <h1 className="font-display text-base font-bold text-slate-900 dark:text-white">
                   {dbStatus === 'offline'
                     ? 'You Appear to Be Offline'
-                    : 'Connecting to Database — Please Wait'}
+                    : 'Please Wait While We Load Your Account Data'}
                 </h1>
               </div>
             </div>
 
-            <p className="text-xs leading-relaxed text-slate-600">
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
               {dbStatus === 'offline'
-                ? 'An internet connection is required to restore your Pro plan, points, and Admin / Contributor roles from the database.'
-                : 'The server or PostgreSQL database is waking up after inactivity. Please wait until connected so your Pro plan, points, and Admin / Contributor permissions load accurately.'}
+                ? 'An active connection is needed to restore your Pro plan, points, and roles, or you can continue offline without sign in.'
+                : 'Please wait while we load your account data so your Pro plan, points balance, and workspace access appear accurately.'}
             </p>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 text-xs">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-3 space-y-2 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-600">1. Sign-In Session</span>
-                <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+                <span className="text-slate-600 dark:text-slate-300">1. Sign-In Session</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Verified{firebaseUser?.email ? ` (${firebaseUser.email})` : ''}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-600">2. Database &amp; Roles</span>
-                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 tabular-nums">
+                <span className="text-slate-600 dark:text-slate-300">2. Account Profile &amp; Plan</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   {dbStatus === 'offline'
                     ? 'Offline'
-                    : `Connecting${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : '...'}`}
+                    : `Loading${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : '...'}`}
                 </span>
               </div>
-              {(dbStatusMessage || authError) && (
-                <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-500">
-                  {dbStatusMessage || authError}
-                  {dbRetryCount > 0 ? ` · Retry #${dbRetryCount}` : ''}
+              {authError && !authError.toLowerCase().includes('database') && !authError.toLowerCase().includes('postgres') && (
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  {authError}
+                  {dbRetryCount > 0 ? ` · Attempt #${dbRetryCount}` : ''}
                 </div>
               )}
             </div>
@@ -807,25 +832,38 @@ const MainShell: React.FC = () => {
                 className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-sky-700"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Retry Connection
+                Retry Sync
               </button>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={continueFreeGuest}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
-                  Use Local Mode
+                  Continue Without Sign In
                 </button>
                 <button
                   type="button"
                   onClick={() => void signOutUser()}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   Sign Out
                 </button>
               </div>
             </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm text-center space-y-3">
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Please wait while we load your account data.
+            </p>
+            <button
+              type="button"
+              onClick={continueFreeGuest}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            >
+              Continue Without Sign In
+            </button>
           </div>
         )}
       </TechnicalLoadingScreen>
@@ -842,7 +880,10 @@ const MainShell: React.FC = () => {
   const availableTools = ALL_TOOLS_CATALOG.filter(
     (item) => isWorkspaceEnabled || item.id !== 'workspace'
   );
-  const pinnedTools = availableTools.filter((item) => pinnedAppIds.includes(item.id));
+  // Preserve exact user-dragged order stored in pinnedAppIds
+  const pinnedTools = pinnedAppIds
+    .map((id) => availableTools.find((item) => item.id === id))
+    .filter((item): item is AppCatalogEntry => Boolean(item));
 
   const togglePinnedApp = (id: NavSection) => {
     setPinnedAppIds((prev) =>
@@ -850,8 +891,33 @@ const MainShell: React.FC = () => {
     );
   };
 
+  const reorderPinnedApps = (sourceId: NavSection, targetId: NavSection) => {
+    if (sourceId === targetId) return;
+    setPinnedAppIds((prev) => {
+      const fromIdx = prev.indexOf(sourceId);
+      const toIdx = prev.indexOf(targetId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
+  const movePinnedApp = (id: NavSection, dir: -1 | 1) => {
+    setPinnedAppIds((prev) => {
+      const idx = prev.indexOf(id);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(idx, 1);
+      next.splice(target, 0, moved);
+      return next;
+    });
+  };
+
   const renderSidebarContent = () => (
-    <div className="flex h-full flex-col justify-between bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 px-4 py-5 overflow-y-auto">
+    <div className="flex h-full w-64 flex-col justify-between bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 px-4 py-5 overflow-y-auto">
       <div className="space-y-5">
         <div className="flex items-center justify-between gap-2 px-2">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -864,6 +930,19 @@ const MainShell: React.FC = () => {
               ASAN-Study_tool
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setDesktopSidebarOpen(false);
+              setMobileMenuOpen(false);
+            }}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors shrink-0"
+          >
+            <PanelLeftClose className="h-4 w-4 hidden lg:block" />
+            <X className="h-4 w-4 lg:hidden" />
+          </button>
         </div>
 
         <nav className="space-y-1" aria-label="Main navigation">
@@ -910,8 +989,8 @@ const MainShell: React.FC = () => {
           </button>
 
           {pinnedTools.length > 0 && (
-            <div className="pt-2 pb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Pinned Apps
+            <div className="pt-2 pb-1 px-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <span>Pinned Apps</span>
             </div>
           )}
 
@@ -924,7 +1003,7 @@ const MainShell: React.FC = () => {
                 key={item.id}
                 type="button"
                 onClick={() => handleNavClick(item.id)}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   active
                     ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                     : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
@@ -943,9 +1022,15 @@ const MainShell: React.FC = () => {
                     {unreadNotifCount}
                   </span>
                 )}
-                {locked && (
-                  <span className="text-[10px] font-medium text-slate-400">
-                    Pro
+                {item.proOnly && (
+                  <span
+                    className={
+                      locked
+                        ? 'text-[10px] font-semibold text-indigo-500 dark:text-indigo-400'
+                        : 'asan-pro-badge rounded px-1.5 py-0.5 text-[9px]'
+                    }
+                  >
+                    PRO
                   </span>
                 )}
               </button>
@@ -1151,21 +1236,35 @@ const MainShell: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-x-hidden">
-      {/* Desktop Sidebar (256px) */}
-      <aside className="no-print hidden lg:block w-64 shrink-0 sticky top-0 h-screen">
+      {/* Smooth Collapsible Desktop Sidebar */}
+      <aside
+        className={`no-print hidden lg:block shrink-0 sticky top-0 h-screen overflow-hidden transition-[width,opacity] duration-300 ease-in-out ${
+          desktopSidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0'
+        }`}
+        aria-hidden={!desktopSidebarOpen}
+      >
         {renderSidebarContent()}
       </aside>
 
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <div className="no-print fixed inset-0 z-50 flex lg:hidden">
-          <div
-            className="fixed inset-0 bg-slate-900/40"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <div className="relative z-10 w-64 h-full">{renderSidebarContent()}</div>
+      {/* Smooth Slide-In Mobile Drawer (mounted for transitions) */}
+      <div
+        className={`no-print fixed inset-0 z-50 flex lg:hidden transition-opacity duration-300 ease-out ${
+          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        aria-hidden={!mobileMenuOpen}
+      >
+        <div
+          className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px] transition-opacity duration-300"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+        <div
+          className={`relative z-10 w-64 h-full transition-transform duration-300 ease-out ${
+            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          {renderSidebarContent()}
         </div>
-      )}
+      </div>
 
       {/* Main Content Shell */}
       <div className="flex flex-1 flex-col min-w-0">
@@ -1175,10 +1274,23 @@ const MainShell: React.FC = () => {
             <button
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
-              className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-200"
+              className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDesktopSidebarOpen((v) => !v)}
+              className="hidden lg:inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-1.5 text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              title={desktopSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
+              aria-label={desktopSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
+            >
+              {desktopSidebarOpen ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
             </button>
             <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 truncate">
               <img
@@ -1379,7 +1491,8 @@ const MainShell: React.FC = () => {
 
             {!isGuest &&
               dbUser?.viewPlanMode === 'basic' &&
-              (dbUser.plan === 'pro' || isAdmin) && (
+              dbUser.plan !== 'pro' &&
+              isAdmin && (
                 <button
                   type="button"
                   onClick={() => setViewPlanMode('auto')}
@@ -1440,21 +1553,32 @@ const MainShell: React.FC = () => {
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
                 <span>
                   {dbStatus === 'connecting'
-                    ? `Reconnecting to database${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : ''}... Please wait before making plan or role changes.`
+                    ? `Please wait while we load your account data${dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : ''}...`
                     : dataError}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void retryDbConnection();
-                  void loadAllStudyData();
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-slate-800 shrink-0"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Retry Sync
-              </button>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void retryDbConnection();
+                    void loadAllStudyData();
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-slate-800 shrink-0"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Retry Sync
+                </button>
+                {!isGuest && (
+                  <button
+                    type="button"
+                    onClick={continueFreeGuest}
+                    className="rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-amber-100 dark:hover:bg-slate-800 shrink-0"
+                  >
+                    Continue Without Sign In
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -1491,7 +1615,7 @@ const MainShell: React.FC = () => {
                         All Apps &amp; Sidebar Pins
                       </h1>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Browse every tool in ASAN-Study_tool and hand-select any number of apps to pin to your left sidebar.
+                        Browse every tool in ASAN-Study_tool, pin any number of apps, and drag or reorder how they appear in your sidebar.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1522,6 +1646,77 @@ const MainShell: React.FC = () => {
                     </div>
                   </div>
 
+                  {pinnedTools.length > 0 && (
+                    <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2.5 asan-card-hover">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Sidebar Order (Drag &amp; Drop or Reorder)
+                        </h2>
+                        <span className="text-[11px] text-slate-400">
+                          Matches your left sidebar top-to-bottom
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {pinnedTools.map((tool, idx) => {
+                          const Icon = tool.icon;
+                          return (
+                            <div
+                              key={`order-${tool.id}`}
+                              draggable
+                              onDragStart={(e) => {
+                                setDraggedPinId(tool.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                if (draggedPinId && draggedPinId !== tool.id) {
+                                  setDragOverPinId(tool.id);
+                                }
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (draggedPinId) reorderPinnedApps(draggedPinId, tool.id);
+                                setDraggedPinId(null);
+                                setDragOverPinId(null);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedPinId(null);
+                                setDragOverPinId(null);
+                              }}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium cursor-grab transition-all ${
+                                dragOverPinId === tool.id
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/60'
+                                  : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200'
+                              }`}
+                            >
+                              <GripVertical className="h-3.5 w-3.5 text-slate-400" />
+                              <Icon className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                              <span>{tool.label}</span>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => movePinnedApp(tool.id, -1)}
+                                aria-label={`Move ${tool.label} earlier`}
+                                className="rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                              >
+                                <ArrowUp className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === pinnedTools.length - 1}
+                                onClick={() => movePinnedApp(tool.id, 1)}
+                                aria-label={`Move ${tool.label} later`}
+                                className="rounded p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                              >
+                                <ArrowDown className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+
                   {(
                     [
                       'Core Study Workspace',
@@ -1544,20 +1739,37 @@ const MainShell: React.FC = () => {
                             return (
                               <div
                                 key={tool.id}
-                                className="flex flex-col justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700"
+                                className={`flex flex-col justify-between rounded-xl border p-4 asan-card-hover ${
+                                  tool.proOnly
+                                    ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
+                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+                                }`}
                               >
                                 <div className="space-y-2">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex items-center gap-2.5 min-w-0">
-                                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400">
+                                      <div
+                                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
+                                          tool.proOnly
+                                            ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300'
+                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400'
+                                        }`}
+                                      >
                                         <Icon className="h-4 w-4" />
                                       </div>
                                       <div className="min-w-0">
-                                        <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                          {tool.label}
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                            {tool.label}
+                                          </span>
+                                          {tool.proOnly && (
+                                            <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px] shrink-0">
+                                              PRO
+                                            </span>
+                                          )}
                                         </div>
                                         {tool.proOnly && (
-                                          <div className="text-[11px] font-medium text-slate-400">
+                                          <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
                                             {isLocked ? 'Pro Plan Feature' : 'Pro Unlocked'}
                                           </div>
                                         )}
@@ -1583,7 +1795,11 @@ const MainShell: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleNavClick(tool.id)}
-                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
+                                      tool.proOnly
+                                        ? 'bg-indigo-600 hover:bg-indigo-700'
+                                        : 'bg-blue-600 hover:bg-blue-700'
+                                    }`}
                                   >
                                     Open App
                                   </button>
@@ -1696,7 +1912,16 @@ const MainShell: React.FC = () => {
                     onNavigate={setSection}
                   />
                 ))}
-              {section === 'spectra' && <SpectraView />}
+              {section === 'spectra' &&
+                (isProOrAdmin ? (
+                  <SpectraView />
+                ) : (
+                  <ProGateCard
+                    featureName="Spectra AI (Under Development)"
+                    description="Spectra AI is a Pro & Admin module currently under development."
+                    onNavigate={setSection}
+                  />
+                ))}
               {section === 'more' && <MoreFeaturesView />}
               {section === 'plans' && <PlansView onNavigate={setSection} />}
               {section === 'about' && <AboutCreatorsView />}
@@ -1731,11 +1956,19 @@ const MainShell: React.FC = () => {
                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300">
                   We only request the single <code className="font-mono">drive.file</code> scope for this site so ASAN can access only the folder &amp; files it creates.
                 </div>
+                {authError && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                    {authError}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                   <button
                     type="button"
                     disabled={permBusy}
-                    onClick={skipPermissionStep}
+                    onClick={() => {
+                      clearError();
+                      skipPermissionStep();
+                    }}
                     className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                   >
                     Skip for Now
@@ -1744,6 +1977,7 @@ const MainShell: React.FC = () => {
                     type="button"
                     disabled={permBusy}
                     onClick={async () => {
+                      clearError();
                       setPermBusy(true);
                       try {
                         await acceptDriveFolderPermissionStep();
@@ -1776,11 +2010,19 @@ const MainShell: React.FC = () => {
                 <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   Do you want to authorize Google Docs, Sheets, and Meet for your Pro/Admin workspace (for Schedule Sheet sync, Study Note Doc exports, and study rooms)?
                 </p>
+                {authError && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                    {authError}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                   <button
                     type="button"
                     disabled={permBusy}
-                    onClick={skipPermissionStep}
+                    onClick={() => {
+                      clearError();
+                      skipPermissionStep();
+                    }}
                     className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                   >
                     No Thanks
@@ -1789,6 +2031,7 @@ const MainShell: React.FC = () => {
                     type="button"
                     disabled={permBusy}
                     onClick={async () => {
+                      clearError();
                       setPermBusy(true);
                       try {
                         await acceptWorkspacePermissionStep();

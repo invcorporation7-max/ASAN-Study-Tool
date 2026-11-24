@@ -105,6 +105,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     workspaceToken,
     connectWorkspace,
     updateProfile,
+    error: authError,
+    clearError,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const [studyEventPts, setStudyEventPts] = useState(5);
@@ -479,6 +481,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     }
     setCreatingMeet(true);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -503,6 +506,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (!isWorkspaceEnabled || !isProOrAdmin) return;
     setSheetBusy(true);
     setSheetMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -559,6 +563,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (!isProOrAdmin || !dbUser?.scheduleSheetId) return;
     setSheetBusy(true);
     setSheetMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -642,7 +647,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       ) : (
         <>
           {/* Header & Month/Year Search */}
-          <div className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 lg:flex-row lg:items-center lg:justify-between asan-card-hover">
             <div>
               <h1 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
                 Infinite Academic Calendar
@@ -700,13 +705,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           {/* Google Sheets Schedule Sync Bar */}
           {isWorkspaceEnabled && !workspacePermissions.sheetsSync && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400 asan-card-hover">
               Google Sheets schedule sync is disabled in View Plans → Google Workspace Function Permissions.
             </div>
           )}
           {isWorkspaceEnabled && workspacePermissions.sheetsSync && (
             <>
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3.5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between asan-card-hover">
                 <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-300">
                   <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   {isProOrAdmin ? (
@@ -762,9 +767,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 )}
               </div>
 
-              {sheetMsg && (
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs text-slate-700 dark:text-slate-200">
-                  {sheetMsg}
+              {(sheetMsg || authError) && (
+                <div
+                  className={`rounded-lg border px-4 py-2.5 text-xs ${
+                    !sheetMsg && authError
+                      ? 'border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  {sheetMsg || authError}
                 </div>
               )}
             </>
@@ -774,7 +785,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
             <div
               ref={scrollContainerRef}
-              className="lg:col-span-7 xl:col-span-8 min-h-[420px] max-h-[65vh] lg:max-h-none lg:h-[calc(100vh-14rem)] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-10"
+              className="lg:col-span-7 xl:col-span-8 min-h-[420px] max-h-[65vh] lg:max-h-none lg:h-[calc(100vh-14rem)] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-10 asan-card-hover"
             >
               <div ref={topSentinelRef} className="h-2" />
 
@@ -914,7 +925,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </div>
 
             {/* Selected Date Inspector & Multi-Date / Recurring Event Creator */}
-            <div className="lg:col-span-5 xl:col-span-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-5">
+            <div className="lg:col-span-5 xl:col-span-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-5 asan-card-hover">
               <div className="border-b border-slate-100 dark:border-slate-800 pb-3.5">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
                   <CalendarIcon className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
@@ -1500,9 +1511,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {eventRewardMsg}
                   </div>
                 )}
-                {(statusMsg || generatedSchedule.error) && (
+                {(statusMsg || authError || generatedSchedule.error) && (
                   <div className="text-xs text-red-600 dark:text-red-400">
-                    {statusMsg || generatedSchedule.error}
+                    {statusMsg || authError || generatedSchedule.error}
                   </div>
                 )}
                 <button

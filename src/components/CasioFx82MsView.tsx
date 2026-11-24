@@ -1766,7 +1766,7 @@ export const CasioFx82MsView: React.FC = () => {
         {/* LEFT / CENTER: Authentic Casio fx-82MS Hardware Body */}
         <div className="lg:col-span-6 xl:col-span-5 flex justify-center">
           <div
-            className="w-full max-w-[390px] rounded-[26px] border-2 border-[#1b1c20] bg-gradient-to-b from-[#3b3c41] via-[#2e2f34] to-[#232428] p-4 sm:p-5 shadow-2xl select-none text-white"
+            className="w-full max-w-[390px] rounded-[26px] border-2 border-[#1b1c20] bg-gradient-to-b from-[#3b3c41] via-[#2e2f34] to-[#232428] p-4 sm:p-5 shadow-2xl select-none text-white asan-card-hover"
             aria-label="Casio fx-82MS Calculator"
           >
             {/* Top Branding Bar */}
@@ -2330,7 +2330,7 @@ export const CasioFx82MsView: React.FC = () => {
         {/* RIGHT: Variables Persistence, Mode Quick Controls & Replay History */}
         <div className="lg:col-span-6 xl:col-span-7 space-y-4">
           {/* Power & Quick State Strip */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-3 asan-card-hover">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className={`inline-flex items-center gap-1.5 font-semibold ${
@@ -2378,7 +2378,7 @@ export const CasioFx82MsView: React.FC = () => {
           </div>
 
           {/* Variables Memory Bank (A-F, X, Y, M) — Persists across OFF/ON */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 asan-card-hover">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -2415,7 +2415,7 @@ export const CasioFx82MsView: React.FC = () => {
           </div>
 
           {/* Session Replay History (20-entry limit, erased when OFF) */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 asan-card-hover">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
@@ -2475,7 +2475,7 @@ export const CasioFx82MsView: React.FC = () => {
 
           {/* Stat Mode Live Entries Preview when in SD / REG */}
           {calcMode !== 'COMP' && (
-            <div className="rounded-xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/40 dark:bg-blue-950/30 p-4 space-y-2">
+            <div className="rounded-xl border border-blue-200 dark:border-blue-800/70 bg-blue-50/40 dark:bg-blue-950/30 p-4 space-y-2 asan-card-hover">
               <div className="flex items-center justify-between text-xs font-semibold text-blue-900 dark:text-blue-200">
                 <span>
                   {calcMode === 'SD' ? 'SD Statistics Register' : 'REG Linear Regression Register'} · n = {computeStats.n}
@@ -2497,7 +2497,7 @@ export const CasioFx82MsView: React.FC = () => {
           )}
 
           {showManual && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-2 text-xs text-slate-600 dark:text-slate-300 asan-card-hover">
               <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
                 <Keyboard className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 Quick Reference &amp; Physical Keyboard Shortcuts

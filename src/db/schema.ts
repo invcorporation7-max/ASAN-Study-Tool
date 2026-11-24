@@ -348,6 +348,31 @@ export const examCountdowns = pgTable('exam_countdowns', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const proRefundRequests = pgTable('pro_refund_requests', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  userEmail: text('user_email').notNull(),
+  username: text('username').notNull().default(''),
+  displayName: text('display_name').notNull().default(''),
+  shortUid: text('short_uid').notNull().default(''),
+  planTerm: text('plan_term').notNull().default('monthly'),
+  refundBasis: text('refund_basis').notNull().default('time_remaining_minus_5'), // 'time_remaining_minus_5' | 'flat_60_percent'
+  pointsPaid: integer('points_paid').notNull().default(0),
+  remainingPercent: integer('remaining_percent').notNull().default(0),
+  remainingDays: integer('remaining_days').notNull().default(0),
+  totalDays: integer('total_days').notNull().default(30),
+  requestedRefundPoints: integer('requested_refund_points').notNull().default(0),
+  reason: text('reason').notNull().default(''),
+  status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'rejected'
+  adminNote: text('admin_note').notNull().default(''),
+  reviewedByUserId: integer('reviewed_by_user_id'),
+  reviewedByLabel: text('reviewed_by_label').notNull().default(''),
+  reviewedAt: text('reviewed_at').notNull().default(''),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
   calendarEvents: many(calendarEvents),

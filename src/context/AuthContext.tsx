@@ -24,6 +24,7 @@ import {
   isRedirectInProgressError,
   logout,
   subscribeAuth,
+  WORKSPACE_TOKEN_CLEARED_EVENT,
 } from '../lib/firebase';
 import type { DbUser, SavedAccountEntry, WorkspacePermissionsConfig } from '../types';
 
@@ -86,6 +87,7 @@ interface AuthContextValue {
   workspaceToken: string | null;
   loading: boolean;
   error: string | null;
+  clearError: () => void;
   dbStatus: DbConnectionState;
   dbStatusMessage: string | null;
   dbRetryCount: number;
@@ -433,9 +435,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
 
+    const onTokenCleared = () => {
+      if (active) setWorkspaceToken(null);
+    };
+    window.addEventListener(WORKSPACE_TOKEN_CLEARED_EVENT, onTokenCleared);
+
     return () => {
       active = false;
       unsub();
+      window.removeEventListener(WORKSPACE_TOKEN_CLEARED_EVENT, onTokenCleared);
     };
   }, [syncUserProfile]);
 
@@ -647,7 +655,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
     try {
       const res = await connectBasicDriveFolderOAuth();
-      setFirebaseUser(res.user);
+      if (res.user) setFirebaseUser(res.user);
       setWorkspaceToken(res.accessToken);
       return res.accessToken;
     } catch (err) {
@@ -664,7 +672,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setError(null);
     try {
       const res = await connectWorkspaceOAuth();
-      setFirebaseUser(res.user);
+      if (res.user) setFirebaseUser(res.user);
       setWorkspaceToken(res.accessToken);
       return res.accessToken;
     } catch (err) {
@@ -706,6 +714,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const acceptDriveFolderPermissionStep = useCallback(async () => {
+    setError(null);
     const token = await connectBasicDrive();
     if (!token) return;
     try {
@@ -724,6 +733,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [connectBasicDrive, dbUser, updateProfile]);
 
   const acceptWorkspacePermissionStep = useCallback(async () => {
+    setError(null);
     const token = await connectWorkspace();
     if (token) {
       if (dbUser && !dbUser.driveFolderId) {
@@ -739,6 +749,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [connectWorkspace, dbUser, updateProfile]);
 
   const skipPermissionStep = useCallback(() => {
+    setError(null);
     if (permissionStep === 'drive') {
       const proCapable =
         dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super';
@@ -758,7 +769,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [dbUser, permissionStep]);
 
   const openPermissionFlow = useCallback(() => {
+    setError(null);
     setPermissionStep('drive');
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   const signOutUser = useCallback(async () => {
@@ -782,11 +798,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     await syncUserProfile(pwdToken ? 'password' : 'google', pwdToken);
   }, [firebaseUser, syncUserProfile]);
 
+  const isActivePro =
+    !isGuest &&
+    dbUser?.plan === 'pro' &&
+    (!dbUser.proExpiresAt || new Date(dbUser.proExpiresAt).getTime() > Date.now());
+
   const setViewPlanMode = useCallback(
     async (mode: 'auto' | 'basic') => {
+      if (mode === 'basic' && isActivePro) {
+        setError(
+          'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+        );
+        return;
+      }
       await updateProfile({ viewPlanMode: mode });
     },
-    [updateProfile]
+    [isActivePro, updateProfile]
   );
 
   const switchPlanAdmin = useCallback(async (plan: 'basic' | 'pro') => {
@@ -822,16 +849,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const effectivePlan: 'free' | 'basic' | 'pro' = isGuest
     ? 'free'
-    : dbUser?.viewPlanMode === 'basic'
-      ? 'basic'
-      : dbUser?.plan === 'pro'
-        ? 'pro'
-        : 'basic';
+    : isActivePro
+      ? 'pro'
+      : dbUser?.viewPlanMode === 'basic'
+        ? 'basic'
+        : dbUser?.plan === 'pro'
+          ? 'pro'
+          : 'basic';
 
   const isEffectiveProOrAdmin =
     !isGuest &&
-    dbUser?.viewPlanMode !== 'basic' &&
-    (dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super');
+    (isActivePro ||
+      (dbUser?.viewPlanMode !== 'basic' &&
+        (dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super')));
 
   const workspacePermissions: WorkspacePermissionsConfig =
     !isGuest && dbUser?.workspacePermissions
@@ -872,6 +902,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         workspaceToken,
         loading,
         error,
+        clearError,
         dbStatus,
         dbStatusMessage,
         dbRetryCount,

@@ -98,7 +98,7 @@ function ResultCard({ result }: { result: CalcResult }) {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
+    <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
           {result.title}
@@ -259,12 +259,17 @@ export function SpecializedCalculatorsView() {
   return (
     <div className="space-y-5">
       {/* Header Banner */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
+      <div className="asan-pro-card asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Specialized Calculators Suite (Pro &amp; Admin)
-            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                Specialized Calculators Suite
+              </h2>
+              <span className="asan-pro-badge rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                Pro &amp; Admin
+              </span>
+            </div>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
               Deterministic symbolic &amp; numerical engines for Calculus, Coordinate Geometry, Algebra, Vector/3D Geometry, and Trigonometry — works 100% offline.
             </p>
@@ -299,7 +304,7 @@ export function SpecializedCalculatorsView() {
       {/* Main Split: Controls + Output (no nested height traps) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left: Interactive Problem Input */}
-        <div className="lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
+        <div className="asan-card-hover lg:col-span-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
           {activeTab === 'calculus' && (
             <>
               <div>

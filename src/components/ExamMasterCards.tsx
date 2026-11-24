@@ -32,6 +32,8 @@ export const ExamMasterCards: React.FC = () => {
     workspaceToken,
     connectWorkspace,
     updateProfile,
+    error: authError,
+    clearError,
   } = useAuth();
 
   const [cards, setCards] = useState<ExamBlueprintItem[]>([]);
@@ -225,6 +227,7 @@ export const ExamMasterCards: React.FC = () => {
     setSheetBusy(true);
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -254,6 +257,7 @@ export const ExamMasterCards: React.FC = () => {
     setSheetBusy(true);
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = await connectWorkspace();
@@ -306,7 +310,7 @@ export const ExamMasterCards: React.FC = () => {
 
   if (isGuest) {
     return (
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-3">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center space-y-3 asan-card-hover">
         <Lock className="mx-auto h-6 w-6 text-blue-600 dark:text-blue-400" />
         <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
           Exam Master Cards Require Google Sign-In
@@ -328,7 +332,7 @@ export const ExamMasterCards: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header + Pro Google Sheets "master" -> "test_dates" Sync */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between asan-card-hover">
         <div>
           <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
             Exam Master Schedule Cards · &ldquo;master&rdquo; / &ldquo;test_dates&rdquo; Blueprint
@@ -383,9 +387,9 @@ export const ExamMasterCards: React.FC = () => {
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
+      {(errorMsg || authError) && (
         <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-          {errorMsg}
+          {errorMsg || authError}
         </div>
       )}
 
@@ -393,7 +397,7 @@ export const ExamMasterCards: React.FC = () => {
         {/* Form to Add / Update Exam Blueprint Card */}
         <form
           onSubmit={handleSaveCard}
-          className="lg:col-span-4 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3.5"
+          className="lg:col-span-4 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3.5 asan-card-hover"
         >
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
             <h3 className="font-display text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -553,11 +557,11 @@ export const ExamMasterCards: React.FC = () => {
         {/* 3x4 Exam Blueprint Cards List */}
         <div className="lg:col-span-8 space-y-4">
           {loading ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center text-xs text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center text-xs text-slate-500 dark:text-slate-400 asan-card-hover">
               Loading Exam Master cards...
             </div>
           ) : cards.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center text-xs text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center text-xs text-slate-500 dark:text-slate-400 asan-card-hover">
               No Exam Master cards yet. Create one on the left or pull from your &ldquo;master&rdquo; Google Sheet (&ldquo;test_dates&rdquo; tab).
             </div>
           ) : (
@@ -590,7 +594,7 @@ export const ExamMasterCards: React.FC = () => {
               return (
                 <div
                   key={card.id}
-                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs"
+                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs asan-card-hover"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/70 px-4 py-2.5">
                     <div className="flex items-center gap-2">

@@ -45,14 +45,15 @@ export const ProGateCard: React.FC<ProGateCardProps> = ({
 
   return (
     <div className="mx-auto max-w-2xl py-8">
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-5">
+      <div className="asan-pro-card asan-card-hover rounded-xl border border-indigo-200 dark:border-indigo-800/70 p-8 space-y-5">
         <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300">
             <Lock className="h-5 w-5" />
           </div>
           <div className="space-y-1.5">
-            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              Pro Feature · Login Required (500 Points/Month or 8-Char License Key)
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+              <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[10px]">PRO FEATURE</span>
+              <span>Login Required (500 Points/Month or 8-Char License Key)</span>
             </div>
             <h1 className="font-display text-xl font-bold text-slate-900 dark:text-slate-100">
               {featureName}

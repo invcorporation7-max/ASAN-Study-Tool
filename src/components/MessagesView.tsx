@@ -47,6 +47,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     connectWorkspace,
     connectBasicDrive,
     updateProfile,
+    error: authError,
+    clearError,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const isAdmin = dbUser?.role === 'admin' || dbUser?.role === 'super';
@@ -259,6 +261,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   const handleBackupToDriveFolder = async () => {
     setErrorMsg(null);
     setStatusMsg(null);
+    clearError();
     try {
       if (!workspaceToken) {
         const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
@@ -284,7 +287,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 asan-card-hover">
           <div className="flex items-start gap-3">
             <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -390,7 +393,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       </div>
 
       {/* User Mail Identity Strip (5-char UID + @username + Avatar Ring) */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 asan-card-hover">
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
           {dbUser && (
             <UserAvatarBadge
@@ -471,16 +474,16 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
+      {(errorMsg || authError) && (
         <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/50 px-4 py-2.5 text-xs text-red-700 dark:text-red-300">
-          {errorMsg}
+          {errorMsg || authError}
         </div>
       )}
 
       {tab === 'compose' ? (
         <form
           onSubmit={handleSend}
-          className="max-w-3xl rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5"
+          className="max-w-3xl rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5 asan-card-hover"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
@@ -710,7 +713,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           </button>
         </form>
       ) : (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 asan-card-hover">
           {loading ? (
             <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
               Loading Tool Mail...

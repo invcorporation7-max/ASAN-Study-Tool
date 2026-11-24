@@ -3,7 +3,6 @@ import {
   BookOpen,
   Clock,
   Coins,
-  Database,
   KeyRound,
   Loader2,
   Lock,
@@ -29,7 +28,6 @@ export const AuthGate: React.FC = () => {
     loading,
     error,
     dbStatus,
-    dbStatusMessage,
     dbWaitSeconds,
     retryDbConnection,
   } = useAuth();
@@ -116,12 +114,10 @@ export const AuthGate: React.FC = () => {
         {dbStatus === 'connecting' && (
           <div className="lg:col-span-12 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
             <div className="flex items-center gap-2.5 min-w-0">
-              <Database className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
               <span>
-                <strong>Waking up server &amp; connecting to database</strong>
-                {dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : ''} — please wait a moment so your Pro, Admin, and Contributor roles sync cleanly on sign-in.
-                {dbStatusMessage ? ` (${dbStatusMessage})` : ''}
+                <strong>Please wait while we load your account data</strong>
+                {dbWaitSeconds > 0 ? ` (${dbWaitSeconds}s)` : ''} — workspace services are warming up so your Pro, Admin, and Contributor roles sync cleanly on sign-in.
               </span>
             </div>
             <button
@@ -146,7 +142,7 @@ export const AuthGate: React.FC = () => {
           </p>
 
           {/* Login Method Selector */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 shadow-xs">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4 shadow-xs asan-card-hover">
             <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6">
               <button
                 type="button"
@@ -330,7 +326,7 @@ export const AuthGate: React.FC = () => {
           </div>
 
           {savedAccounts.length > 0 && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 asan-card-hover">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <Users className="h-3.5 w-3.5" />
                 Switch Saved Accounts
@@ -378,7 +374,7 @@ export const AuthGate: React.FC = () => {
         </div>
 
         <div className="lg:col-span-5">
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-5 asan-card-hover">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
               Tier &amp; Points Structure
             </h2>

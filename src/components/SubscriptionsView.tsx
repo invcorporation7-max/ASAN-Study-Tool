@@ -9,6 +9,7 @@ import {
   FlaskConical,
   KeyRound,
   Lock,
+  ShieldAlert,
   Sparkles,
   ToggleLeft,
   ToggleRight,
@@ -19,7 +20,8 @@ import {
   buildGmailConfirmationUrl,
   buildGmailLicenseComposeUrl,
 } from '../lib/api';
-import type { LicenseKeyItem, PointTransactionItem } from '../types';
+import type { LicenseKeyItem, PointTransactionItem, ProRefundRequestItem } from '../types';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export const SubscriptionsView: React.FC = () => {
   const {
@@ -35,6 +37,7 @@ export const SubscriptionsView: React.FC = () => {
   } = useAuth();
   const [keys, setKeys] = useState<LicenseKeyItem[]>([]);
   const [transactions, setTransactions] = useState<PointTransactionItem[]>([]);
+  const [refundRequests, setRefundRequests] = useState<ProRefundRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedTerm, setSelectedTerm] = useState<'monthly' | 'annual'>('monthly');
@@ -45,6 +48,9 @@ export const SubscriptionsView: React.FC = () => {
   const [savingPwd, setSavingPwd] = useState(false);
   const [busy, setBusy] = useState(false);
   const [switchingPreview, setSwitchingPreview] = useState(false);
+  const [cancelPurchaseType, setCancelPurchaseType] = useState<'time_dependent' | 'non_timed'>('time_dependent');
+  const [cancelReason, setCancelReason] = useState('');
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastPurchasedKey, setLastPurchasedKey] = useState<{
@@ -63,9 +69,11 @@ export const SubscriptionsView: React.FC = () => {
       const data = await apiFetch<{
         keys: LicenseKeyItem[];
         transactions: PointTransactionItem[];
+        refundRequests?: ProRefundRequestItem[];
       }>('/api/subscriptions');
       setKeys(data.keys || []);
       setTransactions(data.transactions || []);
+      setRefundRequests(data.refundRequests || []);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load subscription records');
     } finally {
@@ -198,10 +206,33 @@ export const SubscriptionsView: React.FC = () => {
     }
   };
 
+  const handleConfirmCancelPro = async () => {
+    setBusy(true);
+    setErrorMsg(null);
+    setStatusMsg(null);
+    try {
+      const res = await apiFetch<{ message: string }>('/api/subscriptions/cancel-pro', {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: cancelReason.trim(),
+          purchaseType: cancelPurchaseType,
+        }),
+      });
+      setConfirmCancelOpen(false);
+      setCancelReason('');
+      await Promise.all([refreshProfile(), loadSubscriptions()]);
+      setStatusMsg(res.message);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to cancel Pro subscription');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (isGuest) {
     return (
       <div className="mx-auto max-w-2xl py-8">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 space-y-4 asan-card-hover">
           <div className="flex items-start gap-3">
             <Lock className="mt-1 h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
             <div>
@@ -236,17 +267,42 @@ export const SubscriptionsView: React.FC = () => {
 
   const isPro = dbUser?.plan === 'pro';
   const points = dbUser?.points ?? 0;
+  // Pro users cannot re-enter Basic until expiry or willing cancellation
   const canPreviewBasic =
-    dbUser?.plan === 'pro' || dbUser?.role === 'admin' || dbUser?.role === 'super';
-  const isPreviewBasic = dbUser?.viewPlanMode === 'basic';
+    !isPro && (dbUser?.role === 'admin' || dbUser?.role === 'super');
+  const isPreviewBasic = !isPro && dbUser?.viewPlanMode === 'basic';
 
   let daysUntilExpiry: number | null = null;
+  let remainingPercent = 0;
+  let totalTermDays = 30;
   if (isPro && dbUser?.proExpiresAt) {
-    const msLeft = new Date(dbUser.proExpiresAt).getTime() - Date.now();
+    const nowMs = Date.now();
+    const expMs = new Date(dbUser.proExpiresAt).getTime();
+    const startMs = dbUser.proStartedAt ? new Date(dbUser.proStartedAt).getTime() : nowMs;
+    const totalMs = expMs > startMs ? expMs - startMs : 30 * 24 * 60 * 60 * 1000;
+    const msLeft = expMs - nowMs;
     if (Number.isFinite(msLeft)) {
       daysUntilExpiry = Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+      totalTermDays = Math.max(1, Math.round(totalMs / (24 * 60 * 60 * 1000)));
+      remainingPercent = Math.round(Math.max(0, Math.min(1, msLeft / totalMs)) * 100);
     }
   }
+
+  const recentProTx = transactions.find(
+    (t) =>
+      t.amount < 0 &&
+      (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+      t.verificationStatus !== 'reverted'
+  );
+  const estimatedPointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
+  const estimatedRefundFraction =
+    cancelPurchaseType === 'non_timed'
+      ? 0.6
+      : Math.max(0, remainingPercent - 5) / 100;
+  const estimatedRefundPoints =
+    estimatedPointsPaid > 0
+      ? Math.max(0, Math.round(estimatedPointsPaid * estimatedRefundFraction))
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -259,7 +315,7 @@ export const SubscriptionsView: React.FC = () => {
             500 pts/month or <strong>5,100 pts/year (15% Annual Discount)</strong> · Email confirmation &amp; 3-day expiry reminders sent automatically.
           </p>
         </div>
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5">
+        <div className="asan-card-hover flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5">
           <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <div className="text-xs">
             <span className="text-slate-500 dark:text-slate-400">Balance: </span>
@@ -272,7 +328,7 @@ export const SubscriptionsView: React.FC = () => {
 
       {/* 3-Day Renewal Reminder Banner */}
       {isPro && daysUntilExpiry !== null && daysUntilExpiry <= 3 && (
-        <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="asan-card-hover rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
             <div>
@@ -311,7 +367,7 @@ export const SubscriptionsView: React.FC = () => {
       )}
 
       {lastPurchasedKey && (
-        <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="asan-card-hover rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="text-xs text-blue-900 dark:text-blue-200 space-y-1">
             <div className="font-semibold">
               Pro License Key Ready:{' '}
@@ -348,8 +404,17 @@ export const SubscriptionsView: React.FC = () => {
 
       {/* Active Subscription Summary Cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Plan (Effective View)</div>
+        <div
+          className={`rounded-xl border p-5 asan-card-hover ${
+            isPro
+              ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
+              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Plan</span>
+            {isPro && <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>}
+          </div>
           <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-white uppercase">
             {dbUser?.plan || 'basic'}
             {isPreviewBasic && (
@@ -364,7 +429,7 @@ export const SubscriptionsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
           <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Subscription Start Date</div>
           <div className="mt-2 font-display text-lg font-bold text-slate-900 dark:text-white tabular-nums">
             {isPro && dbUser?.proStartedAt ? dbUser.proStartedAt.slice(0, 10) : '—'}
@@ -374,21 +439,19 @@ export const SubscriptionsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
           <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Subscription End Date</div>
           <div className="mt-2 font-display text-lg font-bold text-slate-900 dark:text-white tabular-nums">
             {isPro && dbUser?.proExpiresAt ? dbUser.proExpiresAt.slice(0, 10) : '—'}
           </div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             {isPro
-              ? isPreviewBasic
-                ? 'Still counting down during Basic preview'
-                : `${daysUntilExpiry ?? 0} day(s) left`
+              ? `${daysUntilExpiry ?? 0} day(s) left (${remainingPercent}% remaining)`
               : '500 pts/mo or 5,100 pts/yr (15% off)'}
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 asan-card-hover">
           <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Available Points</div>
           <div className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
             {points.toLocaleString()}
@@ -403,65 +466,135 @@ export const SubscriptionsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Lower-Plan Switch (Pro/Admin -> Basic) + How to Test Basic Version */}
+      {/* Cancellation & Refund Policy + Pro Lock Notice / Admin Lower-Plan Switch */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {canPreviewBasic && (
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex items-center justify-between gap-4">
-            <div className="space-y-1">
+        <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/30 p-5 space-y-2 asan-card-hover">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+            <ShieldAlert className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            Subscription Lock &amp; Refund Policy
+          </div>
+          <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed list-disc pl-4">
+            <li>
+              <strong>Active Pro Lock:</strong> Pro users cannot return to the Basic plan until their Pro term expires or they willingly cancel below.
+            </li>
+            <li>
+              <strong>Non-Time-Dependent Purchases:</strong> <strong>60%</strong> of points paid are eligible for refund upon cancellation.
+            </li>
+            <li>
+              <strong>Time-Dependent Subscriptions:</strong> Refund equals <strong>remaining percentage of time − 5%</strong> of points paid.
+            </li>
+            <li>
+              <strong>Admin Approval Required:</strong> All cancellation refund requests are sent to Admin Oversight for approval before points are credited back.
+            </li>
+          </ul>
+        </div>
+
+        {isPro ? (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-800/80 bg-white dark:bg-slate-900 p-5 space-y-3 asan-card-hover">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-                Use Lower Plan (Basic Preview Mode)
+                <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                Willing Pro Cancellation &amp; Refund Request
+              </div>
+              <span className="rounded bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300">
+                Admin Approval
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 text-xs">
+              <select
+                value={cancelPurchaseType}
+                onChange={(e) =>
+                  setCancelPurchaseType(e.target.value as 'time_dependent' | 'non_timed')
+                }
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-2 text-xs text-slate-900 dark:text-slate-100"
+              >
+                <option value="time_dependent">
+                  Time-Dependent ({Math.max(0, remainingPercent - 5)}% = {remainingPercent}% left − 5%)
+                </option>
+                <option value="non_timed">Non-Time-Dependent (60% Flat)</option>
+              </select>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Optional reason for cancellation..."
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs">
+              <span className="text-slate-600 dark:text-slate-300 tabular-nums">
+                {estimatedPointsPaid > 0 ? (
+                  <>
+                    Paid: <strong>{estimatedPointsPaid} pts</strong> · {daysUntilExpiry ?? 0}/
+                    {totalTermDays}d left · Est. Refund:{' '}
+                    <strong className="text-emerald-700 dark:text-emerald-400">
+                      {estimatedRefundPoints} pts
+                    </strong>
+                  </>
+                ) : (
+                  'Key / Admin-granted Pro: will revert to Basic and log a 0 pt refund ticket.'
+                )}
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmCancelOpen(true)}
+                className="rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Cancel Pro &amp; Request Refund
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col justify-between gap-3 asan-card-hover">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                <FlaskConical className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Account Tier &amp; Free/Basic Access
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                Experience Basic-tier restrictions even while holding Pro or Admin.{' '}
-                <strong>Does NOT stop or pause your Pro plan expiry countdown.</strong>
+                Active view: <strong className="uppercase">{effectivePlan}</strong>. Signed-in accounts start on <strong>Basic</strong> with 500 points. To test the Free Tier, sign out and choose &ldquo;Continue Without Login&rdquo;.
               </p>
             </div>
-            <button
-              type="button"
-              disabled={switchingPreview}
-              onClick={handleToggleLowerPlanMode}
-              className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold shrink-0 transition-colors ${
-                isPreviewBasic
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              {isPreviewBasic ? (
-                <>
-                  <ToggleRight className="h-4 w-4" />
-                  Basic Preview ON (Restore {dbUser?.plan?.toUpperCase()})
-                </>
-              ) : (
-                <>
-                  <ToggleLeft className="h-4 w-4" />
-                  Switch to Basic Preview
-                </>
-              )}
-            </button>
+            {canPreviewBasic && (
+              <div className="flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <span className="text-xs text-slate-600 dark:text-slate-300">
+                  Admin Basic Preview Mode:
+                </span>
+                <button
+                  type="button"
+                  disabled={switchingPreview}
+                  onClick={handleToggleLowerPlanMode}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    isPreviewBasic
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {isPreviewBasic ? (
+                    <>
+                      <ToggleRight className="h-4 w-4" />
+                      Basic Preview ON
+                    </>
+                  ) : (
+                    <>
+                      <ToggleLeft className="h-4 w-4" />
+                      Switch to Basic Preview
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
-
-        <div
-          className={`rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-1.5 ${
-            canPreviewBasic ? '' : 'lg:col-span-2'
-          }`}
-        >
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-            <FlaskConical className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            How to Test Basic &amp; Free Versions
-          </div>
-          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            <strong>1) Lower-Plan Switch:</strong> Pro, Admin &amp; Super users can toggle &ldquo;Basic Preview&rdquo; above without losing their Pro expiry date (active view: <strong className="uppercase">{effectivePlan}</strong>).{' '}
-            <strong>2) Fresh Account:</strong> Any newly signed-in account starts on the <strong>Basic Plan</strong> with 500 points.{' '}
-            <strong>3) Free Tier:</strong> Sign out and choose &ldquo;Continue Free&rdquo; on the login screen.
-          </p>
-        </div>
       </div>
 
       {/* Password Login Setup (Allows non-Google private login) */}
       <form
         onSubmit={handleSavePassword}
-        className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
+        className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
       >
         <div className="space-y-1 max-w-xl">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
@@ -500,7 +633,7 @@ export const SubscriptionsView: React.FC = () => {
       </form>
 
       {/* Billing Term Selector (Monthly 500 pts vs Annual 5,100 pts 15% Off) */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="text-xs text-slate-700 dark:text-slate-300">
           <strong className="text-sm text-slate-900 dark:text-white">Select Pro Plan Term:</strong>{' '}
           Choose Monthly (500 pts) or Annual (5,100 pts — <strong>15% discount</strong> off 6,000 pts).
@@ -534,11 +667,14 @@ export const SubscriptionsView: React.FC = () => {
       {/* Action Row: Redeem Points / Purchase Key / Activate Key */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Direct Points Upgrade */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 flex flex-col justify-between">
+        <div className="asan-pro-card asan-card-hover rounded-xl border border-indigo-200 dark:border-indigo-800/70 p-6 space-y-4 flex flex-col justify-between">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-              <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              Instant Pro via Points ({planCost.toLocaleString()} Pts)
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                Instant Pro via Points ({planCost.toLocaleString()} Pts)
+              </div>
+              <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
             </div>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
               Spend <strong>{planCost.toLocaleString()} points</strong> for <strong>{termLabel}</strong> immediately on your signed-in account. Sends email confirmation to Tool Mail (plus Gmail link).
@@ -579,7 +715,7 @@ export const SubscriptionsView: React.FC = () => {
         {/* Purchase 8-Char Pro License Key */}
         <form
           onSubmit={handlePurchaseProKey}
-          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 flex flex-col justify-between"
+          className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 flex flex-col justify-between"
         >
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
@@ -610,7 +746,7 @@ export const SubscriptionsView: React.FC = () => {
         {/* Activate 8-Char Key */}
         <form
           onSubmit={handleRedeemKey}
-          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 flex flex-col justify-between"
+          className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 flex flex-col justify-between"
         >
           <div className="space-y-2.5">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
@@ -642,7 +778,7 @@ export const SubscriptionsView: React.FC = () => {
 
       {/* Earning Rules + History */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <div className="lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
               Your License Keys &amp; Subscription History
@@ -710,7 +846,7 @@ export const SubscriptionsView: React.FC = () => {
           )}
         </div>
 
-        <div className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div className="asan-card-hover lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
           <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
             <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
               Points Ledger &amp; Earning Rules
@@ -748,6 +884,69 @@ export const SubscriptionsView: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Cancellation & Refund Request History */}
+      {refundRequests.length > 0 && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3 asan-card-hover">
+          <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
+            Your Cancellation &amp; Refund Requests ({refundRequests.length})
+          </h2>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {refundRequests.map((req) => (
+              <div
+                key={req.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs"
+              >
+                <div className="space-y-0.5 min-w-0">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">
+                    {req.refundBasis === 'flat_60_percent'
+                      ? '60% Refund (Non-Time-Dependent)'
+                      : `Remaining Time (${req.remainingPercent}%) − 5%`}
+                    {' · '}
+                    <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                      {req.requestedRefundPoints} pts
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Paid: {req.pointsPaid} pts · Left: {req.remainingDays}/{req.totalDays}d · {req.reason}
+                  </div>
+                  {req.adminNote && (
+                    <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                      Admin Note: {req.adminNote} ({req.reviewedByLabel})
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                    req.status === 'approved'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : req.status === 'rejected'
+                        ? 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                  }`}
+                >
+                  {req.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmCancelOpen}
+        title="Cancel Pro Subscription & Request Refund?"
+        description={`Your account will immediately revert to Basic. Refund basis: ${
+          cancelPurchaseType === 'non_timed'
+            ? '60% of points paid (non-time-dependent)'
+            : `Remaining time (${remainingPercent}%) − 5%`
+        } (${estimatedRefundPoints} estimated pts). An Admin must approve the request before points are credited.`}
+        confirmLabel="Cancel Pro & Submit Refund"
+        destructive
+        busy={busy}
+        onConfirm={handleConfirmCancelPro}
+        onCancel={() => setConfirmCancelOpen(false)}
+      />
     </div>
   );
 };

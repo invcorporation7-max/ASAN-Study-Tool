@@ -993,10 +993,13 @@ export const PdfStudioView: React.FC = () => {
   return (
     <div className="space-y-3">
       {/* Studio Top Bar */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141518] px-3 sm:px-4 py-2.5 text-white">
+      <div className="no-print asan-pro-card asan-card-hover flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#141518] px-3 sm:px-4 py-2.5 text-white">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="font-display text-sm font-semibold tracking-tight truncate">
             A4 Booklet &amp; Imposition Studio
+          </span>
+          <span className="asan-pro-badge rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shrink-0">
+            Pro Studio
           </span>
           <input
             type="text"
@@ -1116,7 +1119,7 @@ export const PdfStudioView: React.FC = () => {
         {/* Left Control Column */}
         <div className="no-print lg:col-span-4 space-y-4">
           {/* Insert / Paste Panel */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-200">
                 Insert / Append at Position:
@@ -1274,7 +1277,7 @@ export const PdfStudioView: React.FC = () => {
           </div>
 
           {/* Pages List with Group Reordering, Image Cropping & Autocorrect */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 tabular-nums">
@@ -1563,7 +1566,7 @@ export const PdfStudioView: React.FC = () => {
           </div>
 
           {/* Sheet & Assembly Setup */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <div className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
             <h3 className="text-xs font-bold text-slate-900 dark:text-white">
               Sheet &amp; Assembly Setup
             </h3>
@@ -1677,7 +1680,7 @@ export const PdfStudioView: React.FC = () => {
         </div>
 
         {/* Right Dark Studio Viewport with Sheet Navigation & Smooth Scroll */}
-        <div className="lg:col-span-8 lg:sticky lg:top-16 flex flex-col rounded-xl bg-[#202124] overflow-hidden border border-slate-800 print-only-sheets">
+        <div className="asan-card-hover lg:col-span-8 lg:sticky lg:top-16 flex flex-col rounded-xl bg-[#202124] overflow-hidden border border-slate-800 print-only-sheets">
           {/* Page View & Jump Bar */}
           <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 bg-[#18191c] px-3 sm:px-4 py-2 text-xs text-slate-200">
             <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5">

@@ -4,6 +4,7 @@ import {
   getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithPopup,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -26,9 +27,11 @@ export const db = rawCfg.firestoreDatabaseId
   ? getFirestore(app, rawCfg.firestoreDatabaseId)
   : getFirestore(app);
 
+export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
 // Workspace scopes are ONLY requested on-demand when the user explicitly opts in
 export const WORKSPACE_SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
+  DRIVE_FILE_SCOPE,
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/meetings.space.created',
@@ -41,7 +44,7 @@ basicGoogleAuthProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Opt-in Drive-only provider for Basic users storing unlimited notes/tasks .txt files in ASAN-user-content
 export const driveFolderOnlyAuthProvider = new GoogleAuthProvider();
-driveFolderOnlyAuthProvider.addScope('https://www.googleapis.com/auth/drive.file');
+driveFolderOnlyAuthProvider.addScope(DRIVE_FILE_SCOPE);
 driveFolderOnlyAuthProvider.setCustomParameters({ prompt: 'consent' });
 
 // Incremental on-demand Workspace provider: only invoked when Pro/Admin user clicks Connect Workspace
@@ -55,7 +58,162 @@ workspaceGoogleAuthProvider.setCustomParameters({ prompt: 'consent' });
 let cachedWorkspaceToken: string | null = null;
 let isSigningIn = false;
 
+export const WORKSPACE_TOKEN_CLEARED_EVENT = 'asan-workspace-token-cleared';
+
 export const getAccessToken = (): string | null => cachedWorkspaceToken;
+
+export const clearAccessToken = (): void => {
+  cachedWorkspaceToken = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(WORKSPACE_TOKEN_CLEARED_EVENT));
+  }
+};
+
+interface GisTokenResponse {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+}
+
+interface GisTokenClient {
+  requestAccessToken: (overrideConfig?: { prompt?: string; hint?: string }) => void;
+}
+
+interface GisWindow {
+  google?: {
+    accounts?: {
+      oauth2?: {
+        initTokenClient: (config: {
+          client_id: string;
+          scope: string;
+          hint?: string;
+          prompt?: string;
+          callback: (resp: GisTokenResponse) => void;
+          error_callback?: (err: { type?: string; message?: string }) => void;
+        }) => GisTokenClient;
+      };
+    };
+  };
+}
+
+function getOAuthClientId(): string {
+  const envClientId = (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined)?.trim();
+  return envClientId || rawCfg.oAuthClientId || '';
+}
+
+let gisScriptLoadPromise: Promise<boolean> | null = null;
+
+async function loadGisScript(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const gw = window as unknown as GisWindow;
+  if (gw.google?.accounts?.oauth2?.initTokenClient) return true;
+  if (gisScriptLoadPromise) return gisScriptLoadPromise;
+
+  gisScriptLoadPromise = new Promise<boolean>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src^="https://accounts.google.com/gsi/client"]'
+    );
+    if (existing) {
+      let checks = 0;
+      const timer = window.setInterval(() => {
+        checks += 1;
+        if ((window as unknown as GisWindow).google?.accounts?.oauth2?.initTokenClient) {
+          window.clearInterval(timer);
+          resolve(true);
+        } else if (checks > 40) {
+          window.clearInterval(timer);
+          resolve(false);
+        }
+      }, 100);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () =>
+      resolve(Boolean((window as unknown as GisWindow).google?.accounts?.oauth2?.initTokenClient));
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+
+  return gisScriptLoadPromise;
+}
+
+class GisCancelledError extends Error {
+  readonly isCancelled = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'GisCancelledError';
+  }
+}
+
+function requestGoogleAccessTokenViaGis(
+  scopes: string[],
+  loginHint?: string | null
+): Promise<string> {
+  const clientId = getOAuthClientId();
+  const gw = typeof window !== 'undefined' ? (window as unknown as GisWindow) : undefined;
+  const initTokenClient = gw?.google?.accounts?.oauth2?.initTokenClient;
+
+  if (!clientId || !initTokenClient) {
+    return Promise.reject(
+      new Error('Google OAuth client is not ready yet. Please try again in a second.')
+    );
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    try {
+      const client = initTokenClient({
+        client_id: clientId,
+        scope: scopes.join(' '),
+        ...(loginHint ? { hint: loginHint } : {}),
+        prompt: 'consent',
+        callback: (resp: GisTokenResponse) => {
+          if (resp.access_token) {
+            resolve(resp.access_token);
+            return;
+          }
+          const code = String(resp.error || '').toLowerCase();
+          if (code === 'access_denied' || code === 'user_cancel') {
+            reject(new GisCancelledError('Google Drive permission was denied or cancelled.'));
+            return;
+          }
+          reject(
+            new Error(
+              resp.error_description || resp.error || 'Could not obtain Google access token.'
+            )
+          );
+        },
+        error_callback: (err) => {
+          const type = String(err?.type || '').toLowerCase();
+          if (type === 'popup_closed') {
+            reject(
+              new GisCancelledError('Google authorization popup was closed before finishing.')
+            );
+            return;
+          }
+          if (type === 'popup_failed_to_open') {
+            reject(
+              new Error(
+                'Google authorization popup was blocked by your browser. Allow popups for this site and try again.'
+              )
+            );
+            return;
+          }
+          reject(new Error(err?.message || 'Google authorization popup failed.'));
+        },
+      });
+      client.requestAccessToken({
+        prompt: 'consent',
+        ...(loginHint ? { hint: loginHint } : {}),
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error('Failed to launch Google OAuth popup.'));
+    }
+  });
+}
 
 export class RedirectPendingError extends Error {
   readonly isRedirectPending = true;
@@ -172,66 +330,104 @@ export const googleSignIn = async (): Promise<{ user: User }> => {
   }
 };
 
-// Opt-in folder-isolated Drive access ONLY (for Basic users backing up unlimited .txt tasks/notes)
-export const connectBasicDriveFolderOAuth = async (): Promise<{
-  user: User;
-  accessToken: string;
-}> => {
+async function authorizeGoogleScopes(params: {
+  scopes: string[];
+  provider: GoogleAuthProvider;
+  label: string;
+}): Promise<{ user: User | null; accessToken: string }> {
+  const { scopes, provider, label } = params;
+  isSigningIn = true;
   try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, driveFolderOnlyAuthProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Could not obtain Google Drive folder access token.');
-    }
-    cachedWorkspaceToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedWorkspaceToken };
-  } catch (error) {
-    if (shouldFallbackToRedirect(error)) {
+    const clientId = getOAuthClientId();
+    const gw = typeof window !== 'undefined' ? (window as unknown as GisWindow) : undefined;
+    const gisReadySync = Boolean(clientId && gw?.google?.accounts?.oauth2?.initTokenClient);
+
+    // Prefer GIS token client synchronously inside click handler so preview/dev servers do not fail with Firebase unauthorized-domain/internal-error
+    if (gisReadySync) {
       try {
-        await signInWithRedirect(auth, driveFolderOnlyAuthProvider);
-        throw new RedirectPendingError('Redirecting to Google Drive authorization...');
-      } catch (redirectErr) {
-        if (isRedirectInProgressError(redirectErr)) throw redirectErr;
-        throw formatFirebaseAuthError(redirectErr);
+        const accessToken = await requestGoogleAccessTokenViaGis(
+          scopes,
+          auth.currentUser?.email
+        );
+        cachedWorkspaceToken = accessToken;
+        return { user: auth.currentUser, accessToken };
+      } catch (gisErr) {
+        if (gisErr instanceof GisCancelledError) {
+          throw gisErr;
+        }
+        console.warn(`${label} via GIS fell back to Firebase popup:`, gisErr);
       }
     }
-    console.error('Basic Drive folder authorization failed:', error);
-    throw formatFirebaseAuthError(error);
+
+    // Firebase popup path (uses reauthenticateWithPopup when already signed in to preserve active session)
+    try {
+      const result = auth.currentUser
+        ? await reauthenticateWithPopup(auth.currentUser, provider)
+        : await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        cachedWorkspaceToken = credential.accessToken;
+        return { user: result.user, accessToken: cachedWorkspaceToken };
+      }
+      throw new Error(`Could not obtain ${label} access token.`);
+    } catch (fbErr) {
+      const code = getAuthErrorCode(fbErr);
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        throw formatFirebaseAuthError(fbErr);
+      }
+
+      // If Firebase popup failed on dev/preview origin or didn't yield an access token, try loading GIS
+      if (clientId) {
+        const loaded = await loadGisScript();
+        if (loaded) {
+          const accessToken = await requestGoogleAccessTokenViaGis(
+            scopes,
+            auth.currentUser?.email
+          );
+          cachedWorkspaceToken = accessToken;
+          return { user: auth.currentUser, accessToken };
+        }
+      }
+
+      if (shouldFallbackToRedirect(fbErr)) {
+        try {
+          await signInWithRedirect(auth, provider);
+          throw new RedirectPendingError(`Redirecting to ${label} authorization...`);
+        } catch (redirectErr) {
+          if (isRedirectInProgressError(redirectErr)) throw redirectErr;
+          throw formatFirebaseAuthError(redirectErr);
+        }
+      }
+      console.error(`${label} authorization failed:`, fbErr);
+      throw formatFirebaseAuthError(fbErr);
+    }
   } finally {
     isSigningIn = false;
   }
+}
+
+// Opt-in folder-isolated Drive access ONLY (for Basic users backing up unlimited .txt tasks/notes)
+export const connectBasicDriveFolderOAuth = async (): Promise<{
+  user: User | null;
+  accessToken: string;
+}> => {
+  return authorizeGoogleScopes({
+    scopes: [DRIVE_FILE_SCOPE],
+    provider: driveFolderOnlyAuthProvider,
+    label: 'Google Drive (ASAN-user-content)',
+  });
 };
 
 // Explicit opt-in Workspace authorization (only triggered when user clicks to connect Drive/Workspace)
 export const connectWorkspaceOAuth = async (): Promise<{
-  user: User;
+  user: User | null;
   accessToken: string;
 }> => {
-  try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, workspaceGoogleAuthProvider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Could not obtain Google Workspace access token.');
-    }
-    cachedWorkspaceToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedWorkspaceToken };
-  } catch (error) {
-    if (shouldFallbackToRedirect(error)) {
-      try {
-        await signInWithRedirect(auth, workspaceGoogleAuthProvider);
-        throw new RedirectPendingError('Redirecting to Google Workspace authorization...');
-      } catch (redirectErr) {
-        if (isRedirectInProgressError(redirectErr)) throw redirectErr;
-        throw formatFirebaseAuthError(redirectErr);
-      }
-    }
-    console.error('Workspace opt-in authorization failed:', error);
-    throw formatFirebaseAuthError(error);
-  } finally {
-    isSigningIn = false;
-  }
+  return authorizeGoogleScopes({
+    scopes: WORKSPACE_SCOPES,
+    provider: workspaceGoogleAuthProvider,
+    label: 'Google Workspace',
+  });
 };
 
 export const logout = async (): Promise<void> => {

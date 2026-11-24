@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 
 interface TechnicalLoadingScreenProps {
   children?: React.ReactNode;
@@ -25,6 +26,8 @@ function arcPath(r: number, startDeg: number, endDeg: number): string {
 export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
   children,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [dotCount, setDotCount] = useState<1 | 2 | 3>(1);
 
   useEffect(() => {
@@ -36,42 +39,54 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
 
   const dots = '.'.repeat(dotCount);
 
-  // Precompute deterministic radial ticks & micro-dots
+  // Theme-adaptive color tokens:
+  // Light mode -> Pure white background + navy blue rings
+  // Dark mode  -> Dark site background (#020617) + light-colored blue rings
+  const bgHex = isDark ? '#020617' : '#FFFFFF';
+  const ringDark = isDark ? '#7DD3FC' : '#172554';
+  const ringPrimary = isDark ? '#BAE6FD' : '#1E3A8A';
+  const ringMid = isDark ? '#38BDF8' : '#1D4ED8';
+  const ringSoft = isDark ? '#E0F2FE' : '#3B82F6';
+  const cutoutFill = bgHex;
+
+  // Expanded ring radii so there is clear breathing room around "ASAN"
   const outerTicks = Array.from({ length: 96 }, (_, i) => {
     const deg = (i * 360) / 96;
     const isMajor = i % 4 === 0;
     const isMedium = i % 2 === 0;
-    const r1 = 156;
-    const r2 = isMajor ? 174 : isMedium ? 168 : 163;
+    const r1 = 187;
+    const r2 = isMajor ? 206 : isMedium ? 199 : 194;
     const p1 = polar(r1, deg);
     const p2 = polar(r2, deg);
     return { i, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, isMajor };
   });
 
-  const rightCollarHoles = [-24, -10, 4, 18, 32].map((deg) => polar(138, deg));
-  const leftCollarHoles = [164, 180, 196].map((deg) => polar(138, deg));
+  const rightCollarHoles = [-24, -10, 4, 18, 32].map((deg) => polar(169, deg));
+  const leftCollarHoles = [164, 180, 196].map((deg) => polar(169, deg));
 
   const bracketNodes = [25, 115, 205, 295].map((deg) => ({
     deg,
-    pos: polar(118, deg),
+    pos: polar(147, deg),
   }));
 
   const microDots = Array.from({ length: 64 }, (_, i) => {
-    const pos = polar(103, (i * 360) / 64);
+    const pos = polar(132, (i * 360) / 64);
     return { i, cx: pos.x, cy: pos.y };
   });
 
   const innerTicks = Array.from({ length: 60 }, (_, i) => {
     const deg = (i * 360) / 60;
-    const p1 = polar(81, deg);
-    const p2 = polar(i % 5 === 0 ? 92 : 89, deg);
+    const p1 = polar(108, deg);
+    const p2 = polar(i % 5 === 0 ? 119 : 116, deg);
     return { i, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, major: i % 5 === 0 };
   });
 
   return (
     <div
-      className="flex min-h-screen w-full flex-col items-center justify-center bg-white px-4 py-8 text-slate-900 select-none"
-      style={{ backgroundColor: '#FFFFFF' }}
+      className={`flex min-h-screen w-full flex-col items-center justify-center px-4 py-8 select-none transition-colors ${
+        isDark ? 'bg-slate-950 text-slate-100' : 'bg-white text-slate-900'
+      }`}
+      style={{ backgroundColor: bgHex }}
     >
       <div className="flex flex-col items-center">
         <div className="relative flex items-center justify-center w-[280px] h-[280px] sm:w-[340px] sm:h-[340px]">
@@ -81,54 +96,6 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
             role="img"
             aria-label="ASAN loading technical ring"
           >
-            {/* Chunk 1 (Anti-clockwise slow): Outermost angled trace lines with endpoint nodes */}
-            <g
-              className="asan-hud-ccw"
-              style={
-                {
-                  '--hud-dur': '38s',
-                  transformOrigin: '220px 220px',
-                } as React.CSSProperties
-              }
-            >
-              <rect x="0" y="0" width="440" height="440" fill="none" />
-              <polyline
-                points="344,108 370,82 406,82"
-                fill="none"
-                stroke="#0EA5E9"
-                strokeWidth="1.4"
-                strokeOpacity="0.65"
-              />
-              <circle cx="409" cy="82" r="2.8" fill="#FFFFFF" stroke="#0284C7" strokeWidth="1.5" />
-
-              <polyline
-                points="98,106 72,80 34,80"
-                fill="none"
-                stroke="#0EA5E9"
-                strokeWidth="1.4"
-                strokeOpacity="0.65"
-              />
-              <circle cx="31" cy="80" r="2.8" fill="#FFFFFF" stroke="#0284C7" strokeWidth="1.5" />
-
-              <polyline
-                points="94,332 66,360 32,360"
-                fill="none"
-                stroke="#0EA5E9"
-                strokeWidth="1.4"
-                strokeOpacity="0.65"
-              />
-              <circle cx="29" cy="360" r="2.8" fill="#FFFFFF" stroke="#0284C7" strokeWidth="1.5" />
-
-              <polyline
-                points="346,334 374,362 408,362"
-                fill="none"
-                stroke="#0EA5E9"
-                strokeWidth="1.4"
-                strokeOpacity="0.65"
-              />
-              <circle cx="411" cy="362" r="2.8" fill="#FFFFFF" stroke="#0284C7" strokeWidth="1.5" />
-            </g>
-
             {/* Chunk 2 (Clockwise): Outer radial tick perimeter dial */}
             <g
               className="asan-hud-cw"
@@ -143,9 +110,10 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
               <circle
                 cx={CX}
                 cy={CY}
-                r="156"
+                r="187"
                 fill="none"
-                stroke="#BAE6FD"
+                stroke={ringSoft}
+                strokeOpacity={isDark ? '0.45' : '0.35'}
                 strokeWidth="1"
               />
               {outerTicks.map((t) => (
@@ -155,14 +123,14 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
                   y1={t.y1}
                   x2={t.x2}
                   y2={t.y2}
-                  stroke={t.isMajor ? '#0284C7' : '#38BDF8'}
+                  stroke={t.isMajor ? ringPrimary : ringMid}
                   strokeWidth={t.isMajor ? '1.8' : '1.1'}
-                  strokeOpacity={t.isMajor ? '0.85' : '0.65'}
+                  strokeOpacity={t.isMajor ? '0.9' : '0.68'}
                 />
               ))}
             </g>
 
-            {/* Chunk 3 (Anti-clockwise): Outer thick curved collar with punched white holes + dashed tracks */}
+            {/* Chunk 3 (Anti-clockwise): Outer thick curved collar with punched holes + dashed tracks */}
             <g
               className="asan-hud-ccw"
               style={
@@ -173,44 +141,41 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
               }
             >
               <rect x="0" y="0" width="440" height="440" fill="none" />
-              {/* Primary thick curved collar arc */}
               <path
-                d={arcPath(138, -36, 44)}
+                d={arcPath(169, -36, 44)}
                 fill="none"
-                stroke="#0EA5E9"
-                strokeWidth="14"
+                stroke={ringMid}
+                strokeWidth="13"
                 strokeLinecap="butt"
               />
               {rightCollarHoles.map((pt, idx) => (
-                <circle key={`rh-${idx}`} cx={pt.x} cy={pt.y} r="2.5" fill="#FFFFFF" />
+                <circle key={`rh-${idx}`} cx={pt.x} cy={pt.y} r="2.4" fill={cutoutFill} />
               ))}
 
-              {/* Opposite secondary collar arc */}
               <path
-                d={arcPath(138, 152, 208)}
+                d={arcPath(169, 152, 208)}
                 fill="none"
-                stroke="#0284C7"
-                strokeWidth="10"
+                stroke={ringPrimary}
+                strokeWidth="9.5"
                 strokeLinecap="butt"
-                strokeOpacity="0.9"
+                strokeOpacity="0.92"
               />
               {leftCollarHoles.map((pt, idx) => (
-                <circle key={`lh-${idx}`} cx={pt.x} cy={pt.y} r="2.1" fill="#FFFFFF" />
+                <circle key={`lh-${idx}`} cx={pt.x} cy={pt.y} r="2.0" fill={cutoutFill} />
               ))}
 
-              {/* Connecting dashed & hairline arcs on r=138 */}
               <path
-                d={arcPath(138, 56, 140)}
+                d={arcPath(169, 56, 140)}
                 fill="none"
-                stroke="#38BDF8"
-                strokeWidth="3"
+                stroke={ringSoft}
+                strokeWidth="2.8"
                 strokeDasharray="6 6"
               />
               <path
-                d={arcPath(138, 220, 312)}
+                d={arcPath(169, 220, 312)}
                 fill="none"
-                stroke="#38BDF8"
-                strokeWidth="3"
+                stroke={ringSoft}
+                strokeWidth="2.8"
                 strokeDasharray="10 5"
               />
             </g>
@@ -229,28 +194,28 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
               <circle
                 cx={CX}
                 cy={CY}
-                r="118"
+                r="147"
                 fill="none"
-                stroke="#0EA5E9"
+                stroke={ringMid}
                 strokeWidth="1.2"
                 strokeOpacity="0.45"
               />
               <path
-                d={arcPath(118, -10, 42)}
+                d={arcPath(147, -10, 42)}
                 fill="none"
-                stroke="#0284C7"
+                stroke={ringPrimary}
                 strokeWidth="4.5"
               />
               <path
-                d={arcPath(118, 130, 178)}
+                d={arcPath(147, 130, 178)}
                 fill="none"
-                stroke="#0EA5E9"
+                stroke={ringMid}
                 strokeWidth="4.5"
               />
               <path
-                d={arcPath(118, 250, 292)}
+                d={arcPath(147, 250, 292)}
                 fill="none"
-                stroke="#38BDF8"
+                stroke={ringSoft}
                 strokeWidth="3.5"
               />
               {bracketNodes.map((node) => (
@@ -263,8 +228,8 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
                     y="-3.5"
                     width="12"
                     height="7"
-                    fill="#FFFFFF"
-                    stroke="#0284C7"
+                    fill={cutoutFill}
+                    stroke={ringPrimary}
                     strokeWidth="1.5"
                   />
                 </g>
@@ -285,9 +250,10 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
               <circle
                 cx={CX}
                 cy={CY}
-                r="96.5"
+                r="125.5"
                 fill="none"
-                stroke="#7DD3FC"
+                stroke={ringSoft}
+                strokeOpacity="0.65"
                 strokeWidth="1"
               />
               {microDots.map((d) => (
@@ -296,8 +262,8 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
                   cx={d.cx}
                   cy={d.cy}
                   r="1.65"
-                  fill="#0284C7"
-                  fillOpacity="0.75"
+                  fill={ringPrimary}
+                  fillOpacity="0.8"
                 />
               ))}
             </g>
@@ -320,9 +286,9 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
                   y1={t.y1}
                   x2={t.x2}
                   y2={t.y2}
-                  stroke={t.major ? '#0284C7' : '#0EA5E9'}
+                  stroke={t.major ? ringPrimary : ringMid}
                   strokeWidth={t.major ? '2.1' : '1.4'}
-                  strokeOpacity={t.major ? '0.9' : '0.65'}
+                  strokeOpacity={t.major ? '0.92' : '0.68'}
                 />
               ))}
             </g>
@@ -339,28 +305,28 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
             >
               <rect x="0" y="0" width="440" height="440" fill="none" />
               <path
-                d={arcPath(69, -120, -25)}
+                d={arcPath(94, -120, -25)}
                 fill="none"
-                stroke="#0EA5E9"
+                stroke={ringMid}
                 strokeWidth="7"
                 strokeLinecap="butt"
               />
               <path
-                d={arcPath(69, 45, 145)}
+                d={arcPath(94, 45, 145)}
                 fill="none"
-                stroke="#0284C7"
+                stroke={ringPrimary}
                 strokeWidth="6"
                 strokeLinecap="butt"
               />
               <path
-                d={arcPath(69, 175, 220)}
+                d={arcPath(94, 175, 220)}
                 fill="none"
-                stroke="#7DD3FC"
+                stroke={ringSoft}
                 strokeWidth="2.5"
               />
             </g>
 
-            {/* Chunk 8 (Clockwise): Innermost core delicate arcs */}
+            {/* Chunk 8 (Clockwise): Innermost core delicate arcs (spaced far from ASAN) */}
             <g
               className="asan-hud-cw"
               style={
@@ -372,15 +338,15 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
             >
               <rect x="0" y="0" width="440" height="440" fill="none" />
               <path
-                d={arcPath(55, 0, 110)}
+                d={arcPath(78, 0, 110)}
                 fill="none"
-                stroke="#0284C7"
+                stroke={ringDark}
                 strokeWidth="2"
               />
               <path
-                d={arcPath(55, 165, 295)}
+                d={arcPath(78, 165, 295)}
                 fill="none"
-                stroke="#38BDF8"
+                stroke={ringSoft}
                 strokeWidth="1.6"
               />
             </g>
@@ -388,7 +354,11 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
 
           {/* Static Center Brand Name */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="font-display text-xl sm:text-2xl font-extrabold tracking-[0.22em] text-slate-900 pl-[0.22em]">
+            <span
+              className={`font-display text-lg sm:text-xl font-extrabold tracking-[0.2em] pl-[0.2em] ${
+                isDark ? 'text-sky-100' : 'text-blue-950'
+              }`}
+            >
               ASAN
             </span>
           </div>
@@ -396,11 +366,15 @@ export const TechnicalLoadingScreen: React.FC<TechnicalLoadingScreenProps> = ({
 
         {/* Animated Loading. -> Loading.. -> Loading... */}
         <div
-          className="mt-3 flex items-center justify-center font-mono text-sm sm:text-base font-semibold tracking-wider text-slate-800"
+          className={`mt-3 flex items-center justify-center font-mono text-sm sm:text-base font-semibold tracking-wider ${
+            isDark ? 'text-sky-200' : 'text-blue-950'
+          }`}
           aria-live="polite"
         >
           <span>Loading</span>
-          <span className="inline-block w-[3ch] text-left text-sky-600">{dots}</span>
+          <span className={`inline-block w-[3ch] text-left ${isDark ? 'text-sky-300' : 'text-blue-800'}`}>
+            {dots}
+          </span>
         </div>
       </div>
 

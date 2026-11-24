@@ -474,6 +474,29 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             created_by_label TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          CREATE TABLE IF NOT EXISTS pro_refund_requests (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_email TEXT NOT NULL,
+            username TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            short_uid TEXT NOT NULL DEFAULT '',
+            plan_term TEXT NOT NULL DEFAULT 'monthly',
+            refund_basis TEXT NOT NULL DEFAULT 'time_remaining_minus_5',
+            points_paid INTEGER NOT NULL DEFAULT 0,
+            remaining_percent INTEGER NOT NULL DEFAULT 0,
+            remaining_days INTEGER NOT NULL DEFAULT 0,
+            total_days INTEGER NOT NULL DEFAULT 30,
+            requested_refund_points INTEGER NOT NULL DEFAULT 0,
+            reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            admin_note TEXT NOT NULL DEFAULT '',
+            reviewed_by_user_id INTEGER,
+            reviewed_by_label TEXT NOT NULL DEFAULT '',
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
         `);
       } finally {
         client.release();

@@ -319,8 +319,30 @@ export const AuthGate: React.FC = () => {
             )}
 
             {(localError || error) && (
-              <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-                {localError || error}
+              <div className="rounded-lg border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-700 dark:text-red-300 space-y-2.5">
+                <p>{localError || error}</p>
+                {authTab === 'google' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocalError(null);
+                        setAuthTab('password');
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-red-300 dark:border-red-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-red-800 dark:text-red-200 hover:bg-red-100/70 dark:hover:bg-slate-800"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      Sign In with Email &amp; Password Instead
+                    </button>
+                    <button
+                      type="button"
+                      onClick={continueFreeGuest}
+                      className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    >
+                      Continue on Free Tier
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

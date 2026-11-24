@@ -249,7 +249,15 @@ export function formatFirebaseAuthError(err: unknown): Error {
     return err instanceof Error ? err : new RedirectPendingError();
   }
   const code = getAuthErrorCode(err);
+  const rawMsg = err instanceof Error ? err.message : String(err || '');
   const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+
+  if (/access_denied|403|developer-approved testers|verification process/i.test(rawMsg)) {
+    return new Error(
+      'Google OAuth Error 403 (access_denied): This Google Cloud app is in Testing mode and only allows Google accounts listed under Google Cloud Console -> Google Auth Platform -> Audience -> Test users. Add your Gmail as a Test User (or Publish the app), or use Email & Password Sign-In.'
+    );
+  }
+
   switch (code) {
     case 'auth/unauthorized-domain':
       return new Error(
@@ -258,7 +266,9 @@ export function formatFirebaseAuthError(err: unknown): Error {
     case 'auth/popup-blocked':
       return new Error('Sign-in popup was blocked by your browser. Please allow popups or use Email & Password Sign-In.');
     case 'auth/popup-closed-by-user':
-      return new Error('Google Sign-In popup was closed before finishing.');
+      return new Error(
+        'Google Sign-In popup was closed before finishing. If Google displayed Error 403 (access_denied / Testing mode), add your Gmail under Google Cloud Console -> Audience -> Test users, or sign in with Email & Password.'
+      );
     case 'auth/cancelled-popup-request':
       return new Error('Sign-in request was superseded by a newer popup. Please try once more.');
     case 'auth/account-exists-with-different-credential':

@@ -153,6 +153,17 @@ export const GA4AnalyticsPanel: React.FC<{
         </div>
       ) : report ? (
         <div className="space-y-5">
+          {report.overview.pageViews === 0 && (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800/70 bg-blue-50/70 dark:bg-blue-950/35 px-4 py-2.5 text-xs text-blue-900 dark:text-blue-200">
+              GA4 Data API is connected to Property <strong className="font-mono">{report.propertyId}</strong>
+              {report.measurementId ? (
+                <>
+                  {' '}and tracking tag <strong className="font-mono">{report.measurementId}</strong> is active in page headers
+                </>
+              ) : null}
+              . Standard GA4 reports update after initial visits process (check Realtime users above within ~30 seconds).
+            </div>
+          )}
           {/* KPI Strip */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 tabular-nums">
             <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/50 dark:bg-emerald-950/30 p-3.5">

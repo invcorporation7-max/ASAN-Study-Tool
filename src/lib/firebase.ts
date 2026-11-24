@@ -330,6 +330,21 @@ export const googleSignIn = async (): Promise<{ user: User }> => {
   }
 };
 
+function buildScopedGoogleProvider(
+  scopes: string[],
+  loginHint?: string | null
+): GoogleAuthProvider {
+  const scoped = new GoogleAuthProvider();
+  scopes.forEach((scope) => {
+    scoped.addScope(scope);
+  });
+  scoped.setCustomParameters({
+    prompt: 'consent',
+    ...(loginHint ? { login_hint: loginHint } : {}),
+  });
+  return scoped;
+}
+
 async function authorizeGoogleScopes(params: {
   scopes: string[];
   provider: GoogleAuthProvider;
@@ -339,54 +354,36 @@ async function authorizeGoogleScopes(params: {
   isSigningIn = true;
   try {
     const clientId = getOAuthClientId();
-    const gw = typeof window !== 'undefined' ? (window as unknown as GisWindow) : undefined;
-    const gisReadySync = Boolean(clientId && gw?.google?.accounts?.oauth2?.initTokenClient);
+    const scopedProvider = buildScopedGoogleProvider(scopes, auth.currentUser?.email);
 
-    // Prefer GIS token client synchronously inside click handler so preview/dev servers do not fail with Firebase unauthorized-domain/internal-error
-    if (gisReadySync) {
-      try {
-        const accessToken = await requestGoogleAccessTokenViaGis(
-          scopes,
-          auth.currentUser?.email
-        );
-        cachedWorkspaceToken = accessToken;
-        return { user: auth.currentUser, accessToken };
-      } catch (gisErr) {
-        if (gisErr instanceof GisCancelledError) {
-          throw gisErr;
-        }
-        console.warn(`${label} via GIS fell back to Firebase popup:`, gisErr);
-      }
-    }
-
-    // Firebase popup path (uses reauthenticateWithPopup when already signed in to preserve active session)
+    // Always use Firebase SDK popup FIRST (uses firebaseapp.com/__/auth/handler so dynamic preview/dev origins never hit GIS origin_mismatch)
     try {
-      const result = auth.currentUser
-        ? await reauthenticateWithPopup(auth.currentUser, provider)
-        : await signInWithPopup(auth, provider);
+      let result;
+      if (auth.currentUser) {
+        try {
+          result = await reauthenticateWithPopup(auth.currentUser, scopedProvider);
+        } catch (reauthErr) {
+          const reauthCode = getAuthErrorCode(reauthErr);
+          if (reauthCode === 'auth/user-mismatch') {
+            result = await signInWithPopup(auth, buildScopedGoogleProvider(scopes));
+          } else {
+            throw reauthErr;
+          }
+        }
+      } else {
+        result = await signInWithPopup(auth, scopedProvider);
+      }
+
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         cachedWorkspaceToken = credential.accessToken;
         return { user: result.user, accessToken: cachedWorkspaceToken };
       }
-      throw new Error(`Could not obtain ${label} access token.`);
+      throw new Error(`Could not obtain ${label} access token from Google sign-in.`);
     } catch (fbErr) {
       const code = getAuthErrorCode(fbErr);
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         throw formatFirebaseAuthError(fbErr);
-      }
-
-      // If Firebase popup failed on dev/preview origin or didn't yield an access token, try loading GIS
-      if (clientId) {
-        const loaded = await loadGisScript();
-        if (loaded) {
-          const accessToken = await requestGoogleAccessTokenViaGis(
-            scopes,
-            auth.currentUser?.email
-          );
-          cachedWorkspaceToken = accessToken;
-          return { user: auth.currentUser, accessToken };
-        }
       }
 
       if (shouldFallbackToRedirect(fbErr)) {
@@ -398,6 +395,27 @@ async function authorizeGoogleScopes(params: {
           throw formatFirebaseAuthError(redirectErr);
         }
       }
+
+      // Only fall back to GIS when Firebase Auth rejects an unallowlisted custom domain
+      if (code === 'auth/unauthorized-domain' && clientId) {
+        try {
+          const loaded = await loadGisScript();
+          if (loaded) {
+            const accessToken = await requestGoogleAccessTokenViaGis(
+              scopes,
+              auth.currentUser?.email
+            );
+            cachedWorkspaceToken = accessToken;
+            return { user: auth.currentUser, accessToken };
+          }
+        } catch (gisErr) {
+          if (gisErr instanceof GisCancelledError) {
+            throw gisErr;
+          }
+          console.warn(`${label} GIS fallback failed:`, gisErr);
+        }
+      }
+
       console.error(`${label} authorization failed:`, fbErr);
       throw formatFirebaseAuthError(fbErr);
     }

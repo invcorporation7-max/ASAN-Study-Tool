@@ -859,7 +859,7 @@ export const SubscriptionsView: React.FC = () => {
           {transactions.length === 0 ? (
             <p className="text-xs text-slate-500 dark:text-slate-400 py-6">No point activity yet.</p>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-72 lg:overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {transactions.map((tx) => (
                 <div
                   key={tx.id}

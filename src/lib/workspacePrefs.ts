@@ -1,8 +1,10 @@
 import type {
+  AppShortcutMap,
   DashboardPreferences,
   DashboardTileSize,
   DashboardWidgetId,
   ExamCountdownItem,
+  NavSection,
 } from '../types';
 
 export const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetId[] = [
@@ -241,3 +243,185 @@ export function getCountdownRemaining(
     targetTimestamp: target,
   };
 }
+
+export const SHORTCUT_UPDATED_EVENT = 'asan-app-shortcuts-updated';
+
+export const SUGGESTED_APP_SHORTCUTS: AppShortcutMap = {
+  dashboard: 'Alt+1',
+  'all-apps': 'Alt+2',
+  calendar: 'Alt+3',
+  tasks: 'Alt+4',
+  notes: 'Alt+5',
+  timers: 'Alt+6',
+  calculator: 'Alt+7',
+  'study-materials': 'Alt+8',
+  messages: 'Alt+9',
+  plans: 'Alt+,',
+};
+
+export interface AppShortcutCatalogEntry {
+  id: NavSection;
+  label: string;
+  category: string;
+  proOnly?: boolean;
+  requiresWorkspace?: boolean;
+  requiresContributor?: boolean;
+  requiresAdmin?: boolean;
+  requiresSuper?: boolean;
+}
+
+export const APP_SHORTCUT_CATALOG: AppShortcutCatalogEntry[] = [
+  { id: 'dashboard', label: 'Dashboard', category: 'Core' },
+  { id: 'all-apps', label: 'All Apps', category: 'Core' },
+  { id: 'calendar', label: 'Calendar', category: 'Study Workspace' },
+  { id: 'tasks', label: 'My Tasks', category: 'Study Workspace' },
+  { id: 'notes', label: 'My Notes', category: 'Study Workspace' },
+  { id: 'timers', label: 'Timers', category: 'Study Workspace' },
+  { id: 'calculator', label: 'fx-82MS Calc', category: 'Study Workspace' },
+  { id: 'messages', label: 'Tool Mail', category: 'Community & Account' },
+  { id: 'study-materials', label: 'Study Material Notes', category: 'Community & Account' },
+  { id: 'subscriptions', label: 'Subscriptions', category: 'Community & Account' },
+  { id: 'notifications', label: 'Notifications', category: 'Community & Account' },
+  { id: 'specialized-calculators', label: 'Specialized Calculators', category: 'Pro Tools', proOnly: true },
+  { id: 'pdf-tool', label: 'PDF Tool', category: 'Pro Tools', proOnly: true },
+  { id: 'workspace', label: 'Google Workspace', category: 'Pro Tools', proOnly: true, requiresWorkspace: true },
+  { id: 'spectra', label: 'Spectra AI', category: 'Pro Tools', proOnly: true },
+  { id: 'more', label: 'More Features', category: 'General' },
+  { id: 'plans', label: 'View Plans and Settings', category: 'Settings & Info' },
+  { id: 'about', label: 'About the Creators', category: 'Settings & Info' },
+  { id: 'contact', label: 'Contact', category: 'Settings & Info' },
+  { id: 'contributor-console', label: "Contributors' Console", category: 'Roles', requiresContributor: true },
+  { id: 'admin', label: 'Admin Console', category: 'Roles', requiresAdmin: true },
+  { id: 'super', label: 'Super Console', category: 'Roles', requiresSuper: true },
+];
+
+const VALID_SHORTCUT_SECTIONS = new Set<NavSection>(APP_SHORTCUT_CATALOG.map((c) => c.id));
+
+function shortcutPrefKey(userKey: string): string {
+  return `asan_app_shortcuts_v1_${userKey || 'guest'}`;
+}
+
+export function normalizeShortcutCombo(combo: string): string {
+  const parts = combo
+    .split('+')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return '';
+  const mods = new Set<string>();
+  let mainKey = '';
+  for (const part of parts) {
+    const low = part.toLowerCase();
+    if (low === 'ctrl' || low === 'control') mods.add('Ctrl');
+    else if (low === 'alt' || low === 'option') mods.add('Alt');
+    else if (low === 'shift') mods.add('Shift');
+    else if (low === 'meta' || low === 'cmd' || low === 'command' || low === 'win') mods.add('Meta');
+    else mainKey = part.length === 1 ? part.toUpperCase() : part;
+  }
+  if (!mainKey) return '';
+  const orderedMods = ['Ctrl', 'Alt', 'Shift', 'Meta'].filter((m) => mods.has(m));
+  return [...orderedMods, mainKey].join('+');
+}
+
+function resolveKeyNameFromEvent(e: { code?: string; key: string }): string | null {
+  const code = e.code || '';
+  if (/^Key([A-Z])$/.test(code)) {
+    return code.slice(3);
+  }
+  if (/^Digit([0-9])$/.test(code)) {
+    return code.slice(5);
+  }
+  if (/^Numpad([0-9])$/.test(code)) {
+    return code.slice(6);
+  }
+  const key = e.key;
+  if (!key) return null;
+  if (
+    key === 'Control' ||
+    key === 'Shift' ||
+    key === 'Alt' ||
+    key === 'Meta' ||
+    key === 'CapsLock' ||
+    key === 'Tab' ||
+    key === 'Escape' ||
+    key === 'Dead'
+  ) {
+    return null;
+  }
+  if (/^F([1-9]|1[0-2])$/i.test(key)) return key.toUpperCase();
+  if (key === ' ') return 'Space';
+  if (code === 'Comma' || key === ',') return ',';
+  if (code === 'Period' || key === '.') return '.';
+  if (code === 'Slash' || key === '/') return '/';
+  if (code === 'Semicolon' || key === ';') return ';';
+  if (code === 'BracketLeft' || key === '[') return '[';
+  if (code === 'BracketRight' || key === ']') return ']';
+  if (code === 'Backquote' || key === '`') return '`';
+  if (code === 'Minus' || key === '-') return '-';
+  if (code === 'Equal' || key === '=') return '=';
+  if (key.length === 1) return key.toUpperCase();
+  return key;
+}
+
+export function formatKeyboardEventCombo(e: {
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+  key: string;
+  code?: string;
+}): string | null {
+  const mainKey = resolveKeyNameFromEvent(e);
+  if (!mainKey) return null;
+  const isFnKey = /^F([1-9]|1[0-2])$/i.test(mainKey);
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isFnKey) {
+    return null;
+  }
+  const mods: string[] = [];
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.metaKey) mods.push('Meta');
+  return [...mods, mainKey].join('+');
+}
+
+export function isEditableTarget(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.closest('[contenteditable="true"], [role="textbox"]')) return true;
+  return false;
+}
+
+export function loadAppShortcuts(userKey: string): AppShortcutMap {
+  try {
+    const raw = localStorage.getItem(shortcutPrefKey(userKey));
+    if (!raw) return { ...SUGGESTED_APP_SHORTCUTS };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return { ...SUGGESTED_APP_SHORTCUTS };
+    const clean: AppShortcutMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (VALID_SHORTCUT_SECTIONS.has(k as NavSection) && typeof v === 'string') {
+        const norm = normalizeShortcutCombo(v);
+        if (norm) clean[k as NavSection] = norm;
+      }
+    }
+    return clean;
+  } catch {
+    return { ...SUGGESTED_APP_SHORTCUTS };
+  }
+}
+
+export function saveAppShortcuts(userKey: string, map: AppShortcutMap): void {
+  try {
+    localStorage.setItem(shortcutPrefKey(userKey), JSON.stringify(map));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(SHORTCUT_UPDATED_EVENT, { detail: { userKey, map } })
+      );
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+

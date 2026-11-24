@@ -257,7 +257,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
                 </button>
               ) : (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap shrink-0">
-                  Sheets sync off (View Plans)
+                  Sheets sync off (View Plans and Settings)
                 </div>
               )
             ) : (

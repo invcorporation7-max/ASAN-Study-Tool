@@ -19,6 +19,7 @@ import {
   GripVertical,
   Info,
   KeyRound,
+  Keyboard,
   Layers,
   LayoutDashboard,
   LayoutGrid,
@@ -78,7 +79,14 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { initGoogleAnalytics, trackGa4PageView } from './lib/analytics';
 import { apiFetch, apiOptionalAuthFetch, getPasswordSessionToken } from './lib/api';
 import { loadGuestWorkspace } from './lib/guestStore';
+import {
+  SHORTCUT_UPDATED_EVENT,
+  formatKeyboardEventCombo,
+  isEditableTarget,
+  loadAppShortcuts,
+} from './lib/workspacePrefs';
 import type {
+  AppShortcutMap,
   CalendarEventItem,
   ExamBlueprintItem,
   ExamCountdownItem,
@@ -238,7 +246,7 @@ const SECONDARY_NAV: {
   label: string;
   icon: React.FC<{ className?: string }>;
 }[] = [
-  { id: 'plans', label: 'View Plans', icon: CreditCard },
+  { id: 'plans', label: 'View Plans and Settings', icon: CreditCard },
   { id: 'about', label: 'About the Creators', icon: Info },
   { id: 'contact', label: 'Contact', icon: Mail },
 ];
@@ -263,7 +271,7 @@ const SECTION_LABELS: Record<NavSection, string> = {
   workspace: 'Google Workspace',
   spectra: 'Spectra AI',
   more: 'More Features',
-  plans: 'View Plans',
+  plans: 'View Plans and Settings',
   about: 'About the Creators',
   contact: 'Contact',
 };
@@ -331,10 +339,11 @@ const MainShell: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const hasSessionToken = Boolean(firebaseUser || dbUser || getPasswordSessionToken());
-  const isSignedIn = Boolean(firebaseUser || dbUser);
+  const userKey = isGuest ? 'guest' : dbUser?.uid || 'user';
 
   const [section, setSection] = useState<NavSection>('dashboard');
   const [pinnedAppIds, setPinnedAppIds] = useState<NavSection[]>(() => loadPinnedApps());
+  const [appShortcuts, setAppShortcuts] = useState<AppShortcutMap>(() => loadAppShortcuts(userKey));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [draggedPinId, setDraggedPinId] = useState<NavSection | null>(null);
@@ -344,6 +353,7 @@ const MainShell: React.FC = () => {
   );
   const [switchModalOpen, setSwitchModalOpen] = useState(false);
   const [permBusy, setPermBusy] = useState(false);
+  const mainScrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
@@ -352,6 +362,20 @@ const MainShell: React.FC = () => {
       // ignore storage quota errors
     }
   }, [pinnedAppIds]);
+
+  useEffect(() => {
+    setAppShortcuts(loadAppShortcuts(userKey));
+  }, [userKey]);
+
+  useEffect(() => {
+    const onShortcutUpdate = () => setAppShortcuts(loadAppShortcuts(userKey));
+    window.addEventListener(SHORTCUT_UPDATED_EVENT, onShortcutUpdate);
+    window.addEventListener('storage', onShortcutUpdate);
+    return () => {
+      window.removeEventListener(SHORTCUT_UPDATED_EVENT, onShortcutUpdate);
+      window.removeEventListener('storage', onShortcutUpdate);
+    };
+  }, [userKey]);
 
   // Study Workspace State
   const [tasks, setTasks] = useState<StudyTask[]>([]);
@@ -406,7 +430,51 @@ const MainShell: React.FC = () => {
 
   useEffect(() => {
     trackGa4PageView(section, `ASAN-Study_tool — ${SECTION_LABELS[section]}`);
+    mainScrollRef.current?.scrollTo({ top: 0 });
   }, [section]);
+
+  useEffect(() => {
+    const onGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat) return;
+      if (document.body.dataset.recordingShortcut === '1') return;
+      if (switchModalOpen || Boolean(permissionStep)) return;
+      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+
+      const combo = formatKeyboardEventCombo(e);
+      if (!combo) return;
+
+      let matched: NavSection | null = null;
+      for (const [sec, assigned] of Object.entries(appShortcuts) as [NavSection, string | undefined][]) {
+        if (assigned === combo) {
+          matched = sec;
+          break;
+        }
+      }
+      if (!matched) return;
+
+      if (matched === 'super' && !isSuper) return;
+      if (matched === 'admin' && !isAdmin) return;
+      if (matched === 'contributor-console' && !isApprovedContributor) return;
+      if (matched === 'workspace' && !isWorkspaceEnabled) return;
+
+      e.preventDefault();
+      setSection(matched);
+      setMobileMenuOpen(false);
+      setBellOpen(false);
+      setSearchOpen(false);
+    };
+
+    window.addEventListener('keydown', onGlobalKeyDown);
+    return () => window.removeEventListener('keydown', onGlobalKeyDown);
+  }, [
+    appShortcuts,
+    switchModalOpen,
+    permissionStep,
+    isSuper,
+    isAdmin,
+    isApprovedContributor,
+    isWorkspaceEnabled,
+  ]);
 
   const loadAllStudyData = useCallback(async () => {
     if (isGuest) {
@@ -917,8 +985,8 @@ const MainShell: React.FC = () => {
   };
 
   const renderSidebarContent = () => (
-    <div className="flex h-full w-64 flex-col justify-between bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 px-4 py-5 overflow-y-auto">
-      <div className="space-y-5">
+    <div className="flex h-full w-64 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+      <div className="shrink-0 px-4 pt-5 pb-3">
         <div className="flex items-center justify-between gap-2 px-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <img
@@ -944,8 +1012,12 @@ const MainShell: React.FC = () => {
             <X className="h-4 w-4 lg:hidden" />
           </button>
         </div>
+      </div>
 
-        <nav className="space-y-1" aria-label="Main navigation">
+      <nav
+        className="asan-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-1 space-y-1"
+        aria-label="Main navigation"
+      >
           {/* Always present: Dashboard & All Apps */}
           <button
             type="button"
@@ -1105,9 +1177,8 @@ const MainShell: React.FC = () => {
             </button>
           )}
         </nav>
-      </div>
 
-      <div className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-4 mt-4">
+      <div className="shrink-0 space-y-3 border-t border-slate-100 dark:border-slate-800 px-4 pt-3 pb-4">
         <nav className="space-y-1" aria-label="Information navigation">
           {SECONDARY_NAV.map((item) => {
             const Icon = item.icon;
@@ -1235,10 +1306,10 @@ const MainShell: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-x-hidden">
+    <div className="asan-app-shell h-dvh w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-hidden">
       {/* Smooth Collapsible Desktop Sidebar */}
       <aside
-        className={`no-print hidden lg:block shrink-0 sticky top-0 h-screen overflow-hidden transition-[width,opacity] duration-300 ease-in-out ${
+        className={`no-print hidden lg:block shrink-0 h-full overflow-hidden transition-[width,opacity] duration-300 ease-in-out ${
           desktopSidebarOpen ? 'w-64 opacity-100' : 'w-0 opacity-0'
         }`}
         aria-hidden={!desktopSidebarOpen}
@@ -1267,9 +1338,9 @@ const MainShell: React.FC = () => {
       </div>
 
       {/* Main Content Shell */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 min-h-0 h-full overflow-hidden">
         {/* Top Navbar: Breadcrumb | Advanced Search | Theme Toggle + Notifications + Switch/Plan */}
-        <header className="no-print sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 sm:px-6 py-2.5 sm:py-3">
+        <header className="no-print shrink-0 z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 sm:px-6 py-2.5 sm:py-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -1367,7 +1438,7 @@ const MainShell: React.FC = () => {
                     No matching items found for &ldquo;{searchQuery}&rdquo; in this category.
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto">
+                  <div className="asan-scroll divide-y divide-slate-100 dark:divide-slate-800 max-h-80 overflow-y-auto overscroll-contain">
                     {filteredSearchResults.map((res) => (
                       <button
                         key={res.id}
@@ -1463,7 +1534,7 @@ const MainShell: React.FC = () => {
                       No notifications yet.
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto">
+                    <div className="asan-scroll divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto overscroll-contain">
                       {notifications.slice(0, 6).map((n) => (
                         <div key={n.id} className="px-4 py-2.5 space-y-0.5">
                           <div className="flex items-center justify-between gap-2">
@@ -1546,7 +1617,11 @@ const MainShell: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-3 sm:p-5 lg:p-8 max-w-[1440px] w-full mx-auto">
+        <main
+          ref={mainScrollRef}
+          className="asan-main-scroll asan-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain"
+        >
+          <div className="p-3 sm:p-5 lg:p-8 max-w-[1440px] w-full mx-auto">
           {(dbStatus === 'connecting' || dataError) && (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1622,6 +1697,14 @@ const MainShell: React.FC = () => {
                       <span className="font-medium text-slate-600 dark:text-slate-300 tabular-nums mr-1">
                         {pinnedTools.length} of {availableTools.length} pinned
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => handleNavClick('plans')}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <Keyboard className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                        App Shortcuts
+                      </button>
                       <button
                         type="button"
                         onClick={() => setPinnedAppIds([...DEFAULT_PINNED_APPS])}
@@ -1792,17 +1875,27 @@ const MainShell: React.FC = () => {
                                 </div>
 
                                 <div className="mt-4 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleNavClick(tool.id)}
-                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
-                                      tool.proOnly
-                                        ? 'bg-indigo-600 hover:bg-indigo-700'
-                                        : 'bg-blue-600 hover:bg-blue-700'
-                                    }`}
-                                  >
-                                    Open App
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleNavClick(tool.id)}
+                                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
+                                        tool.proOnly
+                                          ? 'bg-indigo-600 hover:bg-indigo-700'
+                                          : 'bg-blue-600 hover:bg-blue-700'
+                                      }`}
+                                    >
+                                      Open App
+                                    </button>
+                                    {appShortcuts[tool.id] && (
+                                      <kbd
+                                        title="Assigned keyboard shortcut"
+                                        className="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600 dark:text-slate-300"
+                                      >
+                                        {appShortcuts[tool.id]}
+                                      </kbd>
+                                    )}
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => togglePinnedApp(tool.id)}
@@ -1928,6 +2021,7 @@ const MainShell: React.FC = () => {
               {section === 'contact' && <ContactView />}
             </>
           )}
+          </div>
         </main>
       </div>
 
@@ -2108,7 +2202,7 @@ const MainShell: React.FC = () => {
               </div>
             )}
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="asan-scroll space-y-2 max-h-60 overflow-y-auto overscroll-contain">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Saved Accounts
               </div>

@@ -22,6 +22,8 @@ export type NavSection =
   | 'about'
   | 'contact';
 
+export type AppShortcutMap = Partial<Record<NavSection, string>>;
+
 export interface WorkspacePermissionsConfig {
   driveSync: boolean;
   docsExport: boolean;

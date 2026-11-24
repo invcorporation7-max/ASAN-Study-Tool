@@ -258,7 +258,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
               No notifications yet.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-[540px] lg:overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {notifications.map((n) => (
                 <div
                   key={n.id}

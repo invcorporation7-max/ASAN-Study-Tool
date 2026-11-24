@@ -319,7 +319,7 @@ export const PointsVerificationPanel: React.FC<{
           No transactions match this filter.
         </p>
       ) : (
-        <div className="overflow-x-auto lg:max-h-96 lg:overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[740px] text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">

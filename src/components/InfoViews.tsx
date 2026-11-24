@@ -6,12 +6,15 @@ import {
   ExternalLink,
   Globe,
   KeyRound,
+  Keyboard,
   Layers,
   Lock,
   Mail,
+  RotateCcw,
   Send,
   ShieldCheck,
   Users,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -21,13 +24,22 @@ import {
   fetchPublicCredits,
   saveJsonToDriveFolder,
 } from '../lib/api';
+import {
+  APP_SHORTCUT_CATALOG,
+  SUGGESTED_APP_SHORTCUTS,
+  formatKeyboardEventCombo,
+  loadAppShortcuts,
+  saveAppShortcuts,
+} from '../lib/workspacePrefs';
 import type {
+  AppShortcutMap,
   ContactMessageItem,
   CreditContributorItem,
   NavSection,
   PointRewardsConfig,
   WorkspacePermissionsConfig,
 } from '../types';
+import { ConfirmDialog } from './ConfirmDialog';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
 export const SpectraView: React.FC = () => {
@@ -132,6 +144,12 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     dbUser,
     isGuest,
     isWorkspaceEnabled,
+    isSuper,
+    isApprovedContributor,
+    isEffectiveProOrAdmin,
+    workspaceToken,
+    connectBasicDrive,
+    connectWorkspace,
     effectivePlan,
     setViewPlanMode,
     signIn,
@@ -147,12 +165,22 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     dbUser?.plan === 'pro' &&
     (!dbUser.proExpiresAt || new Date(dbUser.proExpiresAt).getTime() > Date.now());
   const canPreviewBasic = !isGuest && !isActivePro && isAdmin;
+  const userKey = isGuest ? 'guest' : dbUser?.uid || 'user';
   const [switching, setSwitching] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
+  const [permStatusMsg, setPermStatusMsg] = useState<string | null>(null);
+  const [pendingPermConfirm, setPendingPermConfirm] = useState<
+    | { type: 'single'; key: keyof WorkspacePermissionsConfig; title: string; desc: string }
+    | { type: 'all' }
+    | null
+  >(null);
+  const [shortcutMap, setShortcutMap] = useState<AppShortcutMap>(() => loadAppShortcuts(userKey));
+  const [recordingSection, setRecordingSection] = useState<NavSection | null>(null);
+  const [shortcutNotice, setShortcutNotice] = useState<string | null>(null);
   const [rewards, setRewards] = useState<PointRewardsConfig>({
     noteCreate: 0,
     calendarStudyEvent: 5,
@@ -161,6 +189,64 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     examTimer30Min: 10,
     contributorWeekly: 120,
   });
+
+  useEffect(() => {
+    setShortcutMap(loadAppShortcuts(userKey));
+  }, [userKey]);
+
+  useEffect(() => {
+    if (!recordingSection) {
+      delete document.body.dataset.recordingShortcut;
+      return;
+    }
+    document.body.dataset.recordingShortcut = '1';
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        setRecordingSection(null);
+        setShortcutNotice('Shortcut recording cancelled.');
+        return;
+      }
+
+      const combo = formatKeyboardEventCombo(e);
+      if (!combo) {
+        setShortcutNotice(
+          'Hold Alt, Ctrl, or Meta + a key (or press F1–F12) to assign a shortcut. Press Esc to cancel.'
+        );
+        return;
+      }
+
+      const targetEntry = APP_SHORTCUT_CATALOG.find((item) => item.id === recordingSection);
+      setShortcutMap((prev) => {
+        const next: AppShortcutMap = { ...prev };
+        let replacedLabel: string | null = null;
+        for (const [sec, existing] of Object.entries(next) as [NavSection, string | undefined][]) {
+          if (sec !== recordingSection && existing === combo) {
+            delete next[sec];
+            replacedLabel = APP_SHORTCUT_CATALOG.find((c) => c.id === sec)?.label || sec;
+          }
+        }
+        next[recordingSection] = combo;
+        saveAppShortcuts(userKey, next);
+        setShortcutNotice(
+          replacedLabel
+            ? `Assigned ${combo} to ${targetEntry?.label || recordingSection} (removed from ${replacedLabel}).`
+            : `Assigned ${combo} to ${targetEntry?.label || recordingSection}.`
+        );
+        return next;
+      });
+      setRecordingSection(null);
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      delete document.body.dataset.recordingShortcut;
+    };
+  }, [recordingSection, userKey]);
 
   useEffect(() => {
     let active = true;
@@ -177,26 +263,79 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
   }, []);
 
   const handleToggleWorkspacePerm = async (
-    key: keyof WorkspacePermissionsConfig,
+    item: { key: keyof WorkspacePermissionsConfig; title: string; desc: string },
     nextVal: boolean
   ) => {
-    setPermBusyKey(key);
+    setPermStatusMsg(null);
+    if (nextVal) {
+      setPendingPermConfirm({
+        type: 'single',
+        key: item.key,
+        title: item.title,
+        desc: item.desc,
+      });
+      return;
+    }
+    setPermBusyKey(item.key);
     try {
-      await updateWorkspacePermissions({ [key]: nextVal });
+      await updateWorkspacePermissions({ [item.key]: false });
+      setPermStatusMsg(`Disabled ${item.title}.`);
     } finally {
       setPermBusyKey(null);
     }
   };
 
   const handleSetAllWorkspacePerms = async (enabled: boolean) => {
+    setPermStatusMsg(null);
+    if (enabled) {
+      setPendingPermConfirm({ type: 'all' });
+      return;
+    }
     setPermBusyKey('all');
     try {
       await updateWorkspacePermissions({
-        driveSync: enabled,
-        docsExport: enabled,
-        sheetsSync: enabled,
-        meetRooms: enabled,
+        driveSync: false,
+        docsExport: false,
+        sheetsSync: false,
+        meetRooms: false,
       });
+      setPermStatusMsg('All Google Workspace features have been disabled.');
+    } finally {
+      setPermBusyKey(null);
+    }
+  };
+
+  const handleConfirmWorkspacePermEnable = async () => {
+    if (!pendingPermConfirm) return;
+    const action = pendingPermConfirm;
+    setPermBusyKey(action.type === 'all' ? 'all' : action.key);
+    try {
+      if (isWorkspaceEnabled && !workspaceToken && !isGuest) {
+        const needsFullWorkspace =
+          isEffectiveProOrAdmin || action.type === 'all' || action.key !== 'driveSync';
+        const tok = needsFullWorkspace ? await connectWorkspace() : await connectBasicDrive();
+        if (!tok) {
+          setPermStatusMsg(
+            'Google Workspace authorization was cancelled or blocked. Permission was not turned on.'
+          );
+          setPendingPermConfirm(null);
+          return;
+        }
+      }
+
+      if (action.type === 'all') {
+        await updateWorkspacePermissions({
+          driveSync: true,
+          docsExport: true,
+          sheetsSync: true,
+          meetRooms: true,
+        });
+        setPermStatusMsg('Permission granted: all Google Workspace features are now enabled.');
+      } else {
+        await updateWorkspacePermissions({ [action.key]: true });
+        setPermStatusMsg(`Permission granted: ${action.title} is now enabled.`);
+      }
+      setPendingPermConfirm(null);
     } finally {
       setPermBusyKey(null);
     }
@@ -291,7 +430,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
-            View Plans &amp; Responsibilities
+            View Plans and Settings
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Active View: <strong className="text-slate-900 dark:text-slate-100 capitalize">{currentPlan}</strong>
@@ -536,6 +675,12 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        {permStatusMsg && (
+          <div className="rounded-lg border border-blue-200 dark:border-blue-800/80 bg-blue-50/70 dark:bg-blue-950/40 px-3.5 py-2 text-xs text-blue-800 dark:text-blue-200">
+            {permStatusMsg}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {(
             [
@@ -563,8 +708,13 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           ).map((item) => {
             const enabled = workspacePermissions[item.key];
             return (
-              <label
+              <div
                 key={item.key}
+                onClick={() => {
+                  if (permBusyKey === null) {
+                    void handleToggleWorkspacePerm(item, !enabled);
+                  }
+                }}
                 className="flex min-h-[44px] items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 px-4 py-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-600 asan-card-hover"
               >
                 <div className="min-w-0">
@@ -575,8 +725,12 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                   type="button"
                   role="switch"
                   aria-checked={enabled}
+                  aria-label={`Toggle ${item.title}`}
                   disabled={permBusyKey !== null}
-                  onClick={() => void handleToggleWorkspacePerm(item.key, !enabled)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleToggleWorkspacePerm(item, !enabled);
+                  }}
                   className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
                     enabled
                       ? 'border-blue-600 bg-blue-600'
@@ -589,7 +743,137 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                     }`}
                   />
                 </button>
-              </label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* User-Defined Keyboard Shortcuts (Open Apps) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6 space-y-4 asan-card-hover">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Keyboard className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
+                Keyboard Shortcuts (Open Apps)
+              </h2>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Assign custom keyboard shortcuts (using <kbd className="rounded border border-slate-300 dark:border-slate-600 px-1 py-0.5 font-mono text-[10px]">Alt</kbd>,{' '}
+              <kbd className="rounded border border-slate-300 dark:border-slate-600 px-1 py-0.5 font-mono text-[10px]">Ctrl</kbd>,{' '}
+              <kbd className="rounded border border-slate-300 dark:border-slate-600 px-1 py-0.5 font-mono text-[10px]">Meta</kbd>, or{' '}
+              <kbd className="rounded border border-slate-300 dark:border-slate-600 px-1 py-0.5 font-mono text-[10px]">F1–F12</kbd>) to jump directly to any app from anywhere outside typing fields.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const next = { ...SUGGESTED_APP_SHORTCUTS };
+                setShortcutMap(next);
+                saveAppShortcuts(userKey, next);
+                setRecordingSection(null);
+                setShortcutNotice('Restored recommended default keyboard shortcuts.');
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Load Recommended
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShortcutMap({});
+                saveAppShortcuts(userKey, {});
+                setRecordingSection(null);
+                setShortcutNotice('Cleared all app keyboard shortcuts.');
+              }}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        {shortcutNotice && (
+          <div className="rounded-lg border border-blue-200 dark:border-blue-800/80 bg-blue-50/70 dark:bg-blue-950/40 px-3.5 py-2 text-xs text-blue-800 dark:text-blue-200">
+            {shortcutNotice}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+          {APP_SHORTCUT_CATALOG.filter(
+            (entry) =>
+              (entry.requiresWorkspace ? isWorkspaceEnabled : true) &&
+              (entry.requiresContributor ? isApprovedContributor : true) &&
+              (entry.requiresAdmin ? isAdmin : true) &&
+              (entry.requiresSuper ? isSuper : true)
+          ).map((entry) => {
+            const isRecording = recordingSection === entry.id;
+            const combo = shortcutMap[entry.id];
+            return (
+              <div
+                key={entry.id}
+                className={`flex items-center justify-between gap-3 rounded-lg border px-3.5 py-2.5 transition-colors ${
+                  isRecording
+                    ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      {entry.label}
+                    </span>
+                    {entry.proOnly && (
+                      <span className="asan-pro-badge rounded px-1 py-0.5 text-[9px] shrink-0">
+                        PRO
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{entry.category}</div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {combo && !isRecording && (
+                    <kbd className="rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 font-mono text-[11px] font-semibold text-slate-800 dark:text-slate-200 shadow-2xs">
+                      {combo}
+                    </kbd>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShortcutNotice(null);
+                      setRecordingSection((prev) => (prev === entry.id ? null : entry.id));
+                    }}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      isRecording
+                        ? 'bg-blue-600 text-white animate-pulse'
+                        : 'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {isRecording ? 'Press keys... (Esc)' : combo ? 'Change' : 'Set Key'}
+                  </button>
+                  {combo && !isRecording && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = { ...shortcutMap };
+                        delete next[entry.id];
+                        setShortcutMap(next);
+                        saveAppShortcuts(userKey, next);
+                        setShortcutNotice(`Removed shortcut for ${entry.label}.`);
+                      }}
+                      title={`Clear shortcut for ${entry.label}`}
+                      aria-label={`Clear shortcut for ${entry.label}`}
+                      className="rounded-md p-1 text-slate-400 hover:bg-white dark:hover:bg-slate-900 hover:text-red-600 dark:hover:text-red-400"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -615,6 +899,28 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
           </p>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingPermConfirm !== null}
+        title={
+          pendingPermConfirm?.type === 'all'
+            ? 'Allow All Google Workspace Features?'
+            : `Allow ${pendingPermConfirm?.title || 'Google Workspace Feature'}?`
+        }
+        description={
+          pendingPermConfirm?.type === 'all'
+            ? 'Grant permission for ASAN-Study_tool to use Google Drive (ASAN-user-content folder), Google Docs export, Google Sheets sync, and Google Meet rooms on your Google account. You can revoke any toggle anytime here.'
+            : `${pendingPermConfirm?.desc || ''} Do you grant permission for ASAN-Study_tool to enable this Google Workspace feature on your account?`
+        }
+        confirmLabel={
+          isWorkspaceEnabled && !workspaceToken && !isGuest
+            ? 'Allow & Connect Google'
+            : 'Allow & Enable'
+        }
+        busy={permBusyKey !== null}
+        onConfirm={() => void handleConfirmWorkspacePermEnable()}
+        onCancel={() => setPendingPermConfirm(null)}
+      />
     </div>
   );
 };
@@ -1081,7 +1387,7 @@ export const ContactView: React.FC = () => {
               No contact inquiries submitted yet.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-[420px] lg:overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {history.map((item) => (
                 <div key={item.id} className="py-3 space-y-1">
                   <div className="flex items-center justify-between gap-2">

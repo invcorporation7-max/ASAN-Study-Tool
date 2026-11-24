@@ -276,7 +276,7 @@ export const StudyMaterialView: React.FC = () => {
       return;
     }
     if (!workspacePermissions.driveSync) {
-      setErrorMsg('Google Drive sync is disabled under View Plans → Google Workspace Permissions.');
+      setErrorMsg('Google Drive sync is disabled under View Plans and Settings → Google Workspace Permissions.');
       return;
     }
     setErrorMsg(null);
@@ -626,7 +626,7 @@ export const StudyMaterialView: React.FC = () => {
               No files uploaded yet.
             </p>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-[580px] lg:overflow-y-auto">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {materials.map((m) => {
                 const isOwnerOrAdmin =
                   dbUser?.role === 'admin' ||

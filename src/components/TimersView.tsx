@@ -1695,7 +1695,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                 Completed timer and stopwatch sessions will appear here.
               </p>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-80 lg:overflow-y-auto">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {studyLogs.slice(0, 12).map((log) => (
                   <div
                     key={log.id}
@@ -1974,7 +1974,7 @@ export const TimersView: React.FC<TimersViewProps> = ({
                   No study logger entries yet.
                 </p>
               ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:max-h-96 lg:overflow-y-auto">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {studyLogs
                     .filter((l) => l.mode === 'study_logger')
                     .map((log) => (

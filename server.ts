@@ -2027,6 +2027,26 @@ async function startServer() {
     }
   );
 
+  // Inject official Google Analytics 4 tag into served HTML <head> when GA4_MEASUREMENT_ID is configured
+  const injectGa4IntoHtml = (html: string): string => {
+    const rawId = getPublicMeasurementId();
+    if (!/^G-[A-Z0-9]+$/i.test(rawId)) return html;
+    if (html.includes('googletagmanager.com/gtag/js')) return html;
+    const safeId = rawId.toUpperCase();
+    const snippet = `
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=${safeId}" data-ga4="${safeId}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      window.gtag = gtag;
+      window.__asanGa4Id = "${safeId}";
+      gtag('js', new Date());
+      gtag('config', "${safeId}", { send_page_view: false });
+    </script>`;
+    return html.replace('</head>', `${snippet}\n  </head>`);
+  };
+
   // Vite middleware for dev or static dist for production (Render Web Service + PWA)
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -2036,11 +2056,40 @@ async function startServer() {
       },
       appType: 'spa',
     });
+
+    app.use(async (req, res, next) => {
+      const reqPath = req.path || '/';
+      const accept = String(req.headers.accept || '');
+      const isHtmlRoute =
+        req.method === 'GET' &&
+        !reqPath.startsWith('/api/') &&
+        !reqPath.startsWith('/@') &&
+        !reqPath.startsWith('/src/') &&
+        !reqPath.startsWith('/node_modules/') &&
+        !path.extname(reqPath) &&
+        accept.includes('text/html');
+
+      if (!isHtmlRoute) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        const template = fs.readFileSync(indexPath, 'utf-8');
+        const withGa4 = injectGa4IntoHtml(template);
+        const transformed = await vite.transformIndexHtml(req.originalUrl, withGa4);
+        res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(transformed);
+      } catch (err) {
+        vite.ssrFixStacktrace(err as Error);
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(
       express.static(distPath, {
+        index: false,
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('sw.js') || filePath.endsWith('registerSW.js')) {
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2052,7 +2101,13 @@ async function startServer() {
       })
     );
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const distIndex = path.join(distPath, 'index.html');
+      try {
+        const html = fs.readFileSync(distIndex, 'utf-8');
+        res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(injectGa4IntoHtml(html));
+      } catch {
+        res.sendFile(distIndex);
+      }
     });
   }
 

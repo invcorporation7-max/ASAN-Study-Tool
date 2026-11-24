@@ -1173,7 +1173,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                       Cancel unused or active keys immediately
                     </span>
                   </div>
-                  <div className="overflow-x-auto lg:max-h-72 lg:overflow-y-auto">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">

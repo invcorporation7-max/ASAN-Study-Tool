@@ -706,7 +706,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* Google Sheets Schedule Sync Bar */}
           {isWorkspaceEnabled && !workspacePermissions.sheetsSync && (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400 asan-card-hover">
-              Google Sheets schedule sync is disabled in View Plans → Google Workspace Function Permissions.
+              Google Sheets schedule sync is disabled in View Plans and Settings → Google Workspace Function Permissions.
             </div>
           )}
           {isWorkspaceEnabled && workspacePermissions.sheetsSync && (
@@ -785,7 +785,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
             <div
               ref={scrollContainerRef}
-              className="lg:col-span-7 xl:col-span-8 min-h-[420px] max-h-[65vh] lg:max-h-none lg:h-[calc(100vh-14rem)] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-10 asan-card-hover"
+              className="lg:col-span-7 xl:col-span-8 min-h-[420px] max-h-[65vh] lg:max-h-none lg:h-[calc(100vh-14rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-10 asan-card-hover"
             >
               <div ref={topSentinelRef} className="h-2" />
 

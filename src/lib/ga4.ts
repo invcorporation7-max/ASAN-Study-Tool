@@ -21,16 +21,27 @@ interface CachedReport {
 let cachedToken: CachedToken | null = null;
 const reportCache = new Map<string, CachedReport>();
 
+function cleanEnvValue(raw?: string): string {
+  const s = (raw || '').trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 export function getPublicMeasurementId(): string {
   return (
-    process.env.GA4_MEASUREMENT_ID?.trim() ||
-    process.env.VITE_GA_MEASUREMENT_ID?.trim() ||
+    cleanEnvValue(process.env.GA4_MEASUREMENT_ID) ||
+    cleanEnvValue(process.env.VITE_GA_MEASUREMENT_ID) ||
     ''
   );
 }
 
 function parseServiceAccountJson(raw: string): ServiceAccountCreds | null {
-  const trimmed = raw.trim();
+  const trimmed = cleanEnvValue(raw);
   if (!trimmed) return null;
   const attempts: string[] = [trimmed];
   if (!trimmed.startsWith('{')) {
@@ -46,7 +57,7 @@ function parseServiceAccountJson(raw: string): ServiceAccountCreds | null {
       if (parsed.client_email && parsed.private_key) {
         return {
           client_email: parsed.client_email.trim(),
-          private_key: parsed.private_key.replace(/\\n/g, '\n'),
+          private_key: parsed.private_key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n'),
           token_uri: parsed.token_uri || 'https://oauth2.googleapis.com/token',
         };
       }
@@ -206,7 +217,8 @@ export async function fetchGa4Report(
   const range: '7d' | '28d' | '90d' =
     rawRange === '7d' || rawRange === '90d' ? rawRange : '28d';
 
-  const propertyId = (process.env.GA4_PROPERTY_ID || '').trim();
+  const rawProp = cleanEnvValue(process.env.GA4_PROPERTY_ID);
+  const propertyId = rawProp.replace(/^properties\//i, '').trim();
   const rawServiceAccount = (process.env.GA4_SERVICE_ACCOUNT_JSON || '').trim();
   const measurementId = getPublicMeasurementId();
 
@@ -352,8 +364,11 @@ export async function fetchGa4Report(
     });
     return report;
   } catch (err) {
-    const message =
+    const rawMsg =
       err instanceof Error ? err.message : 'Unable to query Google Analytics Data API.';
+    const message = /permission|403|disabled|not been used/i.test(rawMsg)
+      ? `${rawMsg} — Verify Google Analytics Data API is enabled in GCP and "${creds.client_email}" has Viewer access in GA4 Property Access Management.`
+      : rawMsg;
     return emptyReport(range, message, propertyId);
   }
 }

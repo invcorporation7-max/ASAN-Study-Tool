@@ -1,4 +1,4 @@
-import type { FormulaEquationItem, FormulaSymbolDef } from '../types';
+import type { FormulaEquationItem, FormulaSymbolDef } from '../types.ts';
 
 // Deterministic Math & Parameter-Matching Equation Solver (Zero eval / Zero new Function)
 

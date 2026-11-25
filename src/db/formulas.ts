@@ -1,8 +1,8 @@
 import { desc, eq } from 'drizzle-orm';
-import { db } from './index';
-import { formulaEquations, users } from './schema';
-import { getLocalStore, isDbUnavailableError, nextSeq, persistLocalStore } from './localStore';
-import type { FormulaEquationItem, FormulaSymbolDef } from '../types';
+import { db } from './index.ts';
+import { formulaEquations, users } from './schema.ts';
+import { getLocalStore, isDbUnavailableError, nextSeq, persistLocalStore } from './localStore.ts';
+import type { FormulaEquationItem, FormulaSymbolDef } from '../types.ts';
 
 function parseSymbolsJson(raw: unknown): FormulaSymbolDef[] {
   try {

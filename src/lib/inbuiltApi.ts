@@ -96,6 +96,7 @@ const DEFAULT_POINT_REWARDS: PointRewardsConfig = {
   studyMaterialUpload: 0,
   examTimer30Min: 10,
   contributorWeekly: DEFAULT_WEEKLY_CONTRIB_PTS,
+  forumSatisfactoryAnswer: 25,
 };
 
 const DEFAULT_WORKSPACE_PERMS: WorkspacePermissionsConfig = {
@@ -145,6 +146,10 @@ function getStoreRewards(store: InbuiltStore): PointRewardsConfig {
     studyMaterialUpload: cleanReward(r.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
     examTimer30Min: cleanReward(r.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
     contributorWeekly: cleanReward(r.contributorWeekly, wk),
+    forumSatisfactoryAnswer: cleanReward(
+      r.forumSatisfactoryAnswer,
+      DEFAULT_POINT_REWARDS.forumSatisfactoryAnswer
+    ),
   };
 }
 
@@ -203,6 +208,14 @@ interface InbuiltStore {
   contributorFiles: any[];
   examCountdowns: any[];
   proRefundRequests: any[];
+  forumRooms: any[];
+  forumMembers: any[];
+  forumPosts: any[];
+  forumAttempts: any[];
+  forumReplies: any[];
+  forumReplyVotes: any[];
+  forumAttachments: any[];
+  formulaEquations: any[];
 }
 
 function emptyStore(): InbuiltStore {
@@ -231,6 +244,14 @@ function emptyStore(): InbuiltStore {
     contributorFiles: [],
     examCountdowns: [],
     proRefundRequests: [],
+    forumRooms: [],
+    forumMembers: [],
+    forumPosts: [],
+    forumAttempts: [],
+    forumReplies: [],
+    forumReplyVotes: [],
+    forumAttachments: [],
+    formulaEquations: [],
   };
 }
 
@@ -841,7 +862,8 @@ export async function handleInbuiltApiRequest<T>(
   }
 
   if (path === '/api/point-rewards' && method === 'GET') {
-    return getStoreRewards(store) as T;
+    const r = getStoreRewards(store);
+    return { ...r, rewards: r } as T;
   }
 
   if (path === '/api/credits' && method === 'GET') {
@@ -1682,6 +1704,9 @@ export async function handleInbuiltApiRequest<T>(
       const vis = ['direct', 'self', 'public'].includes(body.visibility) ? body.visibility : 'direct';
       if (body.isAdminMail && !isElevated) throw new Error('Only Admins can send Admin Mail.');
       const createdRows: any[] = [];
+      const bodyHtml = typeof body.bodyHtml === 'string' ? body.bodyHtml : '';
+      const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+      const questionSpec = body.questionSpec && typeof body.questionSpec === 'object' ? body.questionSpec : null;
       if (vis === 'self') {
         const c = {
           id: nextId(store, 'userMessages'),
@@ -1696,6 +1721,9 @@ export async function handleInbuiltApiRequest<T>(
           recipientSummary: 'Self Archive',
           subject: String(body.subject),
           body: String(body.body),
+          bodyHtml,
+          attachments,
+          questionSpec,
           attachmentTitle: String(body.attachmentTitle || ''),
           attachmentNoteId: body.attachmentNoteId ?? null,
           isRead: false,
@@ -1717,6 +1745,9 @@ export async function handleInbuiltApiRequest<T>(
           recipientSummary: 'Public Community Board',
           subject: String(body.subject),
           body: String(body.body),
+          bodyHtml,
+          attachments,
+          questionSpec,
           attachmentTitle: String(body.attachmentTitle || ''),
           attachmentNoteId: body.attachmentNoteId ?? null,
           isRead: false,
@@ -1759,6 +1790,9 @@ export async function handleInbuiltApiRequest<T>(
             recipientSummary: summary,
             subject: String(body.subject),
             body: String(body.body),
+            bodyHtml,
+            attachments,
+            questionSpec,
             attachmentTitle: String(body.attachmentTitle || ''),
             attachmentNoteId: body.attachmentNoteId ?? null,
             isRead: false,
@@ -2338,11 +2372,15 @@ export async function handleInbuiltApiRequest<T>(
       studyMaterialUpload: body.studyMaterialUpload !== undefined ? cleanReward(body.studyMaterialUpload, cur.studyMaterialUpload) : cur.studyMaterialUpload,
       examTimer30Min: body.examTimer30Min !== undefined ? cleanReward(body.examTimer30Min, cur.examTimer30Min) : cur.examTimer30Min,
       contributorWeekly: body.contributorWeekly !== undefined ? cleanReward(body.contributorWeekly, cur.contributorWeekly) : cur.contributorWeekly,
+      forumSatisfactoryAnswer:
+        body.forumSatisfactoryAnswer !== undefined
+          ? cleanReward(body.forumSatisfactoryAnswer, cur.forumSatisfactoryAnswer)
+          : cur.forumSatisfactoryAnswer,
     };
     store.settings.pointRewards = next;
     store.settings.contributorWeeklyPoints = next.contributorWeekly;
     saveStore(store);
-    return next as T;
+    return { ...next, rewards: next } as T;
   }
 
   if (path.startsWith('/api/admin/google-analytics') && method === 'GET') {
@@ -2609,6 +2647,408 @@ export async function handleInbuiltApiRequest<T>(
     }
   }
 
+  // --- FORMULA EQUATION CALCULATOR ---
+  if (path === '/api/formulas' && method === 'GET') {
+    if (store.formulaEquations.length === 0) {
+      const now = new Date().toISOString();
+      store.formulaEquations.push(
+        {
+          id: nextId(store, 'formulaEquations'),
+          authorId: 0,
+          authorName: 'ASAN Core Library',
+          authorUsername: 'asan_library',
+          title: 'First Equation of Motion',
+          subject: 'Physics — Kinematics',
+          expression: 'v = u + a * t',
+          description: 'Relates final velocity, initial velocity, constant acceleration, and time.',
+          symbols: [
+            { symbol: 'v', meaning: 'final velocity', unit: 'm/s' },
+            { symbol: 'u', meaning: 'initial velocity', unit: 'm/s' },
+            { symbol: 'a', meaning: 'acceleration', unit: 'm/s^2' },
+            { symbol: 't', meaning: 'time', unit: 's' },
+          ],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: nextId(store, 'formulaEquations'),
+          authorId: 0,
+          authorName: 'ASAN Core Library',
+          authorUsername: 'asan_library',
+          title: 'Ideal Gas Law',
+          subject: 'Chemistry — Thermodynamics',
+          expression: 'P * V = n * R * T',
+          description: 'Relates pressure, volume, moles, universal gas constant, and temperature.',
+          symbols: [
+            { symbol: 'P', meaning: 'pressure', unit: 'Pa' },
+            { symbol: 'V', meaning: 'volume', unit: 'm^3' },
+            { symbol: 'n', meaning: 'number of moles', unit: 'mol' },
+            { symbol: 'R', meaning: 'universal gas constant', unit: 'J/(mol·K)' },
+            { symbol: 'T', meaning: 'temperature', unit: 'K' },
+          ],
+          createdAt: now,
+          updatedAt: now,
+        }
+      );
+      saveStore(store);
+    }
+    return store.formulaEquations as T;
+  }
+  if (path === '/api/formulas' && method === 'POST') {
+    const isContrib = isElevated || (user.role === 'contributor' && user.contributorApproved);
+    if (!isContrib) throw new Error('Approved Contributor role required.');
+    const now = new Date().toISOString();
+    const created = {
+      id: nextId(store, 'formulaEquations'),
+      authorId: user.id,
+      authorName: user.displayName,
+      authorUsername: user.username,
+      title: String(body.title || ''),
+      subject: String(body.subject || 'General'),
+      expression: String(body.expression || ''),
+      description: String(body.description || ''),
+      symbols: Array.isArray(body.symbols) ? body.symbols : [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.formulaEquations.unshift(created);
+    saveStore(store);
+    return created as T;
+  }
+  const formulaIdMatch = path.match(/^\/api\/formulas\/(\d+)$/);
+  if (formulaIdMatch) {
+    const fid = Number(formulaIdMatch[1]);
+    const idx = store.formulaEquations.findIndex((f) => f.id === fid);
+    if (idx < 0) throw new Error('Formula not found.');
+    if (!isElevated && store.formulaEquations[idx].authorId !== user.id) {
+      throw new Error('Only the author or Admin can modify this formula.');
+    }
+    if (method === 'PUT') {
+      store.formulaEquations[idx] = {
+        ...store.formulaEquations[idx],
+        ...body,
+        updatedAt: new Date().toISOString(),
+      };
+      saveStore(store);
+      return store.formulaEquations[idx] as T;
+    }
+    if (method === 'DELETE') {
+      store.formulaEquations.splice(idx, 1);
+      saveStore(store);
+      return { ok: true } as T;
+    }
+  }
+
+  // --- STUDY FORUM (INBUILT OFFLINE FALLBACK) ---
+  if (path === '/api/forum/rooms' && method === 'GET') {
+    if (!store.forumRooms.some((r) => r.roomType === 'global')) {
+      const now = new Date().toISOString();
+      store.forumRooms.push({
+        id: nextId(store, 'forumRooms'),
+        roomType: 'global',
+        title: 'Global Study Arena',
+        description: 'Open peer Q&A across JEE, NEET, ISC, CBSE, CUET & Competitive Exams',
+        subject: 'All Subjects',
+        dmKey: '',
+        createdById: user.id,
+        createdAt: now,
+        updatedAt: now,
+      });
+      saveStore(store);
+    }
+    const visible = store.forumRooms
+      .filter(
+        (r) =>
+          r.roomType === 'global' ||
+          store.forumMembers.some((m) => m.roomId === r.id && m.userId === user.id)
+      )
+      .map((r) => {
+        const members = store.forumMembers
+          .filter((m) => m.roomId === r.id)
+          .map((m) => {
+            const u = store.users.find((x) => x.id === m.userId);
+            return {
+              userId: m.userId,
+              displayName: u?.displayName || 'Student',
+              username: u?.username || `user${m.userId}`,
+              shortUid: u?.shortUid || '',
+              photoUrl: u?.photoUrl || '',
+              memberRole: m.memberRole || 'member',
+            };
+          });
+        const posts = store.forumPosts.filter((p) => p.roomId === r.id);
+        return {
+          ...r,
+          memberCount: r.roomType === 'global' ? store.users.length : members.length,
+          unreadCount: 0,
+          lastPostSnippet: posts[0]?.title || posts[0]?.contentText || '',
+          lastPostAt: posts[0]?.updatedAt || r.updatedAt,
+          members,
+        };
+      });
+    return visible as T;
+  }
+
+  if (path === '/api/forum/groups' && method === 'POST') {
+    const now = new Date().toISOString();
+    const room = {
+      id: nextId(store, 'forumRooms'),
+      roomType: 'group',
+      title: String(body.title || 'Study Group'),
+      description: String(body.description || ''),
+      subject: String(body.subject || 'General'),
+      dmKey: '',
+      createdById: user.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.forumRooms.push(room);
+    const ids = Array.from(new Set([user.id, ...(Array.isArray(body.memberIds) ? body.memberIds.map(Number) : [])]));
+    ids.forEach((uid) => {
+      store.forumMembers.push({
+        id: nextId(store, 'forumMembers'),
+        roomId: room.id,
+        userId: uid,
+        memberRole: uid === user.id ? 'owner' : 'member',
+        lastReadAt: now,
+        joinedAt: now,
+      });
+    });
+    saveStore(store);
+    return { ...room, memberCount: ids.length, unreadCount: 0, lastPostSnippet: '', lastPostAt: now, members: [] } as T;
+  }
+
+  const grpMemberMatch = path.match(/^\/api\/forum\/groups\/(\d+)\/members$/);
+  if (grpMemberMatch && method === 'POST') {
+    const rid = Number(grpMemberMatch[1]);
+    const now = new Date().toISOString();
+    const added: number[] = [];
+    for (const uid of Array.isArray(body.memberIds) ? body.memberIds.map(Number) : []) {
+      if (!store.forumMembers.some((m) => m.roomId === rid && m.userId === uid)) {
+        store.forumMembers.push({
+          id: nextId(store, 'forumMembers'),
+          roomId: rid,
+          userId: uid,
+          memberRole: 'member',
+          lastReadAt: now,
+          joinedAt: now,
+        });
+        added.push(uid);
+      }
+    }
+    saveStore(store);
+    const r = store.forumRooms.find((x) => x.id === rid);
+    return { room: { ...r, members: [] }, addedUserIds: added } as T;
+  }
+
+  if (path === '/api/forum/dm' && method === 'POST') {
+    const targetId = Number(body.targetUserId);
+    const dmKey = `${Math.min(user.id, targetId)}:${Math.max(user.id, targetId)}`;
+    let room = store.forumRooms.find((r) => r.roomType === 'dm' && r.dmKey === dmKey);
+    const now = new Date().toISOString();
+    if (!room) {
+      room = {
+        id: nextId(store, 'forumRooms'),
+        roomType: 'dm',
+        title: 'Direct Chat',
+        description: 'Private 1-to-1 Study Chat',
+        subject: 'Direct',
+        dmKey,
+        createdById: user.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.forumRooms.push(room);
+      [user.id, targetId].forEach((uid) =>
+        store.forumMembers.push({
+          id: nextId(store, 'forumMembers'),
+          roomId: room.id,
+          userId: uid,
+          memberRole: 'member',
+          lastReadAt: now,
+          joinedAt: now,
+        })
+      );
+      saveStore(store);
+    }
+    return { ...room, memberCount: 2, unreadCount: 0, lastPostSnippet: '', lastPostAt: now, members: [] } as T;
+  }
+
+  if (path.endsWith('/read') && path.startsWith('/api/forum/rooms/') && method === 'POST') {
+    return { ok: true } as T;
+  }
+
+  const roomPostsMatch = path.match(/^\/api\/forum\/rooms\/(\d+)\/posts/);
+  if (roomPostsMatch && method === 'GET') {
+    const rid = Number(roomPostsMatch[1]);
+    return store.forumPosts
+      .filter((p) => p.roomId === rid)
+      .map((p) => ({
+        ...p,
+        author: store.users.find((u) => u.id === p.authorId) || { id: p.authorId, displayName: 'Student', username: 'student', shortUid: '', photoUrl: '', plan: 'basic', role: 'user', contributorApproved: false },
+        attachments: store.forumAttachments.filter((a) => a.postId === p.id && !a.replyId),
+        replyCount: store.forumReplies.filter((r) => r.postId === p.id).length,
+        attemptCount: new Set(store.forumAttempts.filter((a) => a.postId === p.id).map((a) => a.userId)).size,
+        myAttempt: store.forumAttempts.find((a) => a.postId === p.id && a.userId === user.id) || null,
+      })) as T;
+  }
+
+  if (path === '/api/forum/posts' && method === 'POST') {
+    const now = new Date().toISOString();
+    const post = {
+      id: nextId(store, 'forumPosts'),
+      roomId: Number(body.roomId),
+      authorId: user.id,
+      postKind: body.postKind === 'question' ? 'question' : 'message',
+      title: String(body.title || ''),
+      contentHtml: String(body.contentHtml || ''),
+      contentText: String(body.contentHtml || '').replace(/<[^>]+>/g, ' ').trim(),
+      subject: String(body.subject || 'General'),
+      examBoard: String(body.examBoard || 'Competitive / Custom'),
+      questionSpec: body.questionSpec || null,
+      answerKey: body.answerKey || null,
+      officialExplanationHtml: String(body.officialExplanationHtml || ''),
+      isSolved: false,
+      acceptedReplyId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.forumPosts.unshift(post);
+    if (Array.isArray(body.attachmentIds)) {
+      store.forumAttachments.forEach((a) => {
+        if (body.attachmentIds.includes(a.id)) a.postId = post.id;
+      });
+    }
+    saveStore(store);
+    return {
+      ...post,
+      author: sanitizeUser(user),
+      attachments: store.forumAttachments.filter((a) => a.postId === post.id && !a.replyId),
+      replyCount: 0,
+      attemptCount: 0,
+      myAttempt: null,
+      replies: [],
+    } as T;
+  }
+
+  const postDetailMatch = path.match(/^\/api\/forum\/posts\/(\d+)$/);
+  if (postDetailMatch && method === 'GET') {
+    const pid = Number(postDetailMatch[1]);
+    const p = store.forumPosts.find((x) => x.id === pid);
+    if (!p) throw new Error('Forum post not found.');
+    const replies = store.forumReplies
+      .filter((r) => r.postId === pid)
+      .map((r) => ({
+        ...r,
+        author: store.users.find((u) => u.id === r.authorId) || sanitizeUser(user),
+        attachments: store.forumAttachments.filter((a) => a.replyId === r.id),
+        upvoteCount: store.forumReplyVotes.filter((v) => v.replyId === r.id).length,
+        viewerHasUpvoted: store.forumReplyVotes.some((v) => v.replyId === r.id && v.userId === user.id),
+      }));
+    return {
+      ...p,
+      author: store.users.find((u) => u.id === p.authorId) || sanitizeUser(user),
+      attachments: store.forumAttachments.filter((a) => a.postId === p.id && !a.replyId),
+      replyCount: replies.length,
+      attemptCount: new Set(store.forumAttempts.filter((a) => a.postId === p.id).map((a) => a.userId)).size,
+      myAttempt: store.forumAttempts.find((a) => a.postId === p.id && a.userId === user.id) || null,
+      replies,
+    } as T;
+  }
+
+  const postAttemptMatch = path.match(/^\/api\/forum\/posts\/(\d+)\/attempt$/);
+  if (postAttemptMatch && method === 'POST') {
+    const pid = Number(postAttemptMatch[1]);
+    const now = new Date().toISOString();
+    const att = {
+      id: nextId(store, 'forumAttempts'),
+      postId: pid,
+      userId: user.id,
+      attemptPayload: body.attemptPayload || {},
+      isCorrect: null,
+      scoreNote: 'Attempt recorded locally.',
+      createdAt: now,
+    };
+    store.forumAttempts.unshift(att);
+    saveStore(store);
+    const post = await handleInbuiltApiRequest<any>(`/api/forum/posts/${pid}`, { method: 'GET' }, token);
+    return { roomId: post.roomId, post, attempt: att, attemptCount: post.attemptCount } as T;
+  }
+
+  const postRepliesMatch = path.match(/^\/api\/forum\/posts\/(\d+)\/replies$/);
+  if (postRepliesMatch && method === 'POST') {
+    const pid = Number(postRepliesMatch[1]);
+    const now = new Date().toISOString();
+    const rep = {
+      id: nextId(store, 'forumReplies'),
+      postId: pid,
+      authorId: user.id,
+      parentReplyId: body.parentReplyId ? Number(body.parentReplyId) : null,
+      replyKind: body.replyKind || 'opinion',
+      contentHtml: String(body.contentHtml || ''),
+      contentText: String(body.contentHtml || '').replace(/<[^>]+>/g, ' ').trim(),
+      attemptPayload: body.attemptPayload || null,
+      isAcceptedSolution: false,
+      acceptedPointsAwarded: 0,
+      createdAt: now,
+    };
+    store.forumReplies.push(rep);
+    if (Array.isArray(body.attachmentIds)) {
+      store.forumAttachments.forEach((a) => {
+        if (body.attachmentIds.includes(a.id)) {
+          a.postId = pid;
+          a.replyId = rep.id;
+        }
+      });
+    }
+    saveStore(store);
+    return {
+      ...rep,
+      author: sanitizeUser(user),
+      attachments: store.forumAttachments.filter((a) => a.replyId === rep.id),
+      upvoteCount: 0,
+      viewerHasUpvoted: false,
+    } as T;
+  }
+
+  const replyVoteMatch = path.match(/^\/api\/forum\/replies\/(\d+)\/vote$/);
+  if (replyVoteMatch && method === 'POST') {
+    const rid = Number(replyVoteMatch[1]);
+    const idx = store.forumReplyVotes.findIndex((v) => v.replyId === rid && v.userId === user.id);
+    if (idx >= 0) store.forumReplyVotes.splice(idx, 1);
+    else store.forumReplyVotes.push({ id: nextId(store, 'forumReplyVotes'), replyId: rid, userId: user.id });
+    saveStore(store);
+    return {
+      replyId: rid,
+      upvoteCount: store.forumReplyVotes.filter((v) => v.replyId === rid).length,
+      voted: idx < 0,
+    } as T;
+  }
+
+  const satisfyMatch = path.match(/^\/api\/forum\/posts\/(\d+)\/satisfy$/);
+  if (satisfyMatch && method === 'POST') {
+    const pid = Number(satisfyMatch[1]);
+    const rid = Number(body.replyId);
+    const post = store.forumPosts.find((p) => p.id === pid);
+    const rep = store.forumReplies.find((r) => r.id === rid && r.postId === pid);
+    if (!post || !rep) throw new Error('Post or reply not found.');
+    if (post.authorId !== user.id) throw new Error('Only the question author can mark a reply satisfactory.');
+    if (rep.authorId === post.authorId) throw new Error('Self-award is disabled.');
+    if (rep.isAcceptedSolution) throw new Error('Already awarded.');
+    const pts = getStoreRewards(store).forumSatisfactoryAnswer;
+    const solver = store.users.find((u) => u.id === rep.authorId);
+    if (solver && pts > 0) {
+      awardPointsLocal(store, solver, pts, `Forum Satisfactory Answer #${pid}:${rid}`, 'forum_satisfactory');
+    }
+    rep.isAcceptedSolution = true;
+    rep.acceptedPointsAwarded = pts;
+    post.isSolved = true;
+    post.acceptedReplyId = post.acceptedReplyId || rid;
+    saveStore(store);
+    const refreshed = await handleInbuiltApiRequest<any>(`/api/forum/posts/${pid}`, { method: 'GET' }, token);
+    return { roomId: post.roomId, postId: pid, replyId: rid, solverUserId: rep.authorId, pointsAwarded: pts, post: refreshed } as T;
+  }
+
   throw new Error(`Unsupported inbuilt API endpoint: ${method} ${path}`);
 }
 
@@ -2619,6 +3059,7 @@ export async function inbuiltUploadStudyMaterial<T>(
     subject: string;
     category: string;
     description?: string;
+    mediaKind?: string;
     pageCount?: number;
     hourlyRentCost: number;
     buyCost?: number;
@@ -2649,6 +3090,7 @@ export async function inbuiltUploadStudyMaterial<T>(
     fileName: file.name,
     storedFileName,
     mimeType: file.type || 'application/octet-stream',
+    mediaKind: metadata.mediaKind || 'pdf',
     fileSizeBytes: file.size,
     pageCount: Math.max(1, Math.round(metadata.pageCount || 1)),
     hourlyRentCost: hourly,
@@ -2672,6 +3114,47 @@ export async function inbuiltUploadStudyMaterial<T>(
   }
   saveStore(store);
   return { material, pointsAwarded } as T;
+}
+
+export async function inbuiltUploadForumAttachment<T>(
+  file: File,
+  token: string | null
+): Promise<T> {
+  const store = loadStore();
+  const { user } = resolveUserFromToken(store, token);
+  const storedFileName = `inbuilt-fa-${Date.now()}-${randomCode(6)}-${file.name}`;
+  await putInbuiltBlob(storedFileName, file);
+  const isPdf = file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
+  const id = nextId(store, 'forumAttachments');
+  const att = {
+    id,
+    postId: null,
+    replyId: null,
+    messageId: null,
+    uploaderId: user.id,
+    fileName: file.name,
+    storedFileName,
+    mimeType: file.type || (isPdf ? 'application/pdf' : 'image/png'),
+    fileSizeBytes: file.size,
+    pageCount: 1,
+    kind: isPdf ? 'pdf' : 'image',
+    url: `/api/forum/attachments/${id}/file`,
+    createdAt: new Date().toISOString(),
+  };
+  store.forumAttachments.unshift(att);
+  saveStore(store);
+  return att as T;
+}
+
+export async function inbuiltGetForumAttachmentBlob(
+  id: number
+): Promise<{ blob: Blob; fileName: string; mimeType: string }> {
+  const store = loadStore();
+  const item = store.forumAttachments.find((a) => a.id === id);
+  if (!item) throw new Error('Forum attachment not found.');
+  const blob = await getInbuiltBlob(item.storedFileName);
+  if (!blob) throw new Error('Attachment blob not found in IndexedDB.');
+  return { blob, fileName: item.fileName, mimeType: item.mimeType };
 }
 
 export async function inbuiltUploadContributorFile<T>(

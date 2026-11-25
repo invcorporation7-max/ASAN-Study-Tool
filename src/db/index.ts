@@ -322,6 +322,10 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
 
+          ALTER TABLE user_messages ADD COLUMN IF NOT EXISTS body_html TEXT NOT NULL DEFAULT '';
+          ALTER TABLE user_messages ADD COLUMN IF NOT EXISTS attachments_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+          ALTER TABLE user_messages ADD COLUMN IF NOT EXISTS question_spec_json JSONB;
+
           CREATE TABLE IF NOT EXISTS license_keys (
             id SERIAL PRIMARY KEY,
             key_code TEXT NOT NULL UNIQUE,
@@ -396,6 +400,7 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
           );
 
           ALTER TABLE study_materials ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+          ALTER TABLE study_materials ADD COLUMN IF NOT EXISTS media_kind TEXT NOT NULL DEFAULT 'pdf';
 
           CREATE TABLE IF NOT EXISTS material_purchases (
             id SERIAL PRIMARY KEY,
@@ -497,6 +502,111 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             reviewed_at TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          CREATE TABLE IF NOT EXISTS forum_rooms (
+            id SERIAL PRIMARY KEY,
+            room_type TEXT NOT NULL DEFAULT 'group',
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            subject TEXT NOT NULL DEFAULT 'General',
+            dm_key TEXT NOT NULL DEFAULT '',
+            created_by_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_members (
+            id SERIAL PRIMARY KEY,
+            room_id INTEGER NOT NULL REFERENCES forum_rooms(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            member_role TEXT NOT NULL DEFAULT 'member',
+            last_read_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            joined_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_posts (
+            id SERIAL PRIMARY KEY,
+            room_id INTEGER NOT NULL REFERENCES forum_rooms(id) ON DELETE CASCADE,
+            author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            post_kind TEXT NOT NULL DEFAULT 'question',
+            title TEXT NOT NULL DEFAULT '',
+            content_html TEXT NOT NULL DEFAULT '',
+            content_text TEXT NOT NULL DEFAULT '',
+            subject TEXT NOT NULL DEFAULT 'General',
+            exam_board TEXT NOT NULL DEFAULT 'Competitive / Custom',
+            question_spec JSONB,
+            answer_key JSONB,
+            official_explanation_html TEXT NOT NULL DEFAULT '',
+            is_solved BOOLEAN NOT NULL DEFAULT false,
+            accepted_reply_id INTEGER,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_attempts (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            attempt_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_correct BOOLEAN,
+            score_note TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_replies (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+            author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            parent_reply_id INTEGER,
+            reply_kind TEXT NOT NULL DEFAULT 'opinion',
+            content_html TEXT NOT NULL DEFAULT '',
+            content_text TEXT NOT NULL DEFAULT '',
+            attempt_payload JSONB,
+            is_accepted_solution BOOLEAN NOT NULL DEFAULT false,
+            accepted_points_awarded INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_reply_votes (
+            id SERIAL PRIMARY KEY,
+            reply_id INTEGER NOT NULL REFERENCES forum_replies(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS forum_attachments (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER REFERENCES forum_posts(id) ON DELETE CASCADE,
+            reply_id INTEGER REFERENCES forum_replies(id) ON DELETE CASCADE,
+            message_id INTEGER REFERENCES user_messages(id) ON DELETE CASCADE,
+            uploader_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            file_name TEXT NOT NULL,
+            stored_file_name TEXT NOT NULL,
+            mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+            file_size_bytes BIGINT NOT NULL DEFAULT 0,
+            page_count INTEGER NOT NULL DEFAULT 1,
+            kind TEXT NOT NULL DEFAULT 'image',
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS formula_equations (
+            id SERIAL PRIMARY KEY,
+            author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            author_name TEXT NOT NULL DEFAULT 'Contributor',
+            author_username TEXT NOT NULL DEFAULT 'contributor',
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL DEFAULT 'Physics',
+            expression TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            symbols_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_forum_members_room_user ON forum_members(room_id, user_id);
+          CREATE INDEX IF NOT EXISTS idx_forum_posts_room_created ON forum_posts(room_id, created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_forum_replies_post_created ON forum_replies(post_id, created_at ASC);
+          CREATE INDEX IF NOT EXISTS idx_forum_attempts_post_user ON forum_attempts(post_id, user_id);
         `);
       } finally {
         client.release();

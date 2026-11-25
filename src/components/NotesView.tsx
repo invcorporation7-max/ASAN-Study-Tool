@@ -22,6 +22,10 @@ import {
   uploadFileToDriveFolder,
 } from '../lib/api';
 import {
+  DOCS_SCOPE,
+  DRIVE_FILE_SCOPE,
+} from '../lib/firebase';
+import {
   FREE_TIER_MAX_NOTES,
   guestCreateNotebook,
   guestCreateNotePage,
@@ -61,7 +65,6 @@ export const NotesView: React.FC<NotesViewProps> = ({
     isWorkspaceEnabled,
     workspacePermissions,
     isEffectiveProOrAdmin,
-    workspaceToken,
     connectBasicDrive,
     connectWorkspace,
     error: authError,
@@ -469,12 +472,10 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExternalLink(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setExporting(false);
-          return;
-        }
+      const tok = await connectBasicDrive();
+      if (!tok) {
+        setExporting(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
@@ -500,12 +501,10 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExternalLink(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setExporting(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, DOCS_SCOPE]);
+      if (!tok) {
+        setExporting(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
@@ -544,12 +543,10 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setExternalLink(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
-        if (!tok) {
-          setExporting(false);
-          return;
-        }
+      const tok = await connectBasicDrive();
+      if (!tok) {
+        setExporting(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {

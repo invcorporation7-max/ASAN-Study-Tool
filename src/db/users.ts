@@ -40,6 +40,7 @@ export const DEFAULT_POINT_REWARDS: PointRewardsConfig = {
   studyMaterialUpload: 0,
   examTimer30Min: 10,
   contributorWeekly: DEFAULT_CONTRIBUTOR_WEEKLY_POINTS,
+  forumSatisfactoryAnswer: 25,
 };
 
 export const DEFAULT_WORKSPACE_PERMISSIONS: WorkspacePermissionsConfig = {
@@ -141,6 +142,10 @@ export async function getPointRewardsConfig(): Promise<PointRewardsConfig> {
       studyMaterialUpload: cleanRewardInt(parsed.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
       examTimer30Min: cleanRewardInt(parsed.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
       contributorWeekly: cleanRewardInt(parsed.contributorWeekly, fallbackWeekly),
+      forumSatisfactoryAnswer: cleanRewardInt(
+        parsed.forumSatisfactoryAnswer,
+        DEFAULT_POINT_REWARDS.forumSatisfactoryAnswer
+      ),
     };
   } catch (error) {
     if (!isDbUnavailableError(error)) {
@@ -162,6 +167,10 @@ export async function getPointRewardsConfig(): Promise<PointRewardsConfig> {
       studyMaterialUpload: cleanRewardInt(saved.studyMaterialUpload, DEFAULT_POINT_REWARDS.studyMaterialUpload),
       examTimer30Min: cleanRewardInt(saved.examTimer30Min, DEFAULT_POINT_REWARDS.examTimer30Min),
       contributorWeekly: cleanRewardInt(saved.contributorWeekly, fallbackWeekly),
+      forumSatisfactoryAnswer: cleanRewardInt(
+        saved.forumSatisfactoryAnswer,
+        DEFAULT_POINT_REWARDS.forumSatisfactoryAnswer
+      ),
     };
   }
 }
@@ -192,6 +201,10 @@ export async function setPointRewardsConfig(
       updates.contributorWeekly !== undefined
         ? cleanRewardInt(updates.contributorWeekly, current.contributorWeekly)
         : current.contributorWeekly,
+    forumSatisfactoryAnswer:
+      updates.forumSatisfactoryAnswer !== undefined
+        ? cleanRewardInt(updates.forumSatisfactoryAnswer, current.forumSatisfactoryAnswer)
+        : current.forumSatisfactoryAnswer,
   };
   try {
     const now = new Date();

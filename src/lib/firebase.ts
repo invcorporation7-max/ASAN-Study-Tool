@@ -14,10 +14,29 @@ import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const rawCfg = firebaseConfig as Record<string, string | undefined>;
-const envBrowserKey = (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined)?.trim();
+const envVal = (v: unknown): string | undefined =>
+  typeof v === 'string' && v.trim() ? v.trim() : undefined;
+
 const effectiveFirebaseConfig = {
   ...firebaseConfig,
-  ...(envBrowserKey ? { apiKey: envBrowserKey } : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_API_KEY)
+    ? { apiKey: envVal(import.meta.env.VITE_FIREBASE_API_KEY)! }
+    : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN)
+    ? { authDomain: envVal(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN)! }
+    : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_PROJECT_ID)
+    ? { projectId: envVal(import.meta.env.VITE_FIREBASE_PROJECT_ID)! }
+    : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET)
+    ? { storageBucket: envVal(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET)! }
+    : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID)
+    ? { messagingSenderId: envVal(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID)! }
+    : {}),
+  ...(envVal(import.meta.env.VITE_FIREBASE_APP_ID)
+    ? { appId: envVal(import.meta.env.VITE_FIREBASE_APP_ID)! }
+    : {}),
 };
 
 const app = initializeApp(effectiveFirebaseConfig);
@@ -28,14 +47,19 @@ export const db = rawCfg.firestoreDatabaseId
   : getFirestore(app);
 
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-
-// Workspace scopes are ONLY requested on-demand when the user explicitly opts in
-export const WORKSPACE_SCOPES = [
-  DRIVE_FILE_SCOPE,
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/spreadsheets',
+export const DOCS_SCOPE = 'https://www.googleapis.com/auth/documents';
+export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+export const MEET_SCOPES = [
   'https://www.googleapis.com/auth/meetings.space.created',
   'https://www.googleapis.com/auth/meetings.space.readonly',
+];
+
+// Full Workspace scope list (used only when all Workspace features are authorized together)
+export const WORKSPACE_SCOPES = [
+  DRIVE_FILE_SCOPE,
+  DOCS_SCOPE,
+  SHEETS_SCOPE,
+  ...MEET_SCOPES,
 ];
 
 // Basic sign-in provider: NO Drive/Workspace scopes requested at login
@@ -47,23 +71,31 @@ export const driveFolderOnlyAuthProvider = new GoogleAuthProvider();
 driveFolderOnlyAuthProvider.addScope(DRIVE_FILE_SCOPE);
 driveFolderOnlyAuthProvider.setCustomParameters({ prompt: 'consent' });
 
-// Incremental on-demand Workspace provider: only invoked when Pro/Admin user clicks Connect Workspace
+// Incremental on-demand Workspace provider: only invoked when Pro/Admin user connects Workspace
 export const workspaceGoogleAuthProvider = new GoogleAuthProvider();
 WORKSPACE_SCOPES.forEach((scope) => {
   workspaceGoogleAuthProvider.addScope(scope);
 });
 workspaceGoogleAuthProvider.setCustomParameters({ prompt: 'consent' });
 
-// In-memory OAuth access token cache (never stored in localStorage/sessionStorage)
+// In-memory OAuth access token & granted-scopes cache (never stored in localStorage/sessionStorage)
 let cachedWorkspaceToken: string | null = null;
+const cachedGrantedScopes = new Set<string>();
 let isSigningIn = false;
 
 export const WORKSPACE_TOKEN_CLEARED_EVENT = 'asan-workspace-token-cleared';
 
 export const getAccessToken = (): string | null => cachedWorkspaceToken;
 
+export const hasWorkspaceScopes = (requiredScopes: string[]): boolean => {
+  if (!cachedWorkspaceToken) return false;
+  if (requiredScopes.length === 0) return true;
+  return requiredScopes.every((scope) => cachedGrantedScopes.has(scope));
+};
+
 export const clearAccessToken = (): void => {
   cachedWorkspaceToken = null;
+  cachedGrantedScopes.clear();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(WORKSPACE_TOKEN_CLEARED_EVENT));
   }
@@ -361,10 +393,18 @@ async function authorizeGoogleScopes(params: {
   label: string;
 }): Promise<{ user: User | null; accessToken: string }> {
   const { scopes, provider, label } = params;
+  const uniqueScopes = Array.from(new Set(scopes.filter(Boolean)));
+  if (cachedWorkspaceToken && uniqueScopes.every((s) => cachedGrantedScopes.has(s))) {
+    return { user: auth.currentUser, accessToken: cachedWorkspaceToken };
+  }
+
+  // Preserve any scopes already granted in this session while requesting only the needed scopes
+  const mergedScopes = Array.from(new Set([...cachedGrantedScopes, ...uniqueScopes]));
+
   isSigningIn = true;
   try {
     const clientId = getOAuthClientId();
-    const scopedProvider = buildScopedGoogleProvider(scopes, auth.currentUser?.email);
+    const scopedProvider = buildScopedGoogleProvider(mergedScopes, auth.currentUser?.email);
 
     // Always use Firebase SDK popup FIRST (uses firebaseapp.com/__/auth/handler so dynamic preview/dev origins never hit GIS origin_mismatch)
     try {
@@ -375,7 +415,7 @@ async function authorizeGoogleScopes(params: {
         } catch (reauthErr) {
           const reauthCode = getAuthErrorCode(reauthErr);
           if (reauthCode === 'auth/user-mismatch') {
-            result = await signInWithPopup(auth, buildScopedGoogleProvider(scopes));
+            result = await signInWithPopup(auth, buildScopedGoogleProvider(mergedScopes));
           } else {
             throw reauthErr;
           }
@@ -387,6 +427,7 @@ async function authorizeGoogleScopes(params: {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         cachedWorkspaceToken = credential.accessToken;
+        mergedScopes.forEach((s) => cachedGrantedScopes.add(s));
         return { user: result.user, accessToken: cachedWorkspaceToken };
       }
       throw new Error(`Could not obtain ${label} access token from Google sign-in.`);
@@ -412,10 +453,11 @@ async function authorizeGoogleScopes(params: {
           const loaded = await loadGisScript();
           if (loaded) {
             const accessToken = await requestGoogleAccessTokenViaGis(
-              scopes,
+              mergedScopes,
               auth.currentUser?.email
             );
             cachedWorkspaceToken = accessToken;
+            mergedScopes.forEach((s) => cachedGrantedScopes.add(s));
             return { user: auth.currentUser, accessToken };
           }
         } catch (gisErr) {
@@ -446,20 +488,28 @@ export const connectBasicDriveFolderOAuth = async (): Promise<{
   });
 };
 
-// Explicit opt-in Workspace authorization (only triggered when user clicks to connect Drive/Workspace)
-export const connectWorkspaceOAuth = async (): Promise<{
+// Explicit opt-in Workspace authorization (requests only requested or enabled scopes incrementally)
+export const connectWorkspaceOAuth = async (
+  scopes: string[] = WORKSPACE_SCOPES
+): Promise<{
   user: User | null;
   accessToken: string;
 }> => {
+  const effectiveScopes = scopes.length > 0 ? scopes : WORKSPACE_SCOPES;
+  const provider =
+    effectiveScopes.length === WORKSPACE_SCOPES.length
+      ? workspaceGoogleAuthProvider
+      : buildScopedGoogleProvider(effectiveScopes);
   return authorizeGoogleScopes({
-    scopes: WORKSPACE_SCOPES,
-    provider: workspaceGoogleAuthProvider,
+    scopes: effectiveScopes,
+    provider,
     label: 'Google Workspace',
   });
 };
 
 export const logout = async (): Promise<void> => {
   cachedWorkspaceToken = null;
+  cachedGrantedScopes.clear();
   try {
     await signOut(auth);
   } catch (err) {
@@ -475,6 +525,7 @@ export const subscribeAuth = (
     (user) => {
       if (!user) {
         cachedWorkspaceToken = null;
+        cachedGrantedScopes.clear();
         onUser(null, null);
         return;
       }

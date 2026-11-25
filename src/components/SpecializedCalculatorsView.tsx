@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { extractConicCoeffsFromEquation } from '../lib/formulaEngine';
 import {
   solveAlgebra,
   solveCalculus,
@@ -175,6 +176,8 @@ export function SpecializedCalculatorsView() {
     g: -2, f: 3, cCircle: -12,
     conicA: 1, conicB: 0, conicC: 4, conicD: -6, conicE: 16, conicF: 9,
   });
+  const [conicEqText, setConicEqText] = useState('9x^2 + 16y^2 - 36x + 96y + 36 = 0');
+  const [conicEqErr, setConicEqErr] = useState<string | null>(null);
 
   // --- 3. Algebra State ---
   const [algInput, setAlgInput] = useState<AlgebraInput>({
@@ -630,8 +633,84 @@ export function SpecializedCalculatorsView() {
 
               {coordInput.mode === 'conic' && (
                 <div className="space-y-3">
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-3 space-y-2">
+                    <label className={labelCls}>
+                      Parse Any Circle / Conic Equation String (Auto-fills A, B, C, D, E, F)
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={conicEqText}
+                        onChange={(e) => {
+                          setConicEqText(e.target.value);
+                          setConicEqErr(null);
+                        }}
+                        placeholder="e.g. 9x^2 + 16y^2 - 36x + 96y + 36 = 0"
+                        className={inputCls}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parsed = extractConicCoeffsFromEquation(conicEqText);
+                          if (!parsed) {
+                            setConicEqErr('Could not parse quadratic equation in x and y.');
+                            return;
+                          }
+                          setConicEqErr(null);
+                          setCoordInput((p) => ({
+                            ...p,
+                            conicA: parsed.A,
+                            conicB: parsed.B,
+                            conicC: parsed.C,
+                            conicD: parsed.D,
+                            conicE: parsed.E,
+                            conicF: parsed.F,
+                          }));
+                        }}
+                        className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 whitespace-nowrap shrink-0"
+                      >
+                        Parse Equation
+                      </button>
+                    </div>
+                    {conicEqErr && (
+                      <div className="text-[11px] text-red-600 dark:text-red-400">{conicEqErr}</div>
+                    )}
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {[
+                        { label: 'Ellipse', eq: '9x^2 + 16y^2 - 36x + 96y + 36 = 0' },
+                        { label: 'Parabola', eq: 'y^2 - 4y - 8x + 20 = 0' },
+                        { label: 'Hyperbola', eq: '9x^2 - 16y^2 - 18x - 64y - 199 = 0' },
+                        { label: 'Circle', eq: 'x^2 + y^2 - 4x + 6y - 12 = 0' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setConicEqText(preset.eq);
+                            const parsed = extractConicCoeffsFromEquation(preset.eq);
+                            if (parsed) {
+                              setConicEqErr(null);
+                              setCoordInput((p) => ({
+                                ...p,
+                                conicA: parsed.A,
+                                conicB: parsed.B,
+                                conicC: parsed.C,
+                                conicD: parsed.D,
+                                conicE: parsed.E,
+                                conicF: parsed.F,
+                              }));
+                            }
+                          }}
+                          className="text-[11px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-blue-400"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    Equation: Ax² + Bxy + Cy² + Dx + Ey + F = 0
+                    Or enter coefficients directly: Ax² + Bxy + Cy² + Dx + Ey + F = 0
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <NumField label="A (x²)" value={coordInput.conicA ?? 1} onChange={(n) => setCoordInput((p) => ({ ...p, conicA: n }))} />

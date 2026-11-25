@@ -278,6 +278,8 @@ export const APP_SHORTCUT_CATALOG: AppShortcutCatalogEntry[] = [
   { id: 'notes', label: 'My Notes', category: 'Study Workspace' },
   { id: 'timers', label: 'Timers', category: 'Study Workspace' },
   { id: 'calculator', label: 'fx-82MS Calc', category: 'Study Workspace' },
+  { id: 'formula-calculator', label: 'Formula Calculator', category: 'Study Workspace' },
+  { id: 'forum', label: 'Study Forum', category: 'Community & Account' },
   { id: 'messages', label: 'Tool Mail', category: 'Community & Account' },
   { id: 'study-materials', label: 'Study Material Notes', category: 'Community & Account' },
   { id: 'subscriptions', label: 'Subscriptions', category: 'Community & Account' },

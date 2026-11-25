@@ -53,6 +53,7 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,woff,woff2}'],
           navigateFallbackDenylist: [
             /^\/api\//,
+            /^\/ws/,
             /^\/__\//,
             /^\/privacy(-policy)?(\.html)?$/i,
             /^\/terms(-of-service)?(\.html)?$/i,

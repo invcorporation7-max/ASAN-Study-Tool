@@ -16,6 +16,10 @@ import {
   pullMasterExamSheet,
   syncMasterExamSheet,
 } from '../lib/api';
+import {
+  DRIVE_FILE_SCOPE,
+  SHEETS_SCOPE,
+} from '../lib/firebase';
 import { generateUniqueExamPaperCode } from '../lib/paperCode';
 import type { ExamBlueprintItem } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -29,7 +33,6 @@ export const ExamMasterCards: React.FC = () => {
     isWorkspaceEnabled,
     isEffectiveProOrAdmin,
     signIn,
-    workspaceToken,
     connectWorkspace,
     updateProfile,
     error: authError,
@@ -229,12 +232,10 @@ export const ExamMasterCards: React.FC = () => {
     setStatusMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setSheetBusy(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+      if (!tok) {
+        setSheetBusy(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
@@ -259,12 +260,10 @@ export const ExamMasterCards: React.FC = () => {
     setStatusMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setSheetBusy(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+      if (!tok) {
+        setSheetBusy(false);
+        return;
       }
       const pulled = await pullMasterExamSheet();
       const existingByCode = new Map(cards.map((c) => [c.paperCode.toUpperCase(), c]));

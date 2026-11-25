@@ -20,13 +20,28 @@ import {
   ensureAppDriveFolder,
   saveJsonToDriveFolder,
 } from '../lib/api';
+import { useForumSocket } from '../lib/forumSocket';
 import type {
+  ForumAttachmentItem,
   InAppMessageItem,
   StudyNotePage,
   ToolUserSummary,
 } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ForumAttachmentGrid } from './ForumAttachmentViewer';
+import { SafeHtmlContent } from './SafeHtmlContent';
+import { SummernoteEditor } from './SummernoteEditor';
 import { UserAvatarBadge } from './UserAvatarBadge';
+
+function stripHtmlPlain(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 interface MessagesViewProps {
   notePages: StudyNotePage[];
@@ -41,16 +56,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     dbUser,
     isGuest,
     isWorkspaceEnabled,
-    isEffectiveProOrAdmin,
     signIn,
-    workspaceToken,
-    connectWorkspace,
     connectBasicDrive,
     updateProfile,
     error: authError,
     clearError,
   } = useAuth();
-  const isProOrAdmin = isEffectiveProOrAdmin;
   const isAdmin = dbUser?.role === 'admin' || dbUser?.role === 'super';
 
   const [tab, setTab] = useState<'inbox' | 'public' | 'self' | 'sent' | 'compose'>(
@@ -73,6 +84,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [bodyHtml, setBodyHtml] = useState('');
+  const [attachments, setAttachments] = useState<ForumAttachmentItem[]>([]);
   const [attachmentNoteId, setAttachmentNoteId] = useState<string>(
     preselectedNoteId ? String(preselectedNoteId) : ''
   );
@@ -111,6 +124,19 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useForumSocket({
+    enabled: !isGuest && Boolean(dbUser),
+    activeRoomId: null,
+    onEvent: (evt) => {
+      if (evt.type === 'mail:new') {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === evt.message.id)) return prev;
+          return [evt.message, ...prev];
+        });
+      }
+    },
+  });
 
   useEffect(() => {
     if (preselectedNoteId) {
@@ -199,6 +225,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
         });
     }
 
+    const plainText = body.trim() || stripHtmlPlain(bodyHtml);
+    if (!plainText && attachments.length === 0) {
+      setErrorMsg('Please write a message or attach a file before sending.');
+      setSending(false);
+      return;
+    }
+
     try {
       const matchedNote = notePages.find((n) => String(n.id) === attachmentNoteId);
       await apiFetch('/api/messages', {
@@ -208,7 +241,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           visibility,
           isAdminMail: isAdmin && isAdminMail,
           subject: subject.trim(),
-          body: body.trim(),
+          body: plainText,
+          bodyHtml: bodyHtml.trim(),
+          attachments,
           attachmentNoteId: matchedNote ? matchedNote.id : null,
           attachmentTitle: matchedNote ? matchedNote.title : '',
         }),
@@ -224,6 +259,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
       setRecipientInput('');
       setSubject('');
       setBody('');
+      setBodyHtml('');
+      setAttachments([]);
       setAttachmentNoteId('');
       setIsAdminMail(false);
       await loadData();
@@ -263,10 +300,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
-        if (!tok) return;
-      }
+      const tok = await connectBasicDrive();
+      if (!tok) return;
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
         await updateProfile({ driveFolderId: folder.id });
@@ -691,15 +726,21 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">Message</label>
-            <textarea
-              rows={5}
-              required
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your study note, message, or announcement..."
-              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+              Message (Rich Text, Headings, Tables, Images &amp; PDF Attachments)
+            </label>
+            <SummernoteEditor
+              valueHtml={bodyHtml}
+              onChangeHtml={(html) => {
+                setBodyHtml(html);
+                setBody(stripHtmlPlain(html));
+              }}
+              attachments={attachments}
+              onAttachmentsChange={setAttachments}
+              placeholder="Write your formatted study note, formatted table, or announcement..."
+              minHeight={180}
+              allowAttachments
             />
           </div>
 
@@ -773,9 +814,16 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                         {new Date(m.createdAt).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-                      {m.body}
-                    </p>
+                    {m.bodyHtml && m.bodyHtml.trim() ? (
+                      <SafeHtmlContent html={m.bodyHtml} className="text-xs leading-relaxed" />
+                    ) : (
+                      <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                        {m.body}
+                      </p>
+                    )}
+                    {m.attachments && m.attachments.length > 0 && (
+                      <ForumAttachmentGrid attachments={m.attachments} />
+                    )}
                     {m.attachmentTitle && (
                       <div className="text-xs font-medium text-blue-600 dark:text-blue-400">
                         Attached A4 Note: {m.attachmentTitle}

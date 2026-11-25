@@ -137,68 +137,40 @@ async function verifyFirebaseViaRest(idToken: string): Promise<{
   }
 }
 
-export const requireAuth = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing sign-in token' });
-  }
+export async function authenticateBearerToken(token: string): Promise<{
+  user: Partial<DecodedIdToken> & { uid: string; email?: string };
+  dbUser: AuthUserRecord;
+  authMode: 'google' | 'password';
+} | null> {
+  if (!token) return null;
 
-  const token = authHeader.split('Bearer ')[1];
-
-  // Ensure configured Postgres is awake before loading user permissions/roles
   if (isPostgresConfigured() && !getDatabaseStatus().connected) {
     const connected = await ensureDatabaseSchema();
     if (!connected) {
-      return res.status(503).json({
-        error: 'Database is waking up / connecting. Please wait a moment...',
-        code: 'DB_CONNECTING',
-        database: getDatabaseStatus(),
-      });
+      const err = new Error('Database is waking up / connecting. Please wait a moment...');
+      (err as { code?: string }).code = 'DB_CONNECTING';
+      throw err;
     }
   }
 
-  // 1. Non-Google Email+Password Local Session Token
   if (token.startsWith('local.')) {
     const session = verifyLocalSessionToken(token);
-    if (!session) {
-      return res.status(401).json({ error: 'Unauthorized: Password session expired. Please sign in again.' });
-    }
-    try {
-      const existing = await getUserById(session.userId);
-      if (!existing) {
-        return res.status(401).json({ error: 'Unauthorized: Account no longer exists.' });
-      }
-      const synced = await getOrCreateUser(
-        existing.uid,
-        existing.email,
-        existing.displayName,
-        existing.photoUrl
-      );
-      req.user = { uid: synced.uid, email: synced.email };
-      req.dbUser = { ...(synced as unknown as AuthUserRecord), authMode: 'password' };
-      req.authMode = 'password';
-      return next();
-    } catch (error) {
-      console.error('Error synchronizing password session:', error);
-      if (
-        (error as { code?: string })?.code === 'DB_CONNECTING' ||
-        (isPostgresConfigured() && isDbUnavailableError(error))
-      ) {
-        return res.status(503).json({
-          error: 'Database is waking up / connecting. Please wait a moment...',
-          code: 'DB_CONNECTING',
-          database: getDatabaseStatus(),
-        });
-      }
-      return res.status(500).json({ error: 'Unable to load account profile.' });
-    }
+    if (!session) return null;
+    const existing = await getUserById(session.userId);
+    if (!existing) return null;
+    const synced = await getOrCreateUser(
+      existing.uid,
+      existing.email,
+      existing.displayName,
+      existing.photoUrl
+    );
+    return {
+      user: { uid: synced.uid, email: synced.email },
+      dbUser: { ...(synced as unknown as AuthUserRecord), authMode: 'password' },
+      authMode: 'password',
+    };
   }
 
-  // 2. Firebase ID Token (Admin SDK with Identity Toolkit REST fallback)
   let verifiedUser: {
     uid: string;
     email?: string;
@@ -218,23 +190,46 @@ export const requireAuth = async (
     verifiedUser = await verifyFirebaseViaRest(token);
   }
 
-  if (!verifiedUser) {
-    return res
-      .status(401)
-      .json({ error: 'Unauthorized: Session expired or invalid. Please refresh sign-in.' });
+  if (!verifiedUser) return null;
+
+  const dbUser = await getOrCreateUser(
+    verifiedUser.uid,
+    verifiedUser.email || '',
+    verifiedUser.name || undefined,
+    verifiedUser.picture || undefined
+  );
+  return {
+    user: verifiedUser,
+    dbUser: { ...(dbUser as unknown as AuthUserRecord), authMode: 'google' },
+    authMode: 'google',
+  };
+}
+
+export const requireAuth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: Missing sign-in token' });
   }
 
+  const token = authHeader.split('Bearer ')[1];
+
   try {
-    req.user = verifiedUser;
-    req.authMode = 'google';
-    const dbUser = await getOrCreateUser(
-      verifiedUser.uid,
-      verifiedUser.email || '',
-      verifiedUser.name || undefined,
-      verifiedUser.picture || undefined
-    );
-    req.dbUser = { ...(dbUser as unknown as AuthUserRecord), authMode: 'google' };
-    next();
+    const authResult = await authenticateBearerToken(token);
+    if (!authResult) {
+      return res.status(401).json({
+        error: token.startsWith('local.')
+          ? 'Unauthorized: Password session expired or invalid. Please sign in again.'
+          : 'Unauthorized: Session expired or invalid. Please refresh sign-in.',
+      });
+    }
+    req.user = authResult.user;
+    req.dbUser = authResult.dbUser;
+    req.authMode = authResult.authMode;
+    return next();
   } catch (error) {
     console.error('Error synchronizing user workspace profile:', error);
     if (

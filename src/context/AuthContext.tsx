@@ -19,11 +19,17 @@ import {
   connectBasicDriveFolderOAuth,
   connectWorkspaceOAuth,
   consumeAuthRedirectResult,
+  DOCS_SCOPE,
+  DRIVE_FILE_SCOPE,
   getAccessToken,
   googleSignIn,
+  hasWorkspaceScopes,
   isRedirectInProgressError,
   logout,
+  MEET_SCOPES,
+  SHEETS_SCOPE,
   subscribeAuth,
+  WORKSPACE_SCOPES,
   WORKSPACE_TOKEN_CLEARED_EVENT,
 } from '../lib/firebase';
 import type { DbUser, SavedAccountEntry, WorkspacePermissionsConfig } from '../types';
@@ -110,7 +116,7 @@ interface AuthContextValue {
   continueFreeGuest: () => void;
   exitGuestToSignIn: () => void;
   connectBasicDrive: () => Promise<string | null>;
-  connectWorkspace: () => Promise<string | null>;
+  connectWorkspace: (requiredScopes?: string[]) => Promise<string | null>;
   acceptDriveFolderPermissionStep: () => Promise<void>;
   acceptWorkspacePermissionStep: () => Promise<void>;
   skipPermissionStep: () => void;
@@ -653,6 +659,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const connectBasicDrive = useCallback(async () => {
     setError(null);
+    const existing = getAccessToken();
+    if (existing && hasWorkspaceScopes([DRIVE_FILE_SCOPE])) {
+      setWorkspaceToken(existing);
+      return existing;
+    }
     try {
       const res = await connectBasicDriveFolderOAuth();
       if (res.user) setFirebaseUser(res.user);
@@ -668,22 +679,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const connectWorkspace = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await connectWorkspaceOAuth();
-      if (res.user) setFirebaseUser(res.user);
-      setWorkspaceToken(res.accessToken);
-      return res.accessToken;
-    } catch (err) {
-      if (!isRedirectInProgressError(err)) {
-        setError(
-          err instanceof Error ? err.message : 'Failed to connect Google Workspace'
-        );
+  const connectWorkspace = useCallback(
+    async (requiredScopes?: string[]) => {
+      setError(null);
+      let scopesToRequest = requiredScopes && requiredScopes.length > 0 ? requiredScopes : [];
+      if (scopesToRequest.length === 0) {
+        const perms = dbUser?.workspacePermissions || localWorkspacePerms;
+        const collected: string[] = [];
+        if (perms.driveSync) collected.push(DRIVE_FILE_SCOPE);
+        if (perms.docsExport) collected.push(DRIVE_FILE_SCOPE, DOCS_SCOPE);
+        if (perms.sheetsSync) collected.push(DRIVE_FILE_SCOPE, SHEETS_SCOPE);
+        if (perms.meetRooms) collected.push(...MEET_SCOPES);
+        scopesToRequest = Array.from(new Set(collected));
+        if (scopesToRequest.length === 0) {
+          scopesToRequest = WORKSPACE_SCOPES;
+        }
       }
-      return null;
-    }
-  }, []);
+
+      const existing = getAccessToken();
+      if (existing && hasWorkspaceScopes(scopesToRequest)) {
+        setWorkspaceToken(existing);
+        return existing;
+      }
+
+      try {
+        const res = await connectWorkspaceOAuth(scopesToRequest);
+        if (res.user) setFirebaseUser(res.user);
+        setWorkspaceToken(res.accessToken);
+        return res.accessToken;
+      } catch (err) {
+        if (!isRedirectInProgressError(err)) {
+          setError(
+            err instanceof Error ? err.message : 'Failed to connect Google Workspace'
+          );
+        }
+        return null;
+      }
+    },
+    [dbUser?.workspacePermissions, localWorkspacePerms]
+  );
 
   const updateProfile = useCallback(
     async (updates: {

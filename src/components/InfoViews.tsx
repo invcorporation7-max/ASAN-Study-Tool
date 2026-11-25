@@ -25,6 +25,13 @@ import {
   saveJsonToDriveFolder,
 } from '../lib/api';
 import {
+  DOCS_SCOPE,
+  DRIVE_FILE_SCOPE,
+  MEET_SCOPES,
+  SHEETS_SCOPE,
+  WORKSPACE_SCOPES,
+} from '../lib/firebase';
+import {
   APP_SHORTCUT_CATALOG,
   SUGGESTED_APP_SHORTCUTS,
   formatKeyboardEventCombo,
@@ -146,7 +153,6 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     isWorkspaceEnabled,
     isSuper,
     isApprovedContributor,
-    isEffectiveProOrAdmin,
     workspaceToken,
     connectBasicDrive,
     connectWorkspace,
@@ -188,6 +194,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     studyMaterialUpload: 0,
     examTimer30Min: 10,
     contributorWeekly: 120,
+    forumSatisfactoryAnswer: 25,
   });
 
   useEffect(() => {
@@ -250,10 +257,11 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     let active = true;
-    apiPublicFetch<{ rewards?: PointRewardsConfig }>('/api/point-rewards')
+    apiPublicFetch<PointRewardsConfig | { rewards?: PointRewardsConfig }>('/api/point-rewards')
       .then((res) => {
-        if (active && res?.rewards) {
-          setRewards(res.rewards);
+        const cfg = (res as { rewards?: PointRewardsConfig })?.rewards || (res as PointRewardsConfig);
+        if (active && cfg && typeof cfg.questionPaperUpload === 'number') {
+          setRewards({ ...cfg, forumSatisfactoryAnswer: cfg.forumSatisfactoryAnswer ?? 25 });
         }
       })
       .catch(() => {});
@@ -310,10 +318,19 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     const action = pendingPermConfirm;
     setPermBusyKey(action.type === 'all' ? 'all' : action.key);
     try {
-      if (isWorkspaceEnabled && !workspaceToken && !isGuest) {
-        const needsFullWorkspace =
-          isEffectiveProOrAdmin || action.type === 'all' || action.key !== 'driveSync';
-        const tok = needsFullWorkspace ? await connectWorkspace() : await connectBasicDrive();
+      if (isWorkspaceEnabled && !isGuest) {
+        let tok: string | null = null;
+        if (action.type === 'all') {
+          tok = await connectWorkspace(WORKSPACE_SCOPES);
+        } else if (action.key === 'driveSync') {
+          tok = await connectBasicDrive();
+        } else if (action.key === 'docsExport') {
+          tok = await connectWorkspace([DRIVE_FILE_SCOPE, DOCS_SCOPE]);
+        } else if (action.key === 'sheetsSync') {
+          tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+        } else if (action.key === 'meetRooms') {
+          tok = await connectWorkspace(MEET_SCOPES);
+        }
         if (!tok) {
           setPermStatusMsg(
             'Google Workspace authorization was cancelled or blocked. Permission was not turned on.'
@@ -384,10 +401,10 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       features: [
         'Unlimited A4 PDF notes & unlimited tasks + Exam Master Cards view',
         'Optional ASAN-user-content Drive folder for .txt tasks & notes backup',
-        `500 initial points + earn points (+${rewards.questionPaperUpload} paper, +${rewards.examTimer30Min}/30m exam timer, +${rewards.calendarStudyEvent} study calendar${
+        `500 initial points + earn points (+${rewards.questionPaperUpload} paper, +${rewards.forumSatisfactoryAnswer} forum answer, +${rewards.examTimer30Min}/30m exam timer, +${rewards.calendarStudyEvent} study calendar${
           rewards.noteCreate > 0 ? `, +${rewards.noteCreate} note` : ''
         })`,
-        'Tool Mail (@username, 5-char UID, multi-recipient, Self, Public)',
+        'Study Forum (Global Q&A, Groups, 1-to-1 DMs), Contributor Formula Calculator & Upgraded Tool Mail',
         'Excludes Specialized Calculators, PDF Booklet Tool & Google Sheets Workspace',
       ],
     },
@@ -1072,42 +1089,39 @@ export const AboutCreatorsView: React.FC = () => {
         )}
       </div>
 
-      {/* About Site & Release Tag v1.7 */}
+      {/* About Site & Release Tag v1.8 */}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
-              About Site · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.7</span>
+              About Site · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.8</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Current production release highlights for ASAN-Study_tool.
             </p>
           </div>
           <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-            Release v1.7
+            Release v1.8
           </span>
         </div>
 
         <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed list-disc pl-5">
           <li>
-            <strong>Specialized STEM Calculators Suite (Pro &amp; Admin):</strong> Five deterministic math engines bundled together — <strong>Calculus</strong> (symbolic derivatives, definite/improper integrals, limits, Taylor series, critical points), <strong>Coordinate Geometry</strong> (lines, triangles, circles, parabolas/ellipses/hyperbolas), <strong>Algebra</strong> (linear systems, polynomials up to cubic, 2×2 &amp; 3×3 matrices, quadratic inequalities), <strong>Vector &amp; 3D Geometry</strong> (dot/cross products, planes, skew line distance), and <strong>Trigonometry</strong> (identities, equation roots, SSA/SSS/SAS triangles).
+            <strong>Real-Time Study Forum &amp; Upgraded Tool Mail:</strong> Global Q&amp;A Arena, Study Groups, and 1-to-1 Direct Messages powered by WebSocket/SSE live sync, a native Summernote rich-text editor (headings, tables, colors, embeds, PDF/image attachments), interactive competitive/board answer fields (<strong>JEE Main, JEE Advanced, NEET UG, ISC, CBSE, CUET</strong> — Single/Multi MCQ, Integer, Double, Matrix Match, Assertion-Reason, Comprehension, Subjective), collaborative peer discussions, and Super-controlled satisfaction point rewards (strictly non-self-awardable).
           </li>
           <li>
-            <strong>Exam Countdown Timers &amp; Dashboard Pinning:</strong> Admins publish top-level upcoming national/board exam countdowns, students create custom countdowns (name, date, optional time), and any countdown can be pinned to the Dashboard with live second-by-second ticking.
+            <strong>Multi-Format Study Material Repository:</strong> Upload, filter, preview inline, and share <strong>Photos, Videos, Text, PDFs, Word, Excel, PowerPoint, and Audio Recordings</strong> (including built-in browser voice recording) with automatic format recognition.
           </li>
           <li>
-            <strong>Customizable Dashboard &amp; Dark Theme Mode:</strong> Show/hide and reorder Dashboard widgets per account, plus a full Light/Dark theme switch synced across the entire workspace.
+            <strong>Contributor Formula Calculator &amp; Wide Conic/Circle Solver:</strong> Approved Contributors, Admins, and Super define formula equations with symbol meanings; students supply known input parameters and request N target outputs using semantic parameter matching, multi-equation chaining, and wide symbolic Circle &amp; Conic solvers (Major/Minor Axis, Latus Rectum, Directrix, Foci, Vertices, Asymptotes).
           </li>
           <li>
-            <strong>Multi-Date &amp; Recurring Calendar Scheduler:</strong> Create a single event across a date stretch (with weekday filters), far-separated specific dates (click calendar dates directly), or recurring Weekly / Monthly / Annual rules (by calendar date or Nth weekday such as First Sunday).
-          </li>
-          <li>
-            <strong>Admin Contributor Credits, Tool Scrolling Polish &amp; Spectra AI Status:</strong> Admins and Super can also serve and receive credit under Currently Serving Contributors, tool scroll containers adapt cleanly on mobile/tablet/desktop, and Spectra AI is marked under development.
+            <strong>Student Etiquette &amp; Updated Legal Terms:</strong> Updated Privacy Policy and Terms of Service establishing clear academic integrity, peer collaboration etiquette, and fair points governance.
           </li>
         </ul>
       </div>
 
-      {/* About Site & Release Tag v1.6 (Older Version — Headings Only Accordion) */}
+      {/* Previous Releases Accordion (v1.7 & v1.6) */}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 asan-card-hover">
         <button
           type="button"
@@ -1117,15 +1131,15 @@ export const AboutCreatorsView: React.FC = () => {
         >
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
-              Previous Releases · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.6</span>
+              Previous Releases · <span className="font-mono text-blue-700 dark:text-blue-400">v1.7 &amp; v1.6</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Click to {olderVersionsOpen ? 'collapse' : 'expand'} update headings from earlier release v1.6.
+              Click to {olderVersionsOpen ? 'collapse' : 'expand'} update headings from earlier releases v1.7 and v1.6.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">
-              Release v1.6
+              Archive
             </span>
             <ChevronDown
               className={`h-4 w-4 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${
@@ -1136,13 +1150,32 @@ export const AboutCreatorsView: React.FC = () => {
         </button>
 
         {olderVersionsOpen && (
-          <ul className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3.5 space-y-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 list-disc pl-5">
-            <li>Casio fx-82MS Scientific Calculator Simulator</li>
-            <li>Admin Point Verification &amp; Super Action Point Control</li>
-            <li>PDF Studio Whole-PDF Import, Camera Scan &amp; Auto-Renumbering</li>
-            <li>Custom Sidebar App Pinning &amp; Workspace Function Permissions</li>
-            <li>Study Material 70% Owner Royalty &amp; Mobile/Tablet Layout Fixes</li>
-          </ul>
+          <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3.5 space-y-4 text-xs text-slate-700 dark:text-slate-300">
+            <div>
+              <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mb-1.5">
+                Release v1.7
+              </div>
+              <ul className="space-y-1.5 font-medium list-disc pl-5">
+                <li>Specialized STEM Calculators Suite (Pro &amp; Admin): Calculus, Coordinate Geometry, Algebra, Vector &amp; 3D, Trigonometry</li>
+                <li>Exam Countdown Timers &amp; Dashboard Pinning</li>
+                <li>Customizable Dashboard Widgets &amp; Full Dark Theme Mode</li>
+                <li>Multi-Date &amp; Recurring Calendar Scheduler</li>
+                <li>Admin Contributor Credits, Tool Scrolling Polish &amp; Spectra AI Status</li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mb-1.5">
+                Release v1.6
+              </div>
+              <ul className="space-y-1.5 font-medium list-disc pl-5">
+                <li>Casio fx-82MS Scientific Calculator Simulator</li>
+                <li>Admin Point Verification &amp; Super Action Point Control</li>
+                <li>PDF Studio Whole-PDF Import, Camera Scan &amp; Auto-Renumbering</li>
+                <li>Custom Sidebar App Pinning &amp; Workspace Function Permissions</li>
+                <li>Study Material 70% Owner Royalty &amp; Mobile/Tablet Layout Fixes</li>
+              </ul>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1187,16 +1220,12 @@ export const ContactView: React.FC = () => {
     isGuest,
     isWorkspaceEnabled,
     workspacePermissions,
-    isEffectiveProOrAdmin,
     signIn,
-    workspaceToken,
-    connectWorkspace,
     connectBasicDrive,
     updateProfile,
     error: authError,
     clearError,
   } = useAuth();
-  const isProOrAdmin = isEffectiveProOrAdmin;
   const isAdmin = !isGuest && (dbUser?.role === 'admin' || dbUser?.role === 'super');
 
   const [name, setName] = useState(dbUser?.displayName || '');
@@ -1249,10 +1278,8 @@ export const ContactView: React.FC = () => {
     setError(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
-        if (!tok) return;
-      }
+      const tok = await connectBasicDrive();
+      if (!tok) return;
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
         await updateProfile({ driveFolderId: folder.id });

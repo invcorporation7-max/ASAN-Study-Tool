@@ -23,6 +23,11 @@ import {
   syncScheduleToGoogleSheet,
 } from '../lib/api';
 import {
+  DRIVE_FILE_SCOPE,
+  MEET_SCOPES,
+  SHEETS_SCOPE,
+} from '../lib/firebase';
+import {
   generateScheduleDates,
   MonthlyPatternKind,
   ORDINAL_OPTIONS,
@@ -102,7 +107,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     workspacePermissions,
     isEffectiveProOrAdmin,
     refreshProfile,
-    workspaceToken,
     connectWorkspace,
     updateProfile,
     error: authError,
@@ -483,12 +487,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setCreatingMeet(false);
-          return;
-        }
+      const tok = await connectWorkspace(MEET_SCOPES);
+      if (!tok) {
+        setCreatingMeet(false);
+        return;
       }
       const space = await createGoogleMeetRoom();
       setMeetLink(space.meetingUri);
@@ -508,12 +510,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     setSheetMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setSheetBusy(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+      if (!tok) {
+        setSheetBusy(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
@@ -565,12 +565,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     setSheetMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setSheetBusy(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+      if (!tok) {
+        setSheetBusy(false);
+        return;
       }
       const rows = await pullScheduleFromGoogleSheet(dbUser.scheduleSheetId);
       const existingKeys = new Set(

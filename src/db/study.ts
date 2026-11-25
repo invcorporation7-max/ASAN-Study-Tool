@@ -849,8 +849,23 @@ function matchRecipientToken(
 }
 
 export async function getUserMessages(userId: number) {
+  const formatMsg = (m: typeof userMessages.$inferSelect | (typeof getLocalStore extends () => infer S ? S extends { userMessages: (infer U)[] } ? U : never : never)) => {
+    const rawAttachments = Array.isArray((m as { attachmentsJson?: unknown }).attachmentsJson)
+      ? ((m as { attachmentsJson?: Record<string, unknown>[] }).attachmentsJson || [])
+      : [];
+    return {
+      ...m,
+      bodyHtml: (m as { bodyHtml?: string }).bodyHtml || '',
+      attachments: rawAttachments.map((att) => ({
+        ...att,
+        url: typeof att.url === 'string' && att.url ? att.url : `/api/forum/attachments/${att.id}/file`,
+      })),
+      questionSpec: (m as { questionSpecJson?: Record<string, unknown> | null }).questionSpecJson || null,
+    };
+  };
+
   try {
-    return await db
+    const rows = await db
       .select()
       .from(userMessages)
       .where(
@@ -861,11 +876,14 @@ export async function getUserMessages(userId: number) {
         )
       )
       .orderBy(desc(userMessages.createdAt));
+    return rows.map((r) => formatMsg(r));
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
-    return getLocalStore().userMessages.filter(
-      (m) => m.senderId === userId || m.recipientId === userId || m.visibility === 'public'
-    );
+    return getLocalStore()
+      .userMessages.filter(
+        (m) => m.senderId === userId || m.recipientId === userId || m.visibility === 'public'
+      )
+      .map((r) => formatMsg(r));
   }
 }
 
@@ -878,6 +896,9 @@ export async function sendToolUserMessage(params: {
   isAdminMail?: boolean;
   subject: string;
   body: string;
+  bodyHtml?: string;
+  attachmentsJson?: Record<string, unknown>[];
+  questionSpecJson?: Record<string, unknown> | null;
   attachmentTitle?: string;
   attachmentNoteId?: number | null;
 }) {
@@ -902,6 +923,9 @@ export async function sendToolUserMessage(params: {
       recipientSummary: string;
       subject: string;
       body: string;
+      bodyHtml: string;
+      attachmentsJson: Record<string, unknown>[];
+      questionSpecJson: Record<string, unknown> | null;
       attachmentTitle: string;
       attachmentNoteId: number | null;
     }) => Promise<unknown>,
@@ -915,6 +939,9 @@ export async function sendToolUserMessage(params: {
     }) => Promise<void>
   ) => {
     const createdRows: unknown[] = [];
+    const safeHtml = params.bodyHtml || '';
+    const safeAttachments = Array.isArray(params.attachmentsJson) ? params.attachmentsJson : [];
+    const safeQuestionSpec = params.questionSpecJson || null;
 
     if (params.visibility === 'self') {
       const created = await insertMsg({
@@ -929,6 +956,9 @@ export async function sendToolUserMessage(params: {
         recipientSummary: 'Self Archive',
         subject: params.subject,
         body: params.body,
+        bodyHtml: safeHtml,
+        attachmentsJson: safeAttachments,
+        questionSpecJson: safeQuestionSpec,
         attachmentTitle: params.attachmentTitle || '',
         attachmentNoteId: params.attachmentNoteId ?? null,
       });
@@ -949,6 +979,9 @@ export async function sendToolUserMessage(params: {
         recipientSummary: 'Public Community Board',
         subject: params.subject,
         body: params.body,
+        bodyHtml: safeHtml,
+        attachmentsJson: safeAttachments,
+        questionSpecJson: safeQuestionSpec,
         attachmentTitle: params.attachmentTitle || '',
         attachmentNoteId: params.attachmentNoteId ?? null,
       });
@@ -1010,6 +1043,9 @@ export async function sendToolUserMessage(params: {
         recipientSummary: summaryLabel,
         subject: params.subject,
         body: params.body,
+        bodyHtml: safeHtml,
+        attachmentsJson: safeAttachments,
+        questionSpecJson: safeQuestionSpec,
         attachmentTitle: params.attachmentTitle || '',
         attachmentNoteId: params.attachmentNoteId ?? null,
       });
@@ -1046,7 +1082,11 @@ export async function sendToolUserMessage(params: {
       allUsers,
       async (row) => {
         const [inserted] = await db.insert(userMessages).values(row).returning();
-        return inserted;
+        return {
+          ...inserted,
+          attachments: inserted.attachmentsJson || [],
+          questionSpec: inserted.questionSpecJson || null,
+        };
       },
       async (n) => {
         await db.insert(notifications).values(n);
@@ -1068,7 +1108,11 @@ export async function sendToolUserMessage(params: {
         };
         store.userMessages.unshift(inserted);
         persistLocalStore();
-        return inserted;
+        return {
+          ...inserted,
+          attachments: inserted.attachmentsJson || [],
+          questionSpec: inserted.questionSpecJson || null,
+        };
       },
       async (n) => {
         store.notifications.unshift({
@@ -1296,6 +1340,57 @@ export function detectPdfPageCountFromBuffer(buf: Buffer): number {
   return pageMatches && pageMatches.length > 0 ? pageMatches.length : 1;
 }
 
+export function detectStudyMediaKind(
+  fileName: string,
+  mimeType: string,
+  explicitHint?: string
+): string {
+  const hint = (explicitHint || '').trim().toLowerCase();
+  if (
+    ['photo', 'video', 'text', 'pdf', 'word', 'excel', 'ppt', 'recording'].includes(hint)
+  ) {
+    return hint;
+  }
+  const lower = (fileName || '').toLowerCase();
+  const mime = (mimeType || '').toLowerCase();
+  if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(lower)) return 'photo';
+  if (mime.startsWith('video/') || /\.(mp4|mov|mkv|avi|m4v)$/.test(lower)) return 'video';
+  if (
+    mime.startsWith('audio/') ||
+    /\.(mp3|wav|ogg|m4a|aac|flac)$/.test(lower) ||
+    (mime === 'video/webm' && lower.includes('recording')) ||
+    (mime.includes('webm') && (lower.includes('rec') || lower.includes('audio')))
+  ) {
+    return 'recording';
+  }
+  if (mime.includes('webm')) return 'video';
+  if (mime.includes('pdf') || lower.endsWith('.pdf')) return 'pdf';
+  if (
+    mime.includes('wordprocessingml') ||
+    mime.includes('msword') ||
+    /\.(docx?|rtf|odt)$/.test(lower)
+  ) {
+    return 'word';
+  }
+  if (
+    mime.includes('spreadsheetml') ||
+    mime.includes('ms-excel') ||
+    mime.includes('csv') ||
+    /\.(xlsx?|csv|ods)$/.test(lower)
+  ) {
+    return 'excel';
+  }
+  if (
+    mime.includes('presentationml') ||
+    mime.includes('ms-powerpoint') ||
+    /\.(pptx?|odp)$/.test(lower)
+  ) {
+    return 'ppt';
+  }
+  if (mime.startsWith('text/') || /\.(txt|md|markdown|log|tex)$/.test(lower)) return 'text';
+  return 'pdf';
+}
+
 export async function createStudyMaterial(data: {
   uploaderId: number;
   uploaderEmail: string;
@@ -1307,6 +1402,7 @@ export async function createStudyMaterial(data: {
   fileName: string;
   storedFileName: string;
   mimeType: string;
+  mediaKind?: string;
   fileSizeBytes: number;
   pageCount?: number;
   hourlyRentCost: number;
@@ -1322,6 +1418,7 @@ export async function createStudyMaterial(data: {
     ? Math.round(rawBuy)
     : Math.max(hourlyRentCost, Math.min(5000, hourlyRentCost * 4));
   const cleanDescription = (data.description || '').trim().slice(0, 1000);
+  const mediaKind = detectStudyMediaKind(data.fileName, data.mimeType, data.mediaKind);
 
   const rewards = await getPointRewardsConfig();
   const pointsAwarded =
@@ -1349,6 +1446,7 @@ export async function createStudyMaterial(data: {
         fileName: data.fileName,
         storedFileName: data.storedFileName,
         mimeType: data.mimeType,
+        mediaKind,
         fileSizeBytes: data.fileSizeBytes,
         pageCount,
         hourlyRentCost,
@@ -1376,6 +1474,7 @@ export async function createStudyMaterial(data: {
       fileName: data.fileName,
       storedFileName: data.storedFileName,
       mimeType: data.mimeType,
+      mediaKind,
       fileSizeBytes: data.fileSizeBytes,
       pageCount,
       hourlyRentCost,

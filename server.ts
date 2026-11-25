@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as dotenv from 'dotenv';
@@ -21,6 +22,7 @@ import {
 } from './src/db/index.ts';
 import { CONSTANT_ADMIN_LICENSE_KEY, UPLOADS_DIR } from './src/db/localStore.ts';
 import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
+import { richHtmlToPlainText, sanitizeRichHtmlServer } from './src/lib/htmlSanitizer.ts';
 import {
   authorizeAdminEmail,
   cancelProAndRequestRefund,
@@ -75,6 +77,7 @@ import {
   deleteTask,
   deleteToolMessage,
   detectPdfPageCountFromBuffer,
+  detectStudyMediaKind,
   getAdminAnalytics,
   getContactMessages,
   getContributorFileById,
@@ -109,6 +112,35 @@ import {
   updateStudyMaterialDriveInfo,
   updateTask,
 } from './src/db/study.ts';
+import {
+  addMembersToForumGroup,
+  createForumAttachmentRecord,
+  createForumGroupRoom,
+  createForumPost,
+  createForumReply,
+  getForumAttachmentForUser,
+  getForumPostDetail,
+  getOrCreateDmRoom,
+  listForumRoomPosts,
+  listUserForumRooms,
+  markForumReplySatisfactory,
+  markForumRoomRead,
+  submitQuestionAttempt,
+  toggleForumReplyVote,
+} from './src/db/forum.ts';
+import {
+  createFormulaEquation,
+  deleteFormulaEquation,
+  listFormulaEquations,
+  updateFormulaEquation,
+} from './src/db/formulas.ts';
+import {
+  attachForumWebSocketServer,
+  emitForumRoomEvent,
+  emitForumUserEvent,
+  registerSseForumClient,
+  subscribeUserToRoomRealtime,
+} from './src/realtime/forumWs.ts';
 
 dotenv.config();
 
@@ -146,7 +178,7 @@ async function startServer() {
     );
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-material-title, x-material-subject, x-material-category, x-material-description, x-file-name, x-mime-type, x-page-count, x-hourly-rent-cost, x-buy-cost, x-folder-id, x-folder-path'
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-material-title, x-material-subject, x-material-category, x-material-description, x-file-name, x-mime-type, x-media-kind, x-attachment-kind, x-page-count, x-hourly-rent-cost, x-buy-cost, x-folder-id, x-folder-path'
     );
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
@@ -190,7 +222,7 @@ async function startServer() {
   app.get('/api/point-rewards', async (_req, res) => {
     try {
       const config = await getPointRewardsConfig();
-      res.json(config);
+      res.json({ ...config, rewards: config });
     } catch (error: unknown) {
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to load point rewards configuration',
@@ -198,7 +230,7 @@ async function startServer() {
     }
   });
 
-  // Streaming binary upload route for large Study Material Notes & Question Papers (before express.json)
+  // Streaming binary upload route for large Study Material Notes, Question Papers & Multi-Format Media (before express.json)
   app.post('/api/study-materials/upload', requireAuth, async (req: AuthRequest, res) => {
     const title = safeHeaderDecode(req.headers['x-material-title'], 'Untitled Material').slice(0, 180);
     const subject = safeHeaderDecode(req.headers['x-material-subject'], 'General').slice(0, 80);
@@ -211,6 +243,7 @@ async function startServer() {
       req.headers['x-mime-type'],
       'application/octet-stream'
     ).slice(0, 120);
+    const rawMediaKind = safeHeaderDecode(req.headers['x-media-kind'], '').slice(0, 30);
     const rawHourlyRent = Number(safeHeaderDecode(req.headers['x-hourly-rent-cost'], '10'));
     const rawPageCount = Number(safeHeaderDecode(req.headers['x-page-count'], '0'));
     const rawBuyCost = Number(safeHeaderDecode(req.headers['x-buy-cost'], '0'));
@@ -292,6 +325,7 @@ async function startServer() {
             fileName: originalFileName,
             storedFileName,
             mimeType,
+            mediaKind: detectStudyMediaKind(originalFileName, mimeType, rawMediaKind),
             fileSizeBytes: totalBytes,
             pageCount: detectedPages,
             hourlyRentCost: Math.round(rawHourlyRent),
@@ -380,6 +414,133 @@ async function startServer() {
           if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
           res.status(500).json({
             error: err instanceof Error ? err.message : 'Failed to save contributor file',
+          });
+        }
+      });
+    });
+
+    req.on('error', () => {
+      aborted = true;
+      writeStream.destroy();
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    });
+  });
+
+  // Streaming binary upload route for Forum & Tool Mail Images / PDFs (before express.json)
+  app.post('/api/forum/attachments/upload', requireAuth, async (req: AuthRequest, res) => {
+    const originalFileName = path
+      .basename(safeHeaderDecode(req.headers['x-file-name'], 'attachment.bin'))
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    const rawMime = safeHeaderDecode(
+      req.headers['x-mime-type'],
+      'application/octet-stream'
+    ).slice(0, 120);
+    const lowerName = originalFileName.toLowerCase();
+    const isPdf = rawMime === 'application/pdf' || lowerName.endsWith('.pdf');
+    const isImage =
+      ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'].includes(rawMime.toLowerCase()) ||
+      /\.(png|jpe?g|webp|gif)$/.test(lowerName);
+
+    if (!isPdf && !isImage) {
+      return res.status(400).json({
+        error: 'Forum attachments support PNG, JPEG, WEBP, GIF images and PDF files.',
+      });
+    }
+
+    const MAX_BYTES = 25 * 1024 * 1024;
+    const storedFileName = `forum-${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${originalFileName}`;
+    const fullPath = path.resolve(UPLOADS_DIR, storedFileName);
+    if (!fullPath.startsWith(path.resolve(UPLOADS_DIR) + path.sep)) {
+      return res.status(400).json({ error: 'Invalid upload target path.' });
+    }
+    const writeStream = fs.createWriteStream(fullPath);
+    let totalBytes = 0;
+    let aborted = false;
+
+    req.on('data', (chunk: Buffer) => {
+      if (aborted) return;
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_BYTES) {
+        aborted = true;
+        writeStream.destroy();
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+        res.status(413).json({ error: 'Attachment exceeds 25 MB limit.' });
+        return;
+      }
+      writeStream.write(chunk);
+    });
+
+    req.on('end', async () => {
+      if (aborted) return;
+      writeStream.end(async () => {
+        if (totalBytes === 0) {
+          if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+          return res.status(400).json({ error: 'Uploaded attachment is empty.' });
+        }
+        try {
+          // Validate magic bytes
+          const fd = fs.openSync(fullPath, 'r');
+          let headerBuf = Buffer.alloc(16);
+          try {
+            const readLen = fs.readSync(fd, headerBuf, 0, 16, 0);
+            headerBuf = headerBuf.subarray(0, readLen);
+          } finally {
+            fs.closeSync(fd);
+          }
+          const isMagicPdf = headerBuf.subarray(0, 4).toString('latin1') === '%PDF';
+          const isMagicPng = headerBuf.length >= 4 && headerBuf[0] === 0x89 && headerBuf[1] === 0x50 && headerBuf[2] === 0x4e && headerBuf[3] === 0x47;
+          const isMagicJpg = headerBuf.length >= 3 && headerBuf[0] === 0xff && headerBuf[1] === 0xd8 && headerBuf[2] === 0xff;
+          const isMagicGif = headerBuf.subarray(0, 3).toString('latin1') === 'GIF';
+          const isMagicWebp = headerBuf.subarray(0, 4).toString('latin1') === 'RIFF';
+
+          if (isPdf && !isMagicPdf) {
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+            return res.status(400).json({ error: 'Invalid PDF file signature.' });
+          }
+          if (isImage && !(isMagicPng || isMagicJpg || isMagicGif || isMagicWebp)) {
+            if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+            return res.status(400).json({ error: 'Invalid image file signature (PNG/JPEG/GIF/WEBP only).' });
+          }
+
+          let detectedPages = 1;
+          if (isPdf) {
+            const pdfFd = fs.openSync(fullPath, 'r');
+            try {
+              const readLen = Math.min(totalBytes, 6 * 1024 * 1024);
+              const sample = Buffer.alloc(readLen);
+              fs.readSync(pdfFd, sample, 0, readLen, 0);
+              detectedPages = detectPdfPageCountFromBuffer(sample);
+            } finally {
+              fs.closeSync(pdfFd);
+            }
+          }
+
+          const finalMime = isPdf
+            ? 'application/pdf'
+            : rawMime.startsWith('image/')
+              ? rawMime
+              : isMagicPng
+                ? 'image/png'
+                : isMagicGif
+                  ? 'image/gif'
+                  : isMagicWebp
+                    ? 'image/webp'
+                    : 'image/jpeg';
+
+          const record = await createForumAttachmentRecord({
+            uploaderId: req.dbUser!.id,
+            fileName: originalFileName,
+            storedFileName,
+            mimeType: finalMime,
+            fileSizeBytes: totalBytes,
+            pageCount: detectedPages,
+            kind: isPdf ? 'pdf' : 'image',
+          });
+          res.status(201).json(record);
+        } catch (err) {
+          if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+          res.status(500).json({
+            error: err instanceof Error ? err.message : 'Failed to save attachment',
           });
         }
       });
@@ -1043,11 +1204,18 @@ async function startServer() {
         isAdminMail = false,
         subject,
         body,
+        bodyHtml,
+        attachments,
+        questionSpec,
         attachmentTitle,
         attachmentNoteId,
       } = req.body || {};
 
-      if (!subject || !body) {
+      const safeHtml = typeof bodyHtml === 'string' && bodyHtml.trim() ? sanitizeRichHtmlServer(bodyHtml) : '';
+      const plainFromHtml = safeHtml ? richHtmlToPlainText(safeHtml) : '';
+      const effectiveBody = String(body || plainFromHtml || '').trim();
+
+      if (!subject || !effectiveBody) {
         return res.status(400).json({ error: 'Subject and message body are required.' });
       }
 
@@ -1070,11 +1238,28 @@ async function startServer() {
         visibility: vis,
         isAdminMail: Boolean(isAdminMail),
         subject: String(subject).slice(0, 200),
-        body: String(body).slice(0, 5000),
+        body: effectiveBody.slice(0, 8000),
+        bodyHtml: safeHtml,
+        attachmentsJson: Array.isArray(attachments) ? attachments : [],
+        questionSpecJson:
+          questionSpec && typeof questionSpec === 'object'
+            ? (questionSpec as Record<string, unknown>)
+            : null,
         attachmentTitle:
           typeof attachmentTitle === 'string' ? attachmentTitle.slice(0, 180) : '',
         attachmentNoteId: attachmentNoteId ? Number(attachmentNoteId) : null,
       });
+
+      const createdItems = Array.isArray(created) ? created : [created];
+      for (const item of createdItems as { recipientId?: number | null }[]) {
+        if (item?.recipientId) {
+          emitForumUserEvent(item.recipientId, {
+            type: 'mail:new',
+            message: item as any,
+          });
+        }
+      }
+
       res.status(201).json(created);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to send message';
@@ -1249,9 +1434,19 @@ async function startServer() {
         });
       }
 
-      const fullPath = path.join(UPLOADS_DIR, item.storedFileName);
+      const fullPath = path.resolve(UPLOADS_DIR, path.basename(item.storedFileName));
+      if (!fullPath.startsWith(path.resolve(UPLOADS_DIR) + path.sep)) {
+        return res.status(403).json({ error: 'Invalid file path.' });
+      }
       if (!fs.existsSync(fullPath)) {
         return res.status(404).json({ error: 'Stored file missing on server disk.' });
+      }
+      const isInline = req.query.inline === '1' || req.query.inline === 'true';
+      if (isInline) {
+        res.setHeader('Content-Type', item.mimeType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${item.fileName.replace(/"/g, '')}"`);
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        return res.sendFile(fullPath);
       }
       res.download(fullPath, item.fileName);
     } catch (error: unknown) {
@@ -1597,7 +1792,7 @@ async function startServer() {
     async (req: AuthRequest, res) => {
       try {
         const config = await setPointRewardsConfig(req.body || {});
-        res.json(config);
+        res.json({ ...config, rewards: config });
       } catch (error: unknown) {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'Failed to update point rewards configuration',
@@ -1998,6 +2193,394 @@ async function startServer() {
     }
   });
 
+  // --- STUDY FORUM (GLOBAL ARENA, STUDY GROUPS, 1-TO-1 DMs, QUESTION SOLVER & REALTIME) ---
+  app.get('/api/forum/attachments/:id/file', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid attachment ID' });
+      const att = await getForumAttachmentForUser(id, req.dbUser!.id);
+      if (!att) return res.status(404).json({ error: 'Attachment not found or access denied.' });
+      const fullPath = path.resolve(UPLOADS_DIR, path.basename(att.storedFileName));
+      if (!fullPath.startsWith(path.resolve(UPLOADS_DIR) + path.sep) || !fs.existsSync(fullPath)) {
+        return res.status(404).json({ error: 'Attachment file missing.' });
+      }
+      res.setHeader('Content-Type', att.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${att.fileName.replace(/"/g, '')}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.sendFile(fullPath);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to stream attachment',
+      });
+    }
+  });
+
+  app.get('/api/forum/events', requireAuth, async (req: AuthRequest, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const cleanup = await registerSseForumClient(req.dbUser!, res);
+    req.on('close', () => {
+      cleanup();
+    });
+  });
+
+  app.get('/api/forum/rooms', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const rooms = await listUserForumRooms(req.dbUser!.id);
+      res.json(rooms);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load forum rooms',
+      });
+    }
+  });
+
+  app.post('/api/forum/groups', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { title, description, subject, memberIds } = req.body || {};
+      const room = await createForumGroupRoom({
+        creatorId: req.dbUser!.id,
+        title: String(title || ''),
+        description: typeof description === 'string' ? description : '',
+        subject: typeof subject === 'string' ? subject : 'General',
+        memberIds: Array.isArray(memberIds) ? memberIds.map(Number) : [],
+      });
+      for (const m of room.members || []) {
+        await subscribeUserToRoomRealtime(m.id, room.id);
+        emitForumUserEvent(m.id, { type: 'room:created', room });
+      }
+      res.status(201).json(room);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to create study group',
+      });
+    }
+  });
+
+  app.post('/api/forum/groups/:id/members', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const roomId = Number(req.params.id);
+      if (!Number.isFinite(roomId)) return res.status(400).json({ error: 'Invalid group ID' });
+      const { memberIds } = req.body || {};
+      const result = await addMembersToForumGroup({
+        roomId,
+        actorId: req.dbUser!.id,
+        memberIds: Array.isArray(memberIds) ? memberIds.map(Number) : [],
+      });
+      for (const uid of result.addedUserIds) {
+        await subscribeUserToRoomRealtime(uid, roomId);
+        emitForumUserEvent(uid, { type: 'room:created', room: result.room });
+      }
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to add group members';
+      res.status(msg.includes('denied') ? 403 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/api/forum/dm', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const targetUserId = Number(req.body?.targetUserId);
+      if (!Number.isFinite(targetUserId)) {
+        return res.status(400).json({ error: 'targetUserId is required.' });
+      }
+      const room = await getOrCreateDmRoom({
+        userId: req.dbUser!.id,
+        targetUserId,
+      });
+      await subscribeUserToRoomRealtime(req.dbUser!.id, room.id);
+      await subscribeUserToRoomRealtime(targetUserId, room.id);
+      emitForumUserEvent(targetUserId, { type: 'room:created', room });
+      res.status(201).json(room);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to start direct chat';
+      res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/api/forum/rooms/:id/read', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const roomId = Number(req.params.id);
+      if (!Number.isFinite(roomId)) return res.status(400).json({ error: 'Invalid room ID' });
+      await markForumRoomRead(roomId, req.dbUser!.id);
+      res.json({ ok: true });
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to update read cursor',
+      });
+    }
+  });
+
+  app.get('/api/forum/rooms/:id/posts', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const roomId = Number(req.params.id);
+      if (!Number.isFinite(roomId)) return res.status(400).json({ error: 'Invalid room ID' });
+      const posts = await listForumRoomPosts({
+        roomId,
+        userId: req.dbUser!.id,
+        postKind: typeof req.query.kind === 'string' ? req.query.kind : undefined,
+        examBoard: typeof req.query.exam === 'string' ? req.query.exam : undefined,
+        subject: typeof req.query.subject === 'string' ? req.query.subject : undefined,
+        solved: typeof req.query.solved === 'string' ? req.query.solved : undefined,
+      });
+      res.json(posts);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to load forum posts';
+      res.status(msg.includes('denied') ? 403 : 500).json({ error: msg });
+    }
+  });
+
+  app.post('/api/forum/posts', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const {
+        roomId,
+        postKind,
+        title,
+        contentHtml,
+        subject,
+        examBoard,
+        questionSpec,
+        answerKey,
+        officialExplanationHtml,
+        attachmentIds,
+      } = req.body || {};
+      const parsedRoomId = Number(roomId);
+      if (!Number.isFinite(parsedRoomId)) {
+        return res.status(400).json({ error: 'roomId is required.' });
+      }
+      const created = await createForumPost({
+        roomId: parsedRoomId,
+        authorId: req.dbUser!.id,
+        postKind: postKind === 'question' ? 'question' : 'message',
+        title: String(title || ''),
+        contentHtml: String(contentHtml || ''),
+        subject: typeof subject === 'string' ? subject : undefined,
+        examBoard: typeof examBoard === 'string' ? examBoard : undefined,
+        questionSpec: questionSpec || null,
+        answerKey: answerKey || null,
+        officialExplanationHtml:
+          typeof officialExplanationHtml === 'string' ? officialExplanationHtml : '',
+        attachmentIds: Array.isArray(attachmentIds) ? attachmentIds.map(Number) : [],
+      });
+      emitForumRoomEvent(parsedRoomId, {
+        type: 'post:created',
+        roomId: parsedRoomId,
+        post: { ...created, answerKey: null },
+      });
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to create post';
+      res.status(msg.includes('denied') ? 403 : 400).json({ error: msg });
+    }
+  });
+
+  app.get('/api/forum/posts/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const postId = Number(req.params.id);
+      if (!Number.isFinite(postId)) return res.status(400).json({ error: 'Invalid post ID' });
+      const post = await getForumPostDetail(postId, req.dbUser!.id);
+      res.json(post);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to load post detail';
+      res.status(msg.includes('access') ? 403 : msg.includes('not found') ? 404 : 500).json({
+        error: msg,
+      });
+    }
+  });
+
+  app.post('/api/forum/posts/:id/attempt', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const postId = Number(req.params.id);
+      if (!Number.isFinite(postId)) return res.status(400).json({ error: 'Invalid post ID' });
+      const { attemptPayload } = req.body || {};
+      const result = await submitQuestionAttempt({
+        postId,
+        userId: req.dbUser!.id,
+        attemptPayload: attemptPayload || {},
+      });
+      emitForumRoomEvent(result.roomId, {
+        type: 'attempt:created',
+        roomId: result.roomId,
+        postId,
+        attemptCount: result.attemptCount,
+      });
+      res.status(201).json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to submit attempt';
+      res.status(msg.includes('denied') ? 403 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/api/forum/posts/:id/replies', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const postId = Number(req.params.id);
+      if (!Number.isFinite(postId)) return res.status(400).json({ error: 'Invalid post ID' });
+      const { parentReplyId, replyKind, contentHtml, attachmentIds, attemptPayload } =
+        req.body || {};
+      const kind =
+        replyKind === 'solution' ||
+        replyKind === 'refinement' ||
+        replyKind === 'message'
+          ? replyKind
+          : 'opinion';
+      const result = await createForumReply({
+        postId,
+        authorId: req.dbUser!.id,
+        parentReplyId: parentReplyId ? Number(parentReplyId) : null,
+        replyKind: kind,
+        contentHtml: String(contentHtml || ''),
+        attachmentIds: Array.isArray(attachmentIds) ? attachmentIds.map(Number) : [],
+        attemptPayload: attemptPayload || null,
+      });
+      emitForumRoomEvent(result.roomId, {
+        type: 'reply:created',
+        roomId: result.roomId,
+        postId,
+        reply: result.reply,
+      });
+      res.status(201).json(result.reply);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to post reply';
+      res.status(msg.includes('denied') ? 403 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/api/forum/replies/:id/vote', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const replyId = Number(req.params.id);
+      if (!Number.isFinite(replyId)) return res.status(400).json({ error: 'Invalid reply ID' });
+      const result = await toggleForumReplyVote(replyId, req.dbUser!.id);
+      emitForumRoomEvent(result.roomId, {
+        type: 'reply:voted',
+        roomId: result.roomId,
+        postId: result.postId,
+        replyId: result.replyId,
+        upvoteCount: result.upvoteCount,
+        userId: req.dbUser!.id,
+        voted: result.voted,
+      });
+      res.json(result);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to toggle upvote',
+      });
+    }
+  });
+
+  app.post('/api/forum/posts/:id/satisfy', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const postId = Number(req.params.id);
+      const replyId = Number(req.body?.replyId);
+      if (!Number.isFinite(postId) || !Number.isFinite(replyId)) {
+        return res.status(400).json({ error: 'Valid postId and replyId are required.' });
+      }
+      const result = await markForumReplySatisfactory({
+        postId,
+        replyId,
+        actorUserId: req.dbUser!.id,
+      });
+      emitForumRoomEvent(result.roomId, {
+        type: 'post:satisfied',
+        roomId: result.roomId,
+        postId: result.postId,
+        replyId: result.replyId,
+        solverUserId: result.solverUserId,
+        pointsAwarded: result.pointsAwarded,
+      });
+      emitForumUserEvent(result.solverUserId, {
+        type: 'points:updated',
+        userId: result.solverUserId,
+        points: result.solverNewPoints ?? 0,
+        delta: result.pointsAwarded,
+        reason: 'Forum Satisfactory Answer',
+      });
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to mark answer satisfactory';
+      const status = msg.includes('Only the question author') || msg.includes('Self-award') ? 403 : 400;
+      res.status(status).json({ error: msg });
+    }
+  });
+
+  // --- FORMULA EQUATION CALCULATOR (Contributor-Defined Equations & Parameter Matching) ---
+  app.get('/api/formulas', optionalAuth, async (_req, res) => {
+    try {
+      const rows = await listFormulaEquations();
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load formulas',
+      });
+    }
+  });
+
+  app.post('/api/formulas', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const isContributor =
+        req.dbUser?.role === 'super' ||
+        req.dbUser?.role === 'admin' ||
+        (req.dbUser?.role === 'contributor' && req.dbUser?.contributorApproved);
+      if (!isContributor) {
+        return res.status(403).json({
+          error: 'Defining formula equations requires approved Contributor, Admin, or Super role.',
+        });
+      }
+      const { title, subject, expression, description, symbols } = req.body || {};
+      const created = await createFormulaEquation({
+        authorId: req.dbUser!.id,
+        authorName: req.dbUser!.displayName,
+        authorUsername: req.dbUser!.username,
+        title: String(title || ''),
+        subject: String(subject || 'General'),
+        expression: String(expression || ''),
+        description: String(description || ''),
+        symbols: Array.isArray(symbols) ? symbols : [],
+      });
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to create formula equation',
+      });
+    }
+  });
+
+  app.put('/api/formulas/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid formula ID' });
+      const isAdminOrSuper = req.dbUser?.role === 'admin' || req.dbUser?.role === 'super';
+      const updated = await updateFormulaEquation({
+        id,
+        actorId: req.dbUser!.id,
+        isAdminOrSuper,
+        ...(req.body?.title !== undefined ? { title: String(req.body.title) } : {}),
+        ...(req.body?.subject !== undefined ? { subject: String(req.body.subject) } : {}),
+        ...(req.body?.expression !== undefined ? { expression: String(req.body.expression) } : {}),
+        ...(req.body?.description !== undefined ? { description: String(req.body.description) } : {}),
+        ...(Array.isArray(req.body?.symbols) ? { symbols: req.body.symbols } : {}),
+      });
+      res.json(updated);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to update formula';
+      res.status(msg.includes('Only the author') ? 403 : 400).json({ error: msg });
+    }
+  });
+
+  app.delete('/api/formulas/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid formula ID' });
+      const isAdminOrSuper = req.dbUser?.role === 'admin' || req.dbUser?.role === 'super';
+      await deleteFormulaEquation(id, req.dbUser!.id, isAdminOrSuper);
+      res.json({ ok: true });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to delete formula';
+      res.status(msg.includes('Only the author') ? 403 : 400).json({ error: msg });
+    }
+  });
+
   // Return structured JSON 404 for unknown /api/* endpoints instead of SPA HTML
   app.all('/api/*', (_req, res) => {
     res.status(404).json({ error: 'API endpoint not found.' });
@@ -2129,7 +2712,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = http.createServer(app);
+  attachForumWebSocketServer(httpServer);
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`ASAN-Study_tool server running on http://0.0.0.0:${PORT}`);
   });
 }

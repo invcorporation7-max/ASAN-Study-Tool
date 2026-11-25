@@ -26,6 +26,12 @@ import {
   syncScheduleToGoogleSheet,
   uploadFileToDriveFolder,
 } from '../lib/api';
+import {
+  DOCS_SCOPE,
+  DRIVE_FILE_SCOPE,
+  MEET_SCOPES,
+  SHEETS_SCOPE,
+} from '../lib/firebase';
 import type {
   CalendarEventItem,
   ExamBlueprintItem,
@@ -77,14 +83,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [deleteFileTarget, setDeleteFileTarget] = useState<DriveFileItem | null>(null);
 
-  const ensureTokenAndFolder = async (): Promise<{
+  const ensureTokenAndFolder = async (
+    requiredScopes: string[] = [DRIVE_FILE_SCOPE]
+  ): Promise<{
     folderId: string;
     webViewLink?: string;
   } | null> => {
-    if (!workspaceToken) {
-      const tok = await connectWorkspace();
-      if (!tok) return null;
-    }
+    const tok = await connectWorkspace(requiredScopes);
+    if (!tok) return null;
     const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
     setFolderInfo(folder);
     if (folder.id !== dbUser?.driveFolderId) {
@@ -102,7 +108,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -131,7 +137,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -152,6 +158,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     if (!deleteFileTarget) return;
     setBusy(true);
     try {
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE]);
+      if (!tok) {
+        setBusy(false);
+        return;
+      }
       await deleteDriveFile(deleteFileTarget.id);
       setDriveFiles((prev) => prev.filter((f) => f.id !== deleteFileTarget.id));
       setStatusMsg(`Deleted "${deleteFileTarget.name}" from ASAN-user-content Drive folder.`);
@@ -173,7 +184,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE, DOCS_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -197,7 +208,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -251,7 +262,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -278,7 +289,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      const info = await ensureTokenAndFolder();
+      const info = await ensureTokenAndFolder([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
       if (!info) {
         setBusy(false);
         return;
@@ -307,12 +318,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     setStatusMsg(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setBusy(false);
-          return;
-        }
+      const tok = await connectWorkspace(MEET_SCOPES);
+      if (!tok) {
+        setBusy(false);
+        return;
       }
       const space = await createGoogleMeetRoom();
       setMeetRoom({ meetingUri: space.meetingUri, meetingCode: space.meetingCode });

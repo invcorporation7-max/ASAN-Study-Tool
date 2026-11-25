@@ -1,11 +1,13 @@
 export type NavSection =
   | 'dashboard'
   | 'all-apps'
+  | 'forum'
   | 'calendar'
   | 'tasks'
   | 'notes'
   | 'timers'
   | 'calculator'
+  | 'formula-calculator'
   | 'specialized-calculators'
   | 'messages'
   | 'notifications'
@@ -38,6 +40,7 @@ export interface PointRewardsConfig {
   studyMaterialUpload: number;
   examTimer30Min: number;
   contributorWeekly: number;
+  forumSatisfactoryAnswer: number;
 }
 
 export interface DbUser {
@@ -149,11 +152,197 @@ export interface InAppMessageItem {
   recipientSummary: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
+  attachments?: ForumAttachmentItem[];
+  questionSpec?: ForumQuestionSpec | null;
   attachmentTitle: string;
   attachmentNoteId: number | null;
   isRead: boolean;
   createdAt: string;
 }
+
+export type ExamPreset =
+  | 'JEE Main'
+  | 'JEE Advanced'
+  | 'NEET UG'
+  | 'ISC'
+  | 'CBSE'
+  | 'CUET'
+  | 'Competitive / Custom';
+
+export type QuestionFieldType =
+  | 'mcq_single'
+  | 'mcq_multi'
+  | 'integer'
+  | 'double'
+  | 'matrix_match'
+  | 'assertion_reason'
+  | 'comprehension'
+  | 'subjective';
+
+export interface ForumQuestionOption {
+  id: string; // 'A', 'B', 'C', 'D', 'E', 'F'
+  text: string;
+}
+
+export interface ForumQuestionSpec {
+  examPreset: ExamPreset;
+  subject: string;
+  topic?: string;
+  fieldType: QuestionFieldType;
+  options?: ForumQuestionOption[];
+  integerMin?: number;
+  integerMax?: number;
+  numericTolerance?: number;
+  unit?: string;
+  matrixRows?: { id: string; label: string }[]; // e.g., P, Q, R, S
+  matrixCols?: { id: string; label: string }[]; // e.g., 1, 2, 3, 4, 5
+  matrixMultiMatch?: boolean;
+  assertionText?: string;
+  reasonText?: string;
+  passageText?: string;
+  subQuestionType?: 'mcq_single' | 'mcq_multi' | 'integer' | 'double' | 'subjective';
+  positiveMarks?: number;
+  negativeMarks?: number;
+  revealMode: 'after_attempt' | 'immediate';
+  hasOfficialKey?: boolean;
+}
+
+export interface ForumAnswerKey {
+  selectedOption?: string;
+  selectedOptions?: string[];
+  integerValue?: number | null;
+  doubleValue?: number | null;
+  matrixMap?: Record<string, string[]>;
+  subjectiveAnswer?: string;
+}
+
+export interface ForumAttemptPayload {
+  selectedOption?: string;
+  selectedOptions?: string[];
+  integerValue?: string;
+  doubleValue?: string;
+  matrixMap?: Record<string, string[]>;
+  subjectiveText?: string;
+}
+
+export interface ForumAttachmentItem {
+  id: number;
+  postId?: number | null;
+  replyId?: number | null;
+  messageId?: number | null;
+  uploaderId: number;
+  fileName: string;
+  storedFileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  pageCount: number;
+  kind: 'image' | 'pdf';
+  url: string;
+  createdAt: string;
+}
+
+export interface ForumAuthorSummary {
+  id: number;
+  displayName: string;
+  username: string;
+  shortUid: string;
+  photoUrl: string;
+  plan: string;
+  role: string;
+  contributorApproved: boolean;
+}
+
+export interface ForumRoomMemberSummary extends ForumAuthorSummary {
+  memberRole: 'owner' | 'member';
+  joinedAt: string;
+}
+
+export interface ForumRoomItem {
+  id: number;
+  roomType: 'global_qa' | 'group' | 'dm';
+  title: string;
+  description: string;
+  subject: string;
+  dmKey: string;
+  createdById: number;
+  memberCount: number;
+  unreadCount: number;
+  lastMessagePreview?: string;
+  lastActivityAt: string;
+  members?: ForumRoomMemberSummary[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ForumAttemptItem {
+  id: number;
+  postId: number;
+  userId: number;
+  author?: ForumAuthorSummary;
+  attemptPayload: ForumAttemptPayload;
+  isCorrect: boolean | null;
+  scoreNote: string;
+  createdAt: string;
+}
+
+export interface ForumReplyItem {
+  id: number;
+  postId: number;
+  authorId: number;
+  author: ForumAuthorSummary;
+  parentReplyId: number | null;
+  replyKind: 'solution' | 'opinion' | 'refinement' | 'message';
+  contentHtml: string;
+  contentText: string;
+  attachments: ForumAttachmentItem[];
+  attemptPayload?: ForumAttemptPayload | null;
+  isAcceptedSolution: boolean;
+  acceptedPointsAwarded: number;
+  upvoteCount: number;
+  viewerHasUpvoted: boolean;
+  createdAt: string;
+}
+
+export interface ForumPostItem {
+  id: number;
+  roomId: number;
+  authorId: number;
+  author: ForumAuthorSummary;
+  postKind: 'message' | 'question';
+  title: string;
+  contentHtml: string;
+  contentText: string;
+  subject: string;
+  examBoard: string;
+  questionSpec: ForumQuestionSpec | null;
+  answerKey: ForumAnswerKey | null; // Hidden server-side until attempted or immediate/author
+  officialExplanationHtml: string;
+  attachments: ForumAttachmentItem[];
+  isSolved: boolean;
+  acceptedReplyId: number | null;
+  replyCount: number;
+  attemptCount: number;
+  myAttempt: ForumAttemptItem | null;
+  replies?: ForumReplyItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ForumSocketEvent =
+  | { type: 'ws:ready'; userId: number; connectionId: string }
+  | { type: 'room:created'; room: ForumRoomItem }
+  | { type: 'room:updated'; room: ForumRoomItem }
+  | { type: 'post:created'; roomId: number; post: ForumPostItem }
+  | { type: 'post:updated'; roomId: number; post: ForumPostItem }
+  | { type: 'reply:created'; roomId: number; postId: number; reply: ForumReplyItem }
+  | { type: 'reply:voted'; roomId: number; postId: number; replyId: number; upvoteCount: number; userId: number; voted: boolean }
+  | { type: 'attempt:created'; roomId: number; postId: number; attemptCount: number; attempt?: ForumAttemptItem }
+  | { type: 'post:satisfied'; roomId: number; postId: number; replyId: number; solverUserId: number; pointsAwarded: number; solverNewPoints?: number }
+  | { type: 'typing:state'; roomId: number; postId?: number | null; userId: number; username: string; displayName: string; isTyping: boolean }
+  | { type: 'presence:room'; roomId: number; onlineUserIds: number[] }
+  | { type: 'mail:new'; message: InAppMessageItem }
+  | { type: 'points:updated'; userId: number; points: number; delta: number; reason: string };
 
 export interface ContactMessageItem {
   id: number;
@@ -236,6 +425,7 @@ export interface StudyMaterialItem {
   title: string;
   subject: string;
   category: 'question_paper' | 'study_notes' | 'booklet' | 'archive' | string;
+  mediaKind?: 'pdf' | 'photo' | 'video' | 'text' | 'word' | 'excel' | 'ppt' | 'recording' | string;
   description?: string;
   fileName: string;
   storedFileName: string;
@@ -493,3 +683,24 @@ export interface ProRefundRequestItem {
   reviewedAt: string;
   createdAt: string;
 }
+
+export interface FormulaSymbolDef {
+  symbol: string;
+  meaning: string;
+  unit?: string;
+}
+
+export interface FormulaEquationItem {
+  id: number;
+  authorId: number;
+  authorName: string;
+  authorUsername: string;
+  title: string;
+  subject: string;
+  expression: string;
+  description: string;
+  symbols: FormulaSymbolDef[];
+  createdAt: string;
+  updatedAt: string;
+}
+

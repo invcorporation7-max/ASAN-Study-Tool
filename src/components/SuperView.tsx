@@ -82,6 +82,7 @@ export const SuperView: React.FC = () => {
     studyMaterialUpload: 0,
     examTimer30Min: 10,
     contributorWeekly: 120,
+    forumSatisfactoryAnswer: 25,
   });
   const [savingRewards, setSavingRewards] = useState(false);
   const [syncingMaster, setSyncingMaster] = useState(false);
@@ -95,16 +96,24 @@ export const SuperView: React.FC = () => {
         apiFetch<{ licenseKeys?: LicenseKeyItem[] }>('/api/admin/overview').catch(() => ({
           licenseKeys: [],
         })),
-        apiFetch<{ rewards?: PointRewardsConfig }>('/api/point-rewards').catch(() => ({
+        apiFetch<PointRewardsConfig | { rewards?: PointRewardsConfig }>('/api/point-rewards').catch(() => ({
           rewards: undefined,
         })),
       ]);
       setLedger(superRes);
       setLicenseKeys(adminRes.licenseKeys || []);
       setWeeklyStipendInput(String(superRes.summary.contributorWeeklyPoints));
-      if (rewardsRes.rewards) {
-        setPointRewards(rewardsRes.rewards);
-        setWeeklyStipendInput(String(rewardsRes.rewards.contributorWeekly));
+      const resolvedRewards =
+        (rewardsRes as { rewards?: PointRewardsConfig })?.rewards ||
+        (typeof (rewardsRes as PointRewardsConfig)?.questionPaperUpload === 'number'
+          ? (rewardsRes as PointRewardsConfig)
+          : undefined);
+      if (resolvedRewards) {
+        setPointRewards({
+          ...resolvedRewards,
+          forumSatisfactoryAnswer: resolvedRewards.forumSatisfactoryAnswer ?? 25,
+        });
+        setWeeklyStipendInput(String(resolvedRewards.contributorWeekly));
       }
       if (superRes.users.length > 0) {
         setPointsUserId((prev) => prev || String(superRes.users[0].id));
@@ -972,6 +981,11 @@ export const SuperView: React.FC = () => {
                     key: 'contributorWeekly',
                     label: 'Contributor Weekly Sunday Stipend',
                     hint: 'Weekly Sunday reward for approved Contributors',
+                  },
+                  {
+                    key: 'forumSatisfactoryAnswer',
+                    label: 'Forum Satisfactory Answer',
+                    hint: 'Awarded when a question author marks another peer’s forum reply as satisfactory (never self)',
                   },
                 ] as const
               ).map((field) => (

@@ -15,6 +15,7 @@ import {
   Crown,
   FolderOpen,
   FolderUp,
+  FunctionSquare,
   Globe,
   GripVertical,
   Info,
@@ -52,6 +53,8 @@ import { CalendarView } from './components/CalendarView';
 import { CasioFx82MsView } from './components/CasioFx82MsView';
 import { ContributorConsoleView } from './components/ContributorConsoleView';
 import { DashboardView } from './components/DashboardView';
+import { FormulaCalculatorView } from './components/FormulaCalculatorView';
+import { ForumView } from './components/ForumView';
 import {
   AboutCreatorsView,
   ContactView,
@@ -78,6 +81,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { initGoogleAnalytics, trackGa4PageView } from './lib/analytics';
 import { apiFetch, apiOptionalAuthFetch, getPasswordSessionToken } from './lib/api';
+import { useForumSocket } from './lib/forumSocket';
 import { loadGuestWorkspace } from './lib/guestStore';
 import {
   SHORTCUT_UPDATED_EVENT,
@@ -148,16 +152,32 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
     icon: Calculator,
   },
   {
+    id: 'formula-calculator',
+    label: 'Formula Calculator',
+    description:
+      'Contributor-defined formula & parameter-matching calculator + wide symbolic circle & conic solver.',
+    category: 'Core Study Workspace',
+    icon: FunctionSquare,
+  },
+  {
+    id: 'forum',
+    label: 'Study Forum',
+    description:
+      'Real-time Global Q&A Arena, Study Groups, 1-to-1 DMs, competitive question fields & Summernote formatting.',
+    category: 'Community & Account',
+    icon: Users,
+  },
+  {
     id: 'messages',
     label: 'Tool Mail',
-    description: 'In-app study mail, attachments, and contributor requests.',
+    description: 'In-app study mail, rich formatting, attachments, and contributor requests.',
     category: 'Community & Account',
     icon: MessageSquare,
   },
   {
     id: 'study-materials',
     label: 'Study Material Notes',
-    description: 'Upload and unlock student notes & question papers with points.',
+    description: 'Upload and unlock photos, videos, recordings, PDFs, Word, Excel, PPT & text with points.',
     category: 'Community & Account',
     icon: FolderOpen,
   },
@@ -224,6 +244,8 @@ const DEFAULT_PINNED_APPS: NavSection[] = [
   'notes',
   'timers',
   'calculator',
+  'formula-calculator',
+  'forum',
   'study-materials',
   'messages',
 ];
@@ -254,11 +276,13 @@ const SECONDARY_NAV: {
 const SECTION_LABELS: Record<NavSection, string> = {
   dashboard: 'Dashboard',
   'all-apps': 'All Apps',
+  forum: 'Study Forum',
   calendar: 'Calendar',
   tasks: 'My Tasks',
   notes: 'My Notes',
   timers: 'Timers',
   calculator: 'fx-82MS Calc',
+  'formula-calculator': 'Formula Calculator',
   'specialized-calculators': 'Specialized Calculators',
   messages: 'Tool Mail',
   'study-materials': 'Study Material Notes',
@@ -335,6 +359,7 @@ const MainShell: React.FC = () => {
     continueFreeGuest,
     exitGuestToSignIn,
     signOutUser,
+    refreshProfile,
   } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const isProOrAdmin = isEffectiveProOrAdmin;
@@ -557,6 +582,18 @@ const MainShell: React.FC = () => {
       void loadAllStudyData();
     }
   }, [dbUser, isGuest, loadAllStudyData]);
+
+  useForumSocket({
+    enabled: !isGuest && Boolean(dbUser),
+    activeRoomId: null,
+    onEvent: (evt) => {
+      if (evt.type === 'mail:new') {
+        setMessages((prev) => (prev.some((m) => m.id === evt.message.id) ? prev : [evt.message, ...prev]));
+      } else if (evt.type === 'points:updated' && dbUser && evt.userId === dbUser.id) {
+        void refreshProfile();
+      }
+    },
+  });
 
   // Close navbar popovers on outside click
   useEffect(() => {
@@ -1958,6 +1995,8 @@ const MainShell: React.FC = () => {
                 />
               )}
               {section === 'calculator' && <CasioFx82MsView />}
+              {section === 'formula-calculator' && <FormulaCalculatorView />}
+              {section === 'forum' && <ForumView />}
               {section === 'specialized-calculators' &&
                 (isProOrAdmin ? (
                   <SpecializedCalculatorsView />

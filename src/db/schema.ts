@@ -168,6 +168,9 @@ export const userMessages = pgTable('user_messages', {
   recipientSummary: text('recipient_summary').notNull().default(''),
   subject: text('subject').notNull(),
   body: text('body').notNull(),
+  bodyHtml: text('body_html').notNull().default(''),
+  attachmentsJson: jsonb('attachments_json').$type<Record<string, unknown>[]>().notNull().default([]),
+  questionSpecJson: jsonb('question_spec_json').$type<Record<string, unknown> | null>(),
   attachmentTitle: text('attachment_title').notNull().default(''),
   attachmentNoteId: integer('attachment_note_id').references(() => notePages.id, {
     onDelete: 'set null',
@@ -238,6 +241,7 @@ export const studyMaterials = pgTable('study_materials', {
   title: text('title').notNull(),
   subject: text('subject').notNull().default('General'),
   category: text('category').notNull().default('study_notes'), // 'question_paper' | 'study_notes' | 'booklet' | 'archive'
+  mediaKind: text('media_kind').notNull().default('pdf'), // 'pdf' | 'photo' | 'video' | 'text' | 'word' | 'excel' | 'ppt' | 'recording'
   description: text('description').notNull().default(''),
   fileName: text('file_name').notNull(),
   storedFileName: text('stored_file_name').notNull(),
@@ -371,6 +375,132 @@ export const proRefundRequests = pgTable('pro_refund_requests', {
   reviewedByLabel: text('reviewed_by_label').notNull().default(''),
   reviewedAt: text('reviewed_at').notNull().default(''),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const forumRooms = pgTable('forum_rooms', {
+  id: serial('id').primaryKey(),
+  roomType: text('room_type').notNull().default('group'), // 'global_qa' | 'group' | 'dm'
+  title: text('title').notNull(),
+  description: text('description').notNull().default(''),
+  subject: text('subject').notNull().default('General'),
+  dmKey: text('dm_key').notNull().default(''),
+  createdById: integer('created_by_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const forumMembers = pgTable('forum_members', {
+  id: serial('id').primaryKey(),
+  roomId: integer('room_id')
+    .references(() => forumRooms.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  memberRole: text('member_role').notNull().default('member'), // 'owner' | 'member'
+  lastReadAt: timestamp('last_read_at').defaultNow().notNull(),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
+});
+
+export const forumPosts = pgTable('forum_posts', {
+  id: serial('id').primaryKey(),
+  roomId: integer('room_id')
+    .references(() => forumRooms.id, { onDelete: 'cascade' })
+    .notNull(),
+  authorId: integer('author_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  postKind: text('post_kind').notNull().default('question'), // 'question' | 'message'
+  title: text('title').notNull().default(''),
+  contentHtml: text('content_html').notNull().default(''),
+  contentText: text('content_text').notNull().default(''),
+  subject: text('subject').notNull().default('General'),
+  examBoard: text('exam_board').notNull().default('Competitive / Custom'),
+  questionSpec: jsonb('question_spec').$type<Record<string, unknown> | null>(),
+  answerKey: jsonb('answer_key').$type<Record<string, unknown> | null>(),
+  officialExplanationHtml: text('official_explanation_html').notNull().default(''),
+  isSolved: boolean('is_solved').notNull().default(false),
+  acceptedReplyId: integer('accepted_reply_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const forumAttempts = pgTable('forum_attempts', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id')
+    .references(() => forumPosts.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  attemptPayload: jsonb('attempt_payload').$type<Record<string, unknown>>().notNull(),
+  isCorrect: boolean('is_correct'),
+  scoreNote: text('score_note').notNull().default(''),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const forumReplies = pgTable('forum_replies', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id')
+    .references(() => forumPosts.id, { onDelete: 'cascade' })
+    .notNull(),
+  authorId: integer('author_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  parentReplyId: integer('parent_reply_id'),
+  replyKind: text('reply_kind').notNull().default('opinion'), // 'solution' | 'opinion' | 'refinement' | 'message'
+  contentHtml: text('content_html').notNull().default(''),
+  contentText: text('content_text').notNull().default(''),
+  attemptPayload: jsonb('attempt_payload').$type<Record<string, unknown> | null>(),
+  isAcceptedSolution: boolean('is_accepted_solution').notNull().default(false),
+  acceptedPointsAwarded: integer('accepted_points_awarded').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const forumReplyVotes = pgTable('forum_reply_votes', {
+  id: serial('id').primaryKey(),
+  replyId: integer('reply_id')
+    .references(() => forumReplies.id, { onDelete: 'cascade' })
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const forumAttachments = pgTable('forum_attachments', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id').references(() => forumPosts.id, { onDelete: 'cascade' }),
+  replyId: integer('reply_id').references(() => forumReplies.id, { onDelete: 'cascade' }),
+  messageId: integer('message_id').references(() => userMessages.id, { onDelete: 'cascade' }),
+  uploaderId: integer('uploader_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  fileName: text('file_name').notNull(),
+  storedFileName: text('stored_file_name').notNull(),
+  mimeType: text('mime_type').notNull().default('application/octet-stream'),
+  fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).notNull().default(0),
+  pageCount: integer('page_count').notNull().default(1),
+  kind: text('kind').notNull().default('image'), // 'image' | 'pdf'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const formulaEquations = pgTable('formula_equations', {
+  id: serial('id').primaryKey(),
+  authorId: integer('author_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  authorName: text('author_name').notNull().default('Contributor'),
+  authorUsername: text('author_username').notNull().default('contributor'),
+  title: text('title').notNull(),
+  subject: text('subject').notNull().default('Physics'),
+  expression: text('expression').notNull(),
+  description: text('description').notNull().default(''),
+  symbolsJson: jsonb('symbols_json').$type<{ symbol: string; meaning: string; unit?: string }[]>().notNull().default([]),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({

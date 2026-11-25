@@ -131,6 +131,9 @@ export interface StoreUserMessage {
   recipientSummary: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
+  attachmentsJson?: Record<string, unknown>[];
+  questionSpecJson?: Record<string, unknown> | null;
   attachmentTitle: string;
   attachmentNoteId: number | null;
   isRead: boolean;
@@ -189,6 +192,7 @@ export interface StoreStudyMaterial {
   title: string;
   subject: string;
   category: string;
+  mediaKind?: string;
   description?: string;
   fileName: string;
   storedFileName: string;
@@ -304,6 +308,92 @@ export interface StoreProRefundRequest {
   createdAt: Date;
 }
 
+export interface StoreForumRoom {
+  id: number;
+  roomType: string;
+  title: string;
+  description: string;
+  subject: string;
+  dmKey: string;
+  createdById: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StoreForumMember {
+  id: number;
+  roomId: number;
+  userId: number;
+  memberRole: string;
+  lastReadAt: Date;
+  joinedAt: Date;
+}
+
+export interface StoreForumPost {
+  id: number;
+  roomId: number;
+  authorId: number;
+  postKind: string;
+  title: string;
+  contentHtml: string;
+  contentText: string;
+  subject: string;
+  examBoard: string;
+  questionSpec: Record<string, unknown> | null;
+  answerKey: Record<string, unknown> | null;
+  officialExplanationHtml: string;
+  isSolved: boolean;
+  acceptedReplyId: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StoreForumAttempt {
+  id: number;
+  postId: number;
+  userId: number;
+  attemptPayload: Record<string, unknown>;
+  isCorrect: boolean | null;
+  scoreNote: string;
+  createdAt: Date;
+}
+
+export interface StoreForumReply {
+  id: number;
+  postId: number;
+  authorId: number;
+  parentReplyId: number | null;
+  replyKind: string;
+  contentHtml: string;
+  contentText: string;
+  attemptPayload: Record<string, unknown> | null;
+  isAcceptedSolution: boolean;
+  acceptedPointsAwarded: number;
+  createdAt: Date;
+}
+
+export interface StoreForumReplyVote {
+  id: number;
+  replyId: number;
+  userId: number;
+  createdAt: Date;
+}
+
+export interface StoreForumAttachment {
+  id: number;
+  postId: number | null;
+  replyId: number | null;
+  messageId: number | null;
+  uploaderId: number;
+  fileName: string;
+  storedFileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  pageCount: number;
+  kind: string;
+  createdAt: Date;
+}
+
 interface LocalStoreData {
   seq: Record<string, number>;
   settings: {
@@ -329,6 +419,28 @@ interface LocalStoreData {
   contributorFiles: StoreContributorFile[];
   examCountdowns: StoreExamCountdown[];
   proRefundRequests: StoreProRefundRequest[];
+  forumRooms: StoreForumRoom[];
+  forumMembers: StoreForumMember[];
+  forumPosts: StoreForumPost[];
+  forumAttempts: StoreForumAttempt[];
+  forumReplies: StoreForumReply[];
+  forumReplyVotes: StoreForumReplyVote[];
+  forumAttachments: StoreForumAttachment[];
+  formulaEquations: StoreFormulaEquation[];
+}
+
+export interface StoreFormulaEquation {
+  id: number;
+  authorId: number;
+  authorName: string;
+  authorUsername: string;
+  title: string;
+  subject: string;
+  expression: string;
+  description: string;
+  symbolsJson: { symbol: string; meaning: string; unit?: string }[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
@@ -423,6 +535,42 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
   (data.proRefundRequests || []).forEach((rr) => {
     rr.createdAt = toDate(rr.createdAt);
   });
+  data.forumRooms = (data.forumRooms || []).map((r) => ({
+    ...r,
+    createdAt: toDate(r.createdAt),
+    updatedAt: toDate(r.updatedAt),
+  }));
+  data.forumMembers = (data.forumMembers || []).map((m) => ({
+    ...m,
+    lastReadAt: toDate(m.lastReadAt),
+    joinedAt: toDate(m.joinedAt),
+  }));
+  data.forumPosts = (data.forumPosts || []).map((p) => ({
+    ...p,
+    createdAt: toDate(p.createdAt),
+    updatedAt: toDate(p.updatedAt),
+  }));
+  data.forumAttempts = (data.forumAttempts || []).map((a) => ({
+    ...a,
+    createdAt: toDate(a.createdAt),
+  }));
+  data.forumReplies = (data.forumReplies || []).map((rep) => ({
+    ...rep,
+    createdAt: toDate(rep.createdAt),
+  }));
+  data.forumReplyVotes = (data.forumReplyVotes || []).map((v) => ({
+    ...v,
+    createdAt: toDate(v.createdAt),
+  }));
+  data.forumAttachments = (data.forumAttachments || []).map((att) => ({
+    ...att,
+    createdAt: toDate(att.createdAt),
+  }));
+  data.formulaEquations = (data.formulaEquations || []).map((fe) => ({
+    ...fe,
+    createdAt: toDate(fe.createdAt),
+    updatedAt: toDate(fe.updatedAt),
+  }));
   if (!data.settings || typeof data.settings.contributorWeeklyPoints !== 'number') {
     data.settings = { contributorWeeklyPoints: 120 };
   }
@@ -458,6 +606,14 @@ export function getLocalStore(): LocalStoreData {
         contributorFiles: parsed.contributorFiles || [],
         examCountdowns: parsed.examCountdowns || [],
         proRefundRequests: parsed.proRefundRequests || [],
+        forumRooms: parsed.forumRooms || [],
+        forumMembers: parsed.forumMembers || [],
+        forumPosts: parsed.forumPosts || [],
+        forumAttempts: parsed.forumAttempts || [],
+        forumReplies: parsed.forumReplies || [],
+        forumReplyVotes: parsed.forumReplyVotes || [],
+        forumAttachments: parsed.forumAttachments || [],
+        formulaEquations: parsed.formulaEquations || [],
       });
       return cachedStore;
     } catch {
@@ -486,6 +642,14 @@ export function getLocalStore(): LocalStoreData {
     contributorFiles: [],
     examCountdowns: [],
     proRefundRequests: [],
+    forumRooms: [],
+    forumMembers: [],
+    forumPosts: [],
+    forumAttempts: [],
+    forumReplies: [],
+    forumReplyVotes: [],
+    forumAttachments: [],
+    formulaEquations: [],
   };
   persistLocalStore();
   return cachedStore;

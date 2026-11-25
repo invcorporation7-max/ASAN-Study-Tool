@@ -8,6 +8,10 @@ import {
   saveTextToDriveFolder,
 } from '../lib/api';
 import {
+  DRIVE_FILE_SCOPE,
+  SHEETS_SCOPE,
+} from '../lib/firebase';
+import {
   FREE_TIER_MAX_TASKS,
   guestCreateTask,
   guestDeleteTask,
@@ -28,7 +32,6 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     isWorkspaceEnabled,
     workspacePermissions,
     isEffectiveProOrAdmin,
-    workspaceToken,
     connectWorkspace,
     connectBasicDrive,
     updateProfile,
@@ -143,12 +146,10 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     setFeedback(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = isProOrAdmin ? await connectWorkspace() : await connectBasicDrive();
-        if (!tok) {
-          setDriveTxtSaving(false);
-          return;
-        }
+      const tok = await connectBasicDrive();
+      if (!tok) {
+        setDriveTxtSaving(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {
@@ -183,12 +184,10 @@ export const TasksView: React.FC<TasksViewProps> = ({ tasks, onRefresh }) => {
     setSheetUrl(null);
     clearError();
     try {
-      if (!workspaceToken) {
-        const tok = await connectWorkspace();
-        if (!tok) {
-          setSheetExporting(false);
-          return;
-        }
+      const tok = await connectWorkspace([DRIVE_FILE_SCOPE, SHEETS_SCOPE]);
+      if (!tok) {
+        setSheetExporting(false);
+        return;
       }
       const folder = await ensureAppDriveFolder(dbUser?.driveFolderId);
       if (folder.id !== dbUser?.driveFolderId) {

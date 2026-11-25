@@ -1679,8 +1679,10 @@ export function solveCoordinateGeometry(input: CoordInput): CalcResult {
           const p = fourP / 4;
           secondary.push({ label: 'Vertex', value: `(${fmtNum(h)}, ${fmtNum(k)})` });
           secondary.push({ label: 'Focus', value: `(${fmtNum(h)}, ${fmtNum(k + p)})` });
-          secondary.push({ label: 'Directrix', value: `y = ${fmtNum(k - p)}` });
-          secondary.push({ label: 'Latus Rectum', value: fmtNum(Math.abs(fourP)) });
+          secondary.push({ label: 'Equation of Directrix', value: `y = ${fmtNum(k - p)}` });
+          secondary.push({ label: 'Axis of Symmetry', value: `x = ${fmtNum(h)}` });
+          secondary.push({ label: 'Length of Latus Rectum', value: fmtNum(Math.abs(fourP)) });
+          secondary.push({ label: 'Tangent at Vertex', value: `y = ${fmtNum(k)}` });
         } else {
           const k = -E / (2 * C);
           const rhsConst = (E * E) / (4 * C) - F;
@@ -1689,8 +1691,10 @@ export function solveCoordinateGeometry(input: CoordInput): CalcResult {
           const p = fourP / 4;
           secondary.push({ label: 'Vertex', value: `(${fmtNum(h)}, ${fmtNum(k)})` });
           secondary.push({ label: 'Focus', value: `(${fmtNum(h + p)}, ${fmtNum(k)})` });
-          secondary.push({ label: 'Directrix', value: `x = ${fmtNum(h - p)}` });
-          secondary.push({ label: 'Latus Rectum', value: fmtNum(Math.abs(fourP)) });
+          secondary.push({ label: 'Equation of Directrix', value: `x = ${fmtNum(h - p)}` });
+          secondary.push({ label: 'Axis of Symmetry', value: `y = ${fmtNum(k)}` });
+          secondary.push({ label: 'Length of Latus Rectum', value: fmtNum(Math.abs(fourP)) });
+          secondary.push({ label: 'Tangent at Vertex', value: `x = ${fmtNum(h)}` });
         }
       }
     } else {
@@ -1710,24 +1714,50 @@ export function solveCoordinateGeometry(input: CoordInput): CalcResult {
           const aAxis = Math.sqrt(Math.max(q1, q2));
           const bAxis = Math.sqrt(Math.min(q1, q2));
           const eEcc = Math.sqrt(Math.max(0, 1 - (bAxis * bAxis) / (aAxis * aAxis)));
+          const lr = (2 * bAxis * bAxis) / aAxis;
           classification = isCircle ? 'Circle (e = 0)' : `Ellipse (e = ${fmtNum(eEcc)})`;
           secondary.push({ label: 'Center', value: `(${fmtNum(cx)}, ${fmtNum(cy)})` });
           secondary.push({ label: 'Semi-axes (a, b)', value: `a = ${fmtNum(aAxis)}, b = ${fmtNum(bAxis)}` });
-          if (!isCircle && Math.abs(B) < 1e-10) {
-            const cFoc = Math.sqrt(Math.max(0, aAxis * aAxis - bAxis * bAxis));
+          if (isCircle) {
+            secondary.push({ label: 'Radius & Diameter', value: `r = ${fmtNum(aAxis)}, d = ${fmtNum(2 * aAxis)}` });
+          } else {
             const horiz = q1 >= q2;
+            const cFoc = Math.sqrt(Math.max(0, aAxis * aAxis - bAxis * bAxis));
             secondary.push({
-              label: 'Foci',
-              value: horiz
-                ? `(${fmtNum(cx - cFoc)}, ${fmtNum(cy)}) & (${fmtNum(cx + cFoc)}, ${fmtNum(cy)})`
-                : `(${fmtNum(cx)}, ${fmtNum(cy - cFoc)}) & (${fmtNum(cx)}, ${fmtNum(cy + cFoc)})`,
+              label: 'Major Axis (2a)',
+              value: Math.abs(B) < 1e-10
+                ? `Length = ${fmtNum(2 * aAxis)} (${horiz ? `y = ${fmtNum(cy)}` : `x = ${fmtNum(cx)}`})`
+                : `Length = ${fmtNum(2 * aAxis)}`,
             });
             secondary.push({
-              label: 'Directrices',
-              value: horiz
-                ? `x = ${fmtNum(cx)} ± ${fmtNum(aAxis / eEcc)}`
-                : `y = ${fmtNum(cy)} ± ${fmtNum(aAxis / eEcc)}`,
+              label: 'Minor Axis (2b)',
+              value: Math.abs(B) < 1e-10
+                ? `Length = ${fmtNum(2 * bAxis)} (${horiz ? `x = ${fmtNum(cx)}` : `y = ${fmtNum(cy)}`})`
+                : `Length = ${fmtNum(2 * bAxis)}`,
             });
+            secondary.push({ label: 'Length of Latus Rectum (2b²/a)', value: fmtNum(lr) });
+            if (Math.abs(B) < 1e-10) {
+              secondary.push({
+                label: 'Vertices',
+                value: horiz
+                  ? `(${fmtNum(cx - aAxis)}, ${fmtNum(cy)}) & (${fmtNum(cx + aAxis)}, ${fmtNum(cy)})`
+                  : `(${fmtNum(cx)}, ${fmtNum(cy - aAxis)}) & (${fmtNum(cx)}, ${fmtNum(cy + aAxis)})`,
+              });
+              secondary.push({
+                label: 'Foci',
+                value: horiz
+                  ? `(${fmtNum(cx - cFoc)}, ${fmtNum(cy)}) & (${fmtNum(cx + cFoc)}, ${fmtNum(cy)})`
+                  : `(${fmtNum(cx)}, ${fmtNum(cy - cFoc)}) & (${fmtNum(cx)}, ${fmtNum(cy + cFoc)})`,
+              });
+              secondary.push({
+                label: 'Equations of Directrices',
+                value: eEcc > 1e-10
+                  ? horiz
+                    ? `x = ${fmtNum(cx)} ± ${fmtNum(aAxis / eEcc)}`
+                    : `y = ${fmtNum(cy)} ± ${fmtNum(aAxis / eEcc)}`
+                  : 'At infinity',
+              });
+            }
           }
         }
       } else {
@@ -1735,17 +1765,43 @@ export function solveCoordinateGeometry(input: CoordInput): CalcResult {
         const aAxis = Math.sqrt(Math.abs(horiz ? q1 : q2));
         const bAxis = Math.sqrt(Math.abs(horiz ? q2 : q1));
         const eEcc = Math.sqrt(1 + (bAxis * bAxis) / (aAxis * aAxis));
+        const lr = (2 * bAxis * bAxis) / aAxis;
         const isRect = Math.abs(A + C) < 1e-10;
         classification = isRect ? `Rectangular Hyperbola (e = √2)` : `Hyperbola (e = ${fmtNum(eEcc)})`;
         secondary.push({ label: 'Center', value: `(${fmtNum(cx)}, ${fmtNum(cy)})` });
         secondary.push({ label: 'Transverse / Conjugate (a, b)', value: `a = ${fmtNum(aAxis)}, b = ${fmtNum(bAxis)}` });
+        secondary.push({
+          label: 'Transverse Axis (2a)',
+          value: Math.abs(B) < 1e-10
+            ? `Length = ${fmtNum(2 * aAxis)} (${horiz ? `y = ${fmtNum(cy)}` : `x = ${fmtNum(cx)}`})`
+            : `Length = ${fmtNum(2 * aAxis)}`,
+        });
+        secondary.push({
+          label: 'Conjugate Axis (2b)',
+          value: Math.abs(B) < 1e-10
+            ? `Length = ${fmtNum(2 * bAxis)} (${horiz ? `x = ${fmtNum(cx)}` : `y = ${fmtNum(cy)}`})`
+            : `Length = ${fmtNum(2 * bAxis)}`,
+        });
+        secondary.push({ label: 'Length of Latus Rectum (2b²/a)', value: fmtNum(lr) });
         if (Math.abs(B) < 1e-10) {
           const cFoc = Math.hypot(aAxis, bAxis);
+          secondary.push({
+            label: 'Vertices',
+            value: horiz
+              ? `(${fmtNum(cx - aAxis)}, ${fmtNum(cy)}) & (${fmtNum(cx + aAxis)}, ${fmtNum(cy)})`
+              : `(${fmtNum(cx)}, ${fmtNum(cy - aAxis)}) & (${fmtNum(cx)}, ${fmtNum(cy + aAxis)})`,
+          });
           secondary.push({
             label: 'Foci',
             value: horiz
               ? `(${fmtNum(cx - cFoc)}, ${fmtNum(cy)}) & (${fmtNum(cx + cFoc)}, ${fmtNum(cy)})`
               : `(${fmtNum(cx)}, ${fmtNum(cy - cFoc)}) & (${fmtNum(cx)}, ${fmtNum(cy + cFoc)})`,
+          });
+          secondary.push({
+            label: 'Equations of Directrices',
+            value: horiz
+              ? `x = ${fmtNum(cx)} ± ${fmtNum(aAxis / eEcc)}`
+              : `y = ${fmtNum(cy)} ± ${fmtNum(aAxis / eEcc)}`,
           });
           const slope = horiz ? bAxis / aAxis : aAxis / bAxis;
           secondary.push({

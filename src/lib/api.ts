@@ -2,8 +2,10 @@ import { auth, clearAccessToken, getAccessToken } from './firebase';
 import {
   handleInbuiltApiRequest,
   inbuiltGetContributorBlob,
+  inbuiltGetForumAttachmentBlob,
   inbuiltGetMaterialBlob,
   inbuiltUploadContributorFile,
+  inbuiltUploadForumAttachment,
   inbuiltUploadStudyMaterial,
 } from './inbuiltApi';
 import type { ExamBlueprintItem } from '../types';
@@ -222,7 +224,7 @@ export async function isExpressBackendAvailable(): Promise<boolean> {
   return expressAvailablePromise;
 }
 
-async function getActiveAuthToken(forceRefresh = false): Promise<string | null> {
+export async function getActiveAuthToken(forceRefresh = false): Promise<string | null> {
   const pwdToken = getPasswordSessionToken();
   if (pwdToken) return pwdToken;
   const user = auth.currentUser;
@@ -390,6 +392,7 @@ export async function uploadStudyMaterialBinary<T>(
     subject: string;
     category: string;
     description?: string;
+    mediaKind?: string;
     pageCount?: number;
     hourlyRentCost: number;
     buyCost?: number;
@@ -420,6 +423,7 @@ export async function uploadStudyMaterialBinary<T>(
           'x-material-description': encodeURIComponent(metadata.description || ''),
           'x-file-name': encodeURIComponent(file.name),
           'x-mime-type': encodeURIComponent(file.type || 'application/octet-stream'),
+          ...(metadata.mediaKind ? { 'x-media-kind': encodeURIComponent(metadata.mediaKind) } : {}),
           'x-page-count': String(Math.max(1, Math.round(metadata.pageCount || 1))),
           'x-hourly-rent-cost': String(Math.max(5, Math.min(100, Math.round(metadata.hourlyRentCost)))),
           ...(metadata.buyCost && metadata.buyCost >= 5
@@ -445,7 +449,7 @@ export async function uploadStudyMaterialBinary<T>(
   return await safeJson<T>(res);
 }
 
-export async function fetchStudyMaterialBlob(id: number): Promise<Blob> {
+export async function fetchStudyMaterialBlob(id: number, inline = false): Promise<Blob> {
   const token = await getActiveAuthToken(false);
   if (!token) throw new Error('Sign in required to access study materials.');
   const useExpress = await isExpressBackendAvailable();
@@ -453,7 +457,7 @@ export async function fetchStudyMaterialBlob(id: number): Promise<Blob> {
     return inbuiltGetMaterialBlob(id);
   }
   const res = await fetchWithTimeout(
-    apiUrl(`/api/study-materials/${id}/download`),
+    apiUrl(`/api/study-materials/${id}/download${inline ? '?inline=1' : ''}`),
     {
       headers: { Authorization: `Bearer ${token}` },
     },
@@ -469,7 +473,7 @@ export async function fetchStudyMaterialBlob(id: number): Promise<Blob> {
 }
 
 export async function downloadStudyMaterialFile(id: number, fileName: string): Promise<void> {
-  const blob = await fetchStudyMaterialBlob(id);
+  const blob = await fetchStudyMaterialBlob(id, false);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -478,6 +482,105 @@ export async function downloadStudyMaterialFile(id: number, fileName: string): P
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+export async function uploadForumAttachmentBinary<T>(file: File): Promise<T> {
+  const token = await getActiveAuthToken(false);
+  if (!token) {
+    throw new Error('Sign in required to upload images or PDFs.');
+  }
+  const useExpress = await isExpressBackendAvailable();
+  if (!useExpress || token.startsWith('inbuilt.')) {
+    return inbuiltUploadForumAttachment<T>(file, token);
+  }
+  const sendUpload = async (forceRefresh: boolean) => {
+    const activeToken = await getActiveAuthToken(forceRefresh);
+    if (!activeToken) throw new Error('Session expired. Please sign in again.');
+    return fetchWithTimeout(
+      apiUrl('/api/forum/attachments/upload'),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${activeToken}`,
+          'Content-Type': 'application/octet-stream',
+          'x-file-name': encodeURIComponent(file.name),
+          'x-mime-type': encodeURIComponent(file.type || 'application/octet-stream'),
+        },
+        body: file,
+      },
+      60000
+    );
+  };
+  let res = await sendUpload(false);
+  if (res.status === 401 && !getPasswordSessionToken()) {
+    res = await sendUpload(true);
+  }
+  const coldMsg = gatewayColdStartMessage(res.status);
+  if (coldMsg) throw new Error(coldMsg);
+  if (!res.ok) {
+    const data = await safeJson<{ error?: string }>(res);
+    throw new Error(data.error || `Upload failed (${res.status})`);
+  }
+  return await safeJson<T>(res);
+}
+
+export async function fetchAuthMediaBlobUrl(url: string): Promise<{
+  objectUrl: string;
+  mimeType: string;
+  blob: Blob;
+  revoke: () => void;
+}> {
+  if (!url.startsWith('/api/') && !url.startsWith(API_BASE || '__none__')) {
+    return {
+      objectUrl: url,
+      mimeType: '',
+      blob: new Blob(),
+      revoke: () => {},
+    };
+  }
+  const token = await getActiveAuthToken(false);
+  const useExpress = await isExpressBackendAvailable();
+  const forumAttMatch = url.match(/\/api\/forum\/attachments\/(\d+)\/file/);
+  if ((!useExpress || token?.startsWith('inbuilt.')) && forumAttMatch) {
+    const { blob, mimeType } = await inbuiltGetForumAttachmentBlob(Number(forumAttMatch[1]));
+    const objectUrl = URL.createObjectURL(blob);
+    return {
+      objectUrl,
+      mimeType,
+      blob,
+      revoke: () => URL.revokeObjectURL(objectUrl),
+    };
+  }
+  const matMatch = url.match(/\/api\/study-materials\/(\d+)\/download/);
+  if ((!useExpress || token?.startsWith('inbuilt.')) && matMatch) {
+    const blob = await inbuiltGetMaterialBlob(Number(matMatch[1]));
+    const objectUrl = URL.createObjectURL(blob);
+    return {
+      objectUrl,
+      mimeType: blob.type || '',
+      blob,
+      revoke: () => URL.revokeObjectURL(objectUrl),
+    };
+  }
+  if (!token) throw new Error('Sign in required to load attachment.');
+  const res = await fetchWithTimeout(
+    apiUrl(url),
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    45000
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to fetch media (${res.status})`);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    objectUrl,
+    mimeType: blob.type || res.headers.get('content-type') || '',
+    blob,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  };
 }
 
 export async function uploadContributorFileBinary<T>(

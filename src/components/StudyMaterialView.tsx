@@ -6,11 +6,15 @@ import {
   Coins,
   Download,
   ExternalLink,
+  Eye,
   FileUp,
   FolderOpen,
   Lock,
+  Mic,
   ShoppingBag,
+  Square,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -24,6 +28,7 @@ import {
 } from '../lib/api';
 import type { MaterialPurchaseItem, PointRewardsConfig, StudyMaterialItem } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { AuthMediaPreview } from './ForumAttachmentViewer';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -58,6 +63,49 @@ async function detectClientPdfPageCount(selectedFile: File): Promise<number> {
   return 1;
 }
 
+type MaterialMediaKind =
+  | 'pdf'
+  | 'photo'
+  | 'video'
+  | 'text'
+  | 'word'
+  | 'excel'
+  | 'ppt'
+  | 'recording';
+
+const MEDIA_KIND_LABELS: Record<MaterialMediaKind, string> = {
+  pdf: 'PDF',
+  photo: 'Photo',
+  video: 'Video',
+  recording: 'Recording',
+  word: 'Word',
+  excel: 'Excel',
+  ppt: 'PPT',
+  text: 'Text',
+};
+
+function detectMediaKindFromFile(f: File): MaterialMediaKind {
+  const mime = (f.type || '').toLowerCase();
+  const name = (f.name || '').toLowerCase();
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
+  if (mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(name)) return 'photo';
+  if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/.test(name)) return 'recording';
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/.test(name)) {
+    return name.includes('recording') ? 'recording' : 'video';
+  }
+  if (/\.(docx?|rtf|odt)$/.test(name) || mime.includes('wordprocessingml') || mime.includes('msword')) {
+    return 'word';
+  }
+  if (/\.(xlsx?|ods)$/.test(name) || mime.includes('spreadsheetml') || mime.includes('ms-excel')) {
+    return 'excel';
+  }
+  if (/\.(pptx?|odp)$/.test(name) || mime.includes('presentationml') || mime.includes('ms-powerpoint')) {
+    return 'ppt';
+  }
+  if (mime.startsWith('text/') || /\.(txt|md|markdown|csv|log|tex)$/.test(name)) return 'text';
+  return 'pdf';
+}
+
 export const StudyMaterialView: React.FC = () => {
   const {
     dbUser,
@@ -88,6 +136,7 @@ export const StudyMaterialView: React.FC = () => {
     studyMaterialUpload: 0,
     examTimer30Min: 10,
     contributorWeekly: 120,
+    forumSatisfactoryAnswer: 25,
   });
 
   const [title, setTitle] = useState('');
@@ -96,6 +145,9 @@ export const StudyMaterialView: React.FC = () => {
   const [category, setCategory] = useState<'question_paper' | 'study_notes' | 'booklet' | 'archive'>(
     'question_paper'
   );
+  const [mediaKind, setMediaKind] = useState<'auto' | MaterialMediaKind>('auto');
+  const [filterMediaKind, setFilterMediaKind] = useState<'all' | MaterialMediaKind>('all');
+  const [previewItem, setPreviewItem] = useState<StudyMaterialItem | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState(1);
   const [hourlyRentCost, setHourlyRentCost] = useState(10);
@@ -108,6 +160,23 @@ export const StudyMaterialView: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Built-in Microphone Recorder state
+  const [recording, setRecording] = useState(false);
+  const [recordingSec, setRecordingSec] = useState(0);
+  const [recordedPreviewUrl, setRecordedPreviewUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<BlobPart[]>([]);
+  const recordStreamRef = useRef<MediaStream | null>(null);
+  const recordTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordTimerRef.current) window.clearInterval(recordTimerRef.current);
+      recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+      if (recordedPreviewUrl) URL.revokeObjectURL(recordedPreviewUrl);
+    };
+  }, [recordedPreviewUrl]);
 
   const loadMaterials = useCallback(async () => {
     if (isGuest || !dbUser) {
@@ -135,9 +204,15 @@ export const StudyMaterialView: React.FC = () => {
 
   useEffect(() => {
     loadMaterials();
-    apiPublicFetch<PointRewardsConfig>('/api/point-rewards')
+    apiPublicFetch<PointRewardsConfig | { rewards?: PointRewardsConfig }>('/api/point-rewards')
       .then((r) => {
-        if (r && typeof r.questionPaperUpload === 'number') setRewards(r);
+        const cfg = (r as { rewards?: PointRewardsConfig })?.rewards || (r as PointRewardsConfig);
+        if (cfg && typeof cfg.questionPaperUpload === 'number') {
+          setRewards({
+            ...cfg,
+            forumSatisfactoryAnswer: cfg.forumSatisfactoryAnswer ?? 25,
+          });
+        }
       })
       .catch(() => {});
   }, [loadMaterials]);
@@ -150,14 +225,80 @@ export const StudyMaterialView: React.FC = () => {
     }
   }, [contributorAccess]);
 
-  const handleSelectFile = async (selected: File | null) => {
+  const handleSelectFile = async (selected: File | null, explicitKind?: MaterialMediaKind) => {
     setFile(selected);
     if (!selected) {
       setPageCount(1);
       return;
     }
+    if (explicitKind) {
+      setMediaKind(explicitKind);
+    } else {
+      setMediaKind('auto');
+    }
     const detected = await detectClientPdfPageCount(selected);
     setPageCount(detected);
+  };
+
+  const handleToggleRecording = async () => {
+    setErrorMsg(null);
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      setRecording(false);
+      if (recordTimerRef.current) {
+        window.clearInterval(recordTimerRef.current);
+        recordTimerRef.current = null;
+      }
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setErrorMsg('Audio recording is not supported in this browser. You can still upload .mp3/.wav/.m4a files.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordStreamRef.current = stream;
+      recordChunksRef.current = [];
+      const mimeCandidate = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : '';
+      const recorder = mimeCandidate
+        ? new MediaRecorder(stream, { mimeType: mimeCandidate })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) recordChunksRef.current.push(ev.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        recordStreamRef.current = null;
+        const mime = recorder.mimeType || 'audio/webm';
+        const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+        const blob = new Blob(recordChunksRef.current, { type: mime });
+        if (blob.size > 0) {
+          const recFile = new File(
+            [blob],
+            `study-recording-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${ext}`,
+            { type: mime }
+          );
+          if (recordedPreviewUrl) URL.revokeObjectURL(recordedPreviewUrl);
+          setRecordedPreviewUrl(URL.createObjectURL(blob));
+          await handleSelectFile(recFile, 'recording');
+        }
+      };
+
+      setRecordingSec(0);
+      recorder.start();
+      setRecording(true);
+      recordTimerRef.current = window.setInterval(() => {
+        setRecordingSec((s) => s + 1);
+      }, 1000);
+    } catch {
+      setErrorMsg('Microphone permission denied or unavailable.');
+    }
   };
 
   const handleApplyContributor = async (e?: React.FormEvent) => {
@@ -207,6 +348,7 @@ export const StudyMaterialView: React.FC = () => {
     setUploading(true);
     setErrorMsg(null);
     setStatusMsg(null);
+    const resolvedKind = mediaKind === 'auto' ? detectMediaKindFromFile(file) : mediaKind;
     try {
       const res = await uploadStudyMaterialBinary<{
         material: StudyMaterialItem;
@@ -216,6 +358,7 @@ export const StudyMaterialView: React.FC = () => {
         description: description.trim(),
         subject: subject.trim() || 'General',
         category,
+        mediaKind: resolvedKind,
         pageCount: cleanPages,
         hourlyRentCost: cleanHourly,
         buyCost: cleanBuy,
@@ -224,6 +367,11 @@ export const StudyMaterialView: React.FC = () => {
       setTitle('');
       setDescription('');
       setFile(null);
+      setMediaKind('auto');
+      if (recordedPreviewUrl) {
+        URL.revokeObjectURL(recordedPreviewUrl);
+        setRecordedPreviewUrl(null);
+      }
       setPageCount(1);
       setHourlyRentCost(10);
       setBuyCost(40);
@@ -356,7 +504,7 @@ export const StudyMaterialView: React.FC = () => {
             Study Material Notes &amp; Question Papers
           </h1>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-            Upload whole PDF Question Papers (+{rewards.questionPaperUpload} pts) &amp; Notes{rewards.studyMaterialUpload > 0 ? ` (+${rewards.studyMaterialUpload} pts)` : ''}. Rent hourly (5–100 pts/hr) or buy permanent access (70% royalty rounded to nearest 10 credited to uploader).
+            Upload Photos, Videos, Text, PDFs, Word, Excel, PPT, or Audio Recordings (+{rewards.questionPaperUpload} pts for Question Papers{rewards.studyMaterialUpload > 0 ? ` · +${rewards.studyMaterialUpload} pts for Study Materials` : ''}). Rent hourly (5–100 pts/hr) or buy permanent access (70% royalty rounded to nearest 10 credited to uploader).
           </p>
         </div>
 
@@ -560,22 +708,75 @@ export const StudyMaterialView: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-              Choose Whole PDF or Document (PDF pages auto-detected, up to 500 MB)
-            </label>
-            <input
-              type="file"
-              required
-              accept=".pdf,application/pdf,.doc,.docx,.ppt,.pptx,.txt,image/*"
-              onChange={(e) => handleSelectFile(e.target.files?.[0] || null)}
-              className="mt-1 block w-full text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-700"
-            />
-            {file && (
-              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                Selected: {file.name} ({formatBytes(file.size)}) · {pageCount} page(s)
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  File Format Type
+                </label>
+                <select
+                  value={mediaKind}
+                  onChange={(e) => setMediaKind(e.target.value as 'auto' | MaterialMediaKind)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="auto">
+                    Auto-Detect ({file ? MEDIA_KIND_LABELS[detectMediaKindFromFile(file)] : 'PDF / Photo / Video / Office / Audio'})
+                  </option>
+                  <option value="pdf">PDF Document</option>
+                  <option value="photo">Photo / Image</option>
+                  <option value="video">Video Lecture</option>
+                  <option value="recording">Audio Recording</option>
+                  <option value="word">Word Document (.doc / .docx)</option>
+                  <option value="excel">Excel Spreadsheet (.xls / .xlsx / .csv)</option>
+                  <option value="ppt">PowerPoint (.ppt / .pptx)</option>
+                  <option value="text">Text / Markdown (.txt / .md)</option>
+                </select>
+              </div>
+              <div className="flex flex-col justify-end">
+                <button
+                  type="button"
+                  onClick={() => void handleToggleRecording()}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                    recording
+                      ? 'border-red-600 bg-red-600 text-white animate-pulse'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {recording ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+                  {recording
+                    ? `Stop Recording (${Math.floor(recordingSec / 60)}:${String(recordingSec % 60).padStart(2, '0')})`
+                    : 'Record Voice / Lecture'}
+                </button>
+              </div>
+            </div>
+
+            {recordedPreviewUrl && (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 p-2.5 space-y-1.5">
+                <div className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Recorded Audio Ready for Upload
+                </div>
+                <audio src={recordedPreviewUrl} controls className="w-full h-8" />
               </div>
             )}
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Choose File (Photos, Videos, Text, PDF, Word, Excel, PPT, Recordings · up to 500 MB)
+              </label>
+              <input
+                type="file"
+                required={!file}
+                accept=".pdf,application/pdf,image/*,video/*,audio/*,.txt,.md,.markdown,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                onChange={(e) => void handleSelectFile(e.target.files?.[0] || null)}
+                className="mt-1 block w-full text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-700"
+              />
+              {file && (
+                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                  Selected: {file.name} ({formatBytes(file.size)}) ·{' '}
+                  {MEDIA_KIND_LABELS[mediaKind === 'auto' ? detectMediaKindFromFile(file) : mediaKind]} · {pageCount} page(s)
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -588,11 +789,11 @@ export const StudyMaterialView: React.FC = () => {
               ? 'Streaming Upload...'
               : category === 'question_paper'
                 ? rewards.questionPaperUpload > 0
-                  ? `Upload Whole PDF & Earn +${rewards.questionPaperUpload} Pts`
+                  ? `Upload Question Paper & Earn +${rewards.questionPaperUpload} Pts`
                   : 'Upload Question Paper'
                 : rewards.studyMaterialUpload > 0
-                  ? `Upload & Earn +${rewards.studyMaterialUpload} Pts`
-                  : 'Upload Whole PDF / Study Material'}
+                  ? `Upload Material & Earn +${rewards.studyMaterialUpload} Pts`
+                  : 'Upload Study Material'}
           </button>
 
           {!contributorAccess && (
@@ -604,7 +805,7 @@ export const StudyMaterialView: React.FC = () => {
 
         {/* Repository List */}
         <div className="asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               <h2 className="font-display text-base font-semibold text-slate-900 dark:text-white">
@@ -619,15 +820,46 @@ export const StudyMaterialView: React.FC = () => {
             </span>
           </div>
 
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ['all', 'All'],
+                ['pdf', 'PDF'],
+                ['photo', 'Photos'],
+                ['video', 'Videos'],
+                ['recording', 'Recordings'],
+                ['word', 'Word'],
+                ['excel', 'Excel'],
+                ['ppt', 'PPT'],
+                ['text', 'Text'],
+              ] as const
+            ).map(([k, lbl]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setFilterMediaKind(k)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-medium border transition-colors ${
+                  filterMediaKind === k
+                    ? 'border-blue-600 bg-blue-600 text-white'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">Loading files...</p>
-          ) : materials.length === 0 ? (
+          ) : materials.filter((m) => filterMediaKind === 'all' || (m.mediaKind || 'pdf') === filterMediaKind).length === 0 ? (
             <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-              No files uploaded yet.
+              No matching files uploaded yet.
             </p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {materials.map((m) => {
+              {materials
+                .filter((m) => filterMediaKind === 'all' || (m.mediaKind || 'pdf') === filterMediaKind)
+                .map((m) => {
                 const isOwnerOrAdmin =
                   dbUser?.role === 'admin' ||
                   dbUser?.role === 'super' ||
@@ -676,7 +908,7 @@ export const StudyMaterialView: React.FC = () => {
                         )}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                        {m.subject} · {m.category.replace('_', ' ')} ·{' '}
+                        {m.subject} · {MEDIA_KIND_LABELS[(m.mediaKind as MaterialMediaKind) || 'pdf'] || (m.mediaKind || 'PDF')} · {m.category.replace('_', ' ')} ·{' '}
                         {m.pageCount || 1} pg · {formatBytes(m.fileSizeBytes)} · By{' '}
                         {m.uploaderName}
                       </div>
@@ -708,14 +940,24 @@ export const StudyMaterialView: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
                       {hasAccess ? (
-                        <button
-                          type="button"
-                          onClick={() => downloadStudyMaterialFile(m.id, m.fileName)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Download
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewItem(m)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadStudyMaterialFile(m.id, m.fileName)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </button>
+                        </>
                       ) : (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <select
@@ -797,6 +1039,55 @@ export const StudyMaterialView: React.FC = () => {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {previewItem && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setPreviewItem(null)}
+        >
+          <div
+            className="w-full max-w-4xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                  {previewItem.title}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                  {previewItem.fileName} · {previewItem.subject} · {formatBytes(previewItem.fileSizeBytes)}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => downloadStudyMaterialFile(previewItem.id, previewItem.fileName)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewItem(null)}
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  aria-label="Close preview"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 max-h-[82vh] overflow-auto">
+              <AuthMediaPreview
+                url={`/api/study-materials/${previewItem.id}/download?inline=1`}
+                mimeType={previewItem.mimeType}
+                fileName={previewItem.fileName}
+                mediaKind={previewItem.mediaKind || 'pdf'}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -496,6 +496,7 @@ export const formulaEquations = pgTable('formula_equations', {
   authorUsername: text('author_username').notNull().default('contributor'),
   title: text('title').notNull(),
   subject: text('subject').notNull().default('Physics'),
+  caseName: text('case_name').notNull().default('General'),
   expression: text('expression').notNull(),
   description: text('description').notNull().default(''),
   symbolsJson: jsonb('symbols_json').$type<{ symbol: string; meaning: string; unit?: string }[]>().notNull().default([]),

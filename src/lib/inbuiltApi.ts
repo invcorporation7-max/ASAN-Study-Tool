@@ -216,6 +216,7 @@ interface InbuiltStore {
   forumReplyVotes: any[];
   forumAttachments: any[];
   formulaEquations: any[];
+  formulaMeteredSessions: Record<string, any>;
 }
 
 function emptyStore(): InbuiltStore {
@@ -252,6 +253,7 @@ function emptyStore(): InbuiltStore {
     forumReplyVotes: [],
     forumAttachments: [],
     formulaEquations: [],
+    formulaMeteredSessions: {},
   };
 }
 
@@ -2648,6 +2650,110 @@ export async function handleInbuiltApiRequest<T>(
   }
 
   // --- FORMULA EQUATION CALCULATOR ---
+  if (path.startsWith('/api/formula-access/')) {
+    const proIncluded =
+      user.role === 'super' ||
+      (user.role === 'admin' && user.adminAuthorized !== false) ||
+      (user.plan === 'pro' &&
+        (!user.proExpiresAt || new Date(user.proExpiresAt).getTime() > Date.now()));
+    const sessions = (store.formulaMeteredSessions ||= {});
+    const curSession = sessions[String(user.id)] || {
+      enabled: false,
+      quarterNumber: 0,
+      quarterExpiresAt: '',
+      lastChargedPoints: 0,
+      totalSessionPoints: 0,
+    };
+    const qCost = (q: number) => (q % 2 === 1 ? 8 : 7);
+    const buildStatus = () => {
+      if (proIncluded) {
+        return {
+          accessMode: 'pro',
+          hasAccess: true,
+          proIncluded: true,
+          enabled: true,
+          hourlyRate: 30,
+          quarterMinutes: 15,
+          quarterNumber: curSession.quarterNumber,
+          quarterExpiresAt: curSession.quarterExpiresAt,
+          lastChargedPoints: curSession.lastChargedPoints,
+          nextQuarterCost: 0,
+          totalSessionPoints: curSession.totalSessionPoints,
+          needsRenewal: false,
+          points: user.points,
+        };
+      }
+      const expMs = curSession.quarterExpiresAt ? new Date(curSession.quarterExpiresAt).getTime() : 0;
+      const active = Boolean(curSession.enabled && Number.isFinite(expMs) && expMs > Date.now());
+      return {
+        accessMode: 'metered',
+        hasAccess: active,
+        proIncluded: false,
+        enabled: Boolean(curSession.enabled),
+        hourlyRate: 30,
+        quarterMinutes: 15,
+        quarterNumber: curSession.quarterNumber,
+        quarterExpiresAt: curSession.quarterExpiresAt,
+        lastChargedPoints: curSession.lastChargedPoints,
+        nextQuarterCost: qCost(curSession.quarterNumber + 1),
+        totalSessionPoints: curSession.totalSessionPoints,
+        needsRenewal: Boolean(curSession.enabled && !active),
+        points: user.points,
+      };
+    };
+
+    if (path === '/api/formula-access/status' && method === 'GET') {
+      return buildStatus() as T;
+    }
+    if (path === '/api/formula-access/stop' && method === 'POST') {
+      curSession.enabled = false;
+      sessions[String(user.id)] = curSession;
+      saveStore(store);
+      return buildStatus() as T;
+    }
+    if (
+      (path === '/api/formula-access/start' || path === '/api/formula-access/renew') &&
+      method === 'POST'
+    ) {
+      if (proIncluded) return buildStatus() as T;
+      const nowMs = Date.now();
+      const expMs = curSession.quarterExpiresAt ? new Date(curSession.quarterExpiresAt).getTime() : 0;
+      if (path === '/api/formula-access/start' && Number.isFinite(expMs) && expMs > nowMs + 1000) {
+        curSession.enabled = true;
+        sessions[String(user.id)] = curSession;
+        saveStore(store);
+        return buildStatus() as T;
+      }
+      if (path === '/api/formula-access/renew') {
+        if (!curSession.enabled) return buildStatus() as T;
+        if (Number.isFinite(expMs) && expMs - nowMs > 15000) return buildStatus() as T;
+      }
+      const nextQ = Number(curSession.quarterNumber || 0) + 1;
+      const cost = qCost(nextQ);
+      if (user.points < cost) {
+        curSession.enabled = false;
+        sessions[String(user.id)] = curSession;
+        saveStore(store);
+        throw new Error(`Insufficient points for Quarter ${nextQ} (${cost} pts required, ${user.points} pts available).`);
+      }
+      awardPointsLocal(
+        store,
+        user,
+        -cost,
+        `Formula Calculator Metered Quarter ${nextQ} (15 min @ 30 pts/hr)`,
+        'formula_metered'
+      );
+      curSession.enabled = true;
+      curSession.quarterNumber = nextQ;
+      curSession.quarterExpiresAt = new Date(nowMs + 15 * 60 * 1000).toISOString();
+      curSession.lastChargedPoints = cost;
+      curSession.totalSessionPoints = Number(curSession.totalSessionPoints || 0) + cost;
+      sessions[String(user.id)] = curSession;
+      saveStore(store);
+      return buildStatus() as T;
+    }
+  }
+
   if (path === '/api/formulas' && method === 'GET') {
     if (store.formulaEquations.length === 0) {
       const now = new Date().toISOString();
@@ -2657,15 +2763,35 @@ export async function handleInbuiltApiRequest<T>(
           authorId: 0,
           authorName: 'ASAN Core Library',
           authorUsername: 'asan_library',
+          title: 'Second Equation of Motion',
+          subject: 'Physics — Kinematics',
+          caseName: 'Uniformly Accelerated Motion',
+          expression: 's = u * t + 1/2 * a * t^2',
+          description: 'Calculates displacement under uniformly accelerated motion.',
+          symbols: [
+            { symbol: 's', meaning: 'displacement', unit: 'm' },
+            { symbol: 'u', meaning: 'initial velocity', unit: 'm/s' },
+            { symbol: 't', meaning: 'time interval', unit: 's' },
+            { symbol: 'a', meaning: 'acceleration', unit: 'm/s^2' },
+          ],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: nextId(store, 'formulaEquations'),
+          authorId: 0,
+          authorName: 'ASAN Core Library',
+          authorUsername: 'asan_library',
           title: 'First Equation of Motion',
           subject: 'Physics — Kinematics',
+          caseName: 'Uniformly Accelerated Motion',
           expression: 'v = u + a * t',
-          description: 'Relates final velocity, initial velocity, constant acceleration, and time.',
+          description: 'Relates final velocity, initial velocity, constant acceleration, and time interval.',
           symbols: [
             { symbol: 'v', meaning: 'final velocity', unit: 'm/s' },
             { symbol: 'u', meaning: 'initial velocity', unit: 'm/s' },
             { symbol: 'a', meaning: 'acceleration', unit: 'm/s^2' },
-            { symbol: 't', meaning: 'time', unit: 's' },
+            { symbol: 't', meaning: 'time interval', unit: 's' },
           ],
           createdAt: now,
           updatedAt: now,
@@ -2677,6 +2803,7 @@ export async function handleInbuiltApiRequest<T>(
           authorUsername: 'asan_library',
           title: 'Ideal Gas Law',
           subject: 'Chemistry — Thermodynamics',
+          caseName: 'Ideal Gas State',
           expression: 'P * V = n * R * T',
           description: 'Relates pressure, volume, moles, universal gas constant, and temperature.',
           symbols: [
@@ -2705,6 +2832,7 @@ export async function handleInbuiltApiRequest<T>(
       authorUsername: user.username,
       title: String(body.title || ''),
       subject: String(body.subject || 'General'),
+      caseName: String(body.caseName || 'General'),
       expression: String(body.expression || ''),
       description: String(body.description || ''),
       symbols: Array.isArray(body.symbols) ? body.symbols : [],
@@ -2740,6 +2868,56 @@ export async function handleInbuiltApiRequest<T>(
   }
 
   // --- STUDY FORUM (INBUILT OFFLINE FALLBACK) ---
+  if (path === '/api/forum/highlights' && method === 'GET') {
+    const allowedRoomIds = new Set(
+      store.forumRooms
+        .filter(
+          (r) =>
+            r.roomType === 'global' ||
+            r.roomType === 'global_qa' ||
+            store.forumMembers.some((m) => m.roomId === r.id && m.userId === user.id)
+        )
+        .map((r) => r.id)
+    );
+    const items = store.forumPosts
+      .filter((p) => allowedRoomIds.has(p.roomId))
+      .map((p) => {
+        const replyCount = store.forumReplies.filter((r) => r.postId === p.id).length;
+        const attemptCount = new Set(store.forumAttempts.filter((a) => a.postId === p.id).map((a) => a.userId)).size;
+        const author = store.users.find((u) => u.id === p.authorId);
+        const room = store.forumRooms.find((r) => r.id === p.roomId);
+        const preview = String(p.contentText || '').trim().slice(0, 140);
+        return {
+          id: p.id,
+          roomId: p.roomId,
+          roomTitle: room?.title || 'Global Q&A',
+          postKind: p.postKind === 'message' ? 'message' : 'question',
+          title: String(p.title || preview || 'Forum Discussion').slice(0, 120),
+          contentPreview: preview,
+          subject: String(p.subject || 'General'),
+          examBoard: String(p.examBoard || 'Competitive / Custom'),
+          authorName: author?.displayName || 'Student',
+          authorUsername: author?.username || `user${p.authorId}`,
+          isSolved: Boolean(p.isSolved),
+          replyCount,
+          attemptCount,
+          popularityScore: replyCount * 2 + attemptCount,
+          createdAt: String(p.createdAt || new Date().toISOString()),
+        };
+      });
+    const recent = [...items]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+    const popular = [...items]
+      .sort(
+        (a, b) =>
+          b.popularityScore - a.popularityScore ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+      .slice(0, 5);
+    return { popular, recent } as T;
+  }
+
   if (path === '/api/forum/rooms' && method === 'GET') {
     if (!store.forumRooms.some((r) => r.roomType === 'global')) {
       const now = new Date().toISOString();

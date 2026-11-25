@@ -96,6 +96,7 @@ import type {
   ExamCountdownItem,
   ExamScheduleItem,
   InAppMessageItem,
+  MaterialPurchaseItem,
   NavSection,
   NotificationItem,
   StudyLogItem,
@@ -155,7 +156,7 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
     id: 'formula-calculator',
     label: 'Formula Calculator',
     description:
-      'Contributor-defined formula & parameter-matching calculator + wide symbolic circle & conic solver.',
+      'Case-based & Auto-Detect formula solver + wide Conic/Circle solver. Pro included or Metered 30 pts/hr (quarterly).',
     category: 'Core Study Workspace',
     icon: FunctionSquare,
   },
@@ -197,9 +198,9 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
   },
   {
     id: 'specialized-calculators',
-    label: 'Specialized Calculators',
+    label: 'Specialized Calculators (Lite)',
     description:
-      'Deterministic solvers for Calculus, Coordinate Geometry, Algebra, Vectors & 3D, and Trigonometry.',
+      'Lite Version — Deterministic solvers for Calculus, Coordinate Geometry, Algebra, Vectors & 3D, and Trigonometry.',
     category: 'Pro & Extended Tools',
     icon: Sigma,
     proOnly: true,
@@ -283,7 +284,7 @@ const SECTION_LABELS: Record<NavSection, string> = {
   timers: 'Timers',
   calculator: 'fx-82MS Calc',
   'formula-calculator': 'Formula Calculator',
-  'specialized-calculators': 'Specialized Calculators',
+  'specialized-calculators': 'Specialized Calculators (Lite)',
   messages: 'Tool Mail',
   'study-materials': 'Study Material Notes',
   'contributor-console': "Contributors' Console",
@@ -411,6 +412,7 @@ const MainShell: React.FC = () => {
   const [countdowns, setCountdowns] = useState<ExamCountdownItem[]>([]);
   const [studyLogs, setStudyLogs] = useState<StudyLogItem[]>([]);
   const [studyMaterials, setStudyMaterials] = useState<StudyMaterialItem[]>([]);
+  const [materialPurchases, setMaterialPurchases] = useState<MaterialPurchaseItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [messages, setMessages] = useState<InAppMessageItem[]>([]);
   const [toolUsers, setToolUsers] = useState<ToolUserSummary[]>([]);
@@ -515,6 +517,7 @@ const MainShell: React.FC = () => {
       setCountdowns([...serverCountdowns, ...(guest.countdowns || [])]);
       setStudyLogs(guest.studyLogs);
       setStudyMaterials([]);
+      setMaterialPurchases([]);
       setNotifications([]);
       setMessages([]);
       setToolUsers([]);
@@ -547,8 +550,11 @@ const MainShell: React.FC = () => {
         apiFetch<ExamScheduleItem[]>('/api/exams'),
         apiOptionalAuthFetch<ExamCountdownItem[]>('/api/countdowns').catch(() => []),
         apiFetch<StudyLogItem[]>('/api/study-logs'),
-        apiFetch<{ materials: StudyMaterialItem[] }>('/api/study-materials').catch(() => ({
+        apiFetch<{ materials: StudyMaterialItem[]; purchases?: MaterialPurchaseItem[] }>(
+          '/api/study-materials'
+        ).catch(() => ({
           materials: [],
+          purchases: [],
         })),
         apiFetch<NotificationItem[]>('/api/notifications').catch(() => []),
         apiFetch<InAppMessageItem[]>('/api/messages').catch(() => []),
@@ -563,6 +569,7 @@ const MainShell: React.FC = () => {
       setCountdowns(countdownsRes);
       setStudyLogs(logsRes);
       setStudyMaterials(matRes.materials || []);
+      setMaterialPurchases(matRes.purchases || []);
       setNotifications(notifRes);
       setMessages(msgRes);
       setToolUsers(usersRes);
@@ -1716,6 +1723,8 @@ const MainShell: React.FC = () => {
                   exams={exams}
                   countdowns={countdowns}
                   studyLogs={studyLogs}
+                  studyMaterials={studyMaterials}
+                  materialPurchases={materialPurchases}
                   onNavigate={setSection}
                 />
               )}
@@ -1995,15 +2004,15 @@ const MainShell: React.FC = () => {
                 />
               )}
               {section === 'calculator' && <CasioFx82MsView />}
-              {section === 'formula-calculator' && <FormulaCalculatorView />}
+              {section === 'formula-calculator' && <FormulaCalculatorView onNavigate={setSection} />}
               {section === 'forum' && <ForumView />}
               {section === 'specialized-calculators' &&
                 (isProOrAdmin ? (
                   <SpecializedCalculatorsView />
                 ) : (
                   <ProGateCard
-                    featureName="Specialized Math Calculators Suite"
-                    description="Solve Calculus, Coordinate Geometry, Algebra, Vectors & 3D Geometry, and Trigonometry problems deterministically with step-by-step exact & numerical results. Available exclusively for Pro & Admin accounts."
+                    featureName="Specialized Math Calculators Suite (Lite Version)"
+                    description="Lite Edition — Solve Calculus, Coordinate Geometry, Algebra, Vectors & 3D Geometry, and Trigonometry problems deterministically. Available exclusively for Pro & Admin accounts."
                     onNavigate={setSection}
                   />
                 ))}

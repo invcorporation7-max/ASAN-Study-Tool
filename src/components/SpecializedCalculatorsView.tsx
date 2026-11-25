@@ -267,18 +267,21 @@ export function SpecializedCalculatorsView() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                Specialized Calculators Suite
+                Specialized Calculators Suite · Lite Version
               </h2>
+              <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                Lite Version
+              </span>
               <span className="asan-pro-badge rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                 Pro &amp; Admin
               </span>
             </div>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">
-              Deterministic symbolic &amp; numerical engines for Calculus, Coordinate Geometry, Algebra, Vector/3D Geometry, and Trigonometry — works 100% offline.
+              Lite Edition — Deterministic symbolic &amp; numerical engines for Calculus, Coordinate Geometry, Algebra, Vector/3D Geometry, and Trigonometry (100% offline). Use Formula Calculator for full case-based &amp; multi-equation symbolic solving.
             </p>
           </div>
           <span className="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 whitespace-nowrap shrink-0">
-            5 Engines Active
+            Lite · 5 Engines
           </span>
         </div>
 

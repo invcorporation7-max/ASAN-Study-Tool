@@ -27,6 +27,8 @@ import type {
   ForumAttemptItem,
   ForumAttemptPayload,
   ForumAuthorSummary,
+  ForumHighlightItem,
+  ForumHighlightsResponse,
   ForumPostItem,
   ForumQuestionSpec,
   ForumReplyItem,
@@ -1816,3 +1818,142 @@ export async function getForumAttachmentForUser(
     return null;
   }
 }
+
+export async function getForumHighlights(
+  viewerUserId: number | null
+): Promise<ForumHighlightsResponse> {
+  try {
+    const allowedRoomIds = new Set<number>();
+    const rooms = await db.select().from(forumRooms);
+    for (const r of rooms) {
+      if (r.roomType === 'global_qa') allowedRoomIds.add(r.id);
+    }
+    if (viewerUserId) {
+      const mems = await db
+        .select({ roomId: forumMembers.roomId })
+        .from(forumMembers)
+        .where(eq(forumMembers.userId, viewerUserId));
+      for (const m of mems) allowedRoomIds.add(m.roomId);
+    }
+
+    const roomIds = Array.from(allowedRoomIds);
+    if (roomIds.length === 0) return { popular: [], recent: [] };
+
+    const posts = await db
+      .select()
+      .from(forumPosts)
+      .where(inArray(forumPosts.roomId, roomIds));
+    if (posts.length === 0) return { popular: [], recent: [] };
+
+    const postIds = posts.map((p) => p.id);
+    const authorIds = Array.from(new Set(posts.map((p) => p.authorId)));
+    const [replies, attempts, authors] = await Promise.all([
+      db
+        .select({ postId: forumReplies.postId })
+        .from(forumReplies)
+        .where(inArray(forumReplies.postId, postIds)),
+      db
+        .select({ postId: forumAttempts.postId })
+        .from(forumAttempts)
+        .where(inArray(forumAttempts.postId, postIds)),
+      authorIds.length > 0
+        ? db.select().from(users).where(inArray(users.id, authorIds))
+        : Promise.resolve([]),
+    ]);
+
+    const replyCounts = new Map<number, number>();
+    for (const r of replies) replyCounts.set(r.postId, (replyCounts.get(r.postId) || 0) + 1);
+    const attemptCounts = new Map<number, number>();
+    for (const a of attempts) attemptCounts.set(a.postId, (attemptCounts.get(a.postId) || 0) + 1);
+    const roomMap = new Map(rooms.map((r) => [r.id, r]));
+    const authorMap = new Map(authors.map((u) => [u.id, u]));
+
+    const items: ForumHighlightItem[] = posts.map((p) => {
+      const replyCount = replyCounts.get(p.id) || 0;
+      const attemptCount = attemptCounts.get(p.id) || 0;
+      const author = authorMap.get(p.authorId);
+      const room = roomMap.get(p.roomId);
+      const preview = (p.contentText || richHtmlToPlainText(p.contentHtml || '')).trim().slice(0, 140);
+      return {
+        id: p.id,
+        roomId: p.roomId,
+        roomTitle: room?.title || 'Global Q&A',
+        postKind: p.postKind === 'message' ? 'message' : 'question',
+        title: (p.title || preview || 'Forum Discussion').slice(0, 120),
+        contentPreview: preview,
+        subject: p.subject || 'General',
+        examBoard: p.examBoard || 'Competitive / Custom',
+        authorName: author?.displayName || 'Student',
+        authorUsername: author?.username || `user${p.authorId}`,
+        isSolved: Boolean(p.isSolved),
+        replyCount,
+        attemptCount,
+        popularityScore: replyCount * 2 + attemptCount,
+        createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt),
+      };
+    });
+
+    const recent = [...items]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+    const popular = [...items]
+      .sort(
+        (a, b) =>
+          b.popularityScore - a.popularityScore ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+      .slice(0, 5);
+
+    return { popular, recent };
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const allowedRoomIds = new Set<number>(
+      store.forumRooms.filter((r) => r.roomType === 'global_qa').map((r) => r.id)
+    );
+    if (viewerUserId) {
+      store.forumMembers
+        .filter((m) => m.userId === viewerUserId)
+        .forEach((m) => allowedRoomIds.add(m.roomId));
+    }
+    const items: ForumHighlightItem[] = store.forumPosts
+      .filter((p) => allowedRoomIds.has(p.roomId))
+      .map((p) => {
+        const replyCount = store.forumReplies.filter((r) => r.postId === p.id).length;
+        const attemptCount = store.forumAttempts.filter((a) => a.postId === p.id).length;
+        const author = store.users.find((u) => u.id === p.authorId);
+        const room = store.forumRooms.find((r) => r.id === p.roomId);
+        const preview = (p.contentText || richHtmlToPlainText(p.contentHtml || '')).trim().slice(0, 140);
+        return {
+          id: p.id,
+          roomId: p.roomId,
+          roomTitle: room?.title || 'Global Q&A',
+          postKind: p.postKind === 'message' ? 'message' : 'question',
+          title: (p.title || preview || 'Forum Discussion').slice(0, 120),
+          contentPreview: preview,
+          subject: p.subject || 'General',
+          examBoard: p.examBoard || 'Competitive / Custom',
+          authorName: author?.displayName || 'Student',
+          authorUsername: author?.username || `user${p.authorId}`,
+          isSolved: Boolean(p.isSolved),
+          replyCount,
+          attemptCount,
+          popularityScore: replyCount * 2 + attemptCount,
+          createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt),
+        };
+      });
+
+    const recent = [...items]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+    const popular = [...items]
+      .sort(
+        (a, b) =>
+          b.popularityScore - a.popularityScore ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+      .slice(0, 5);
+    return { popular, recent };
+  }
+}
+

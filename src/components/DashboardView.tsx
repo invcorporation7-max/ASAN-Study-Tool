@@ -6,28 +6,36 @@ import {
   BookOpen,
   Calendar,
   CalendarDays,
+  CheckCircle2,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
   Clock,
   Coins,
+  Crown,
   Eye,
   EyeOff,
   FilePlus2,
   FolderOpen,
+  FolderUp,
   GripVertical,
   Layers,
   Lock,
   Mail,
   Maximize2,
+  MessageSquare,
   Pin,
   PinOff,
   RotateCcw,
+  ShieldCheck,
   Sigma,
   SlidersHorizontal,
   Timer,
+  TrendingUp,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch, apiOptionalAuthFetch } from '../lib/api';
 import { FREE_TIER_MAX_NOTES, FREE_TIER_MAX_TASKS } from '../lib/guestStore';
 import {
   CountdownPinState,
@@ -43,18 +51,26 @@ import {
   toggleCountdownPin,
 } from '../lib/workspacePrefs';
 import type {
+  AdminPointTransactionsResponse,
   CalendarEventItem,
+  ContributorFileItem,
+  ContributorFolderItem,
   DashboardPreferences,
   DashboardTileSize,
   DashboardWidgetId,
   DbUser,
   ExamCountdownItem,
   ExamScheduleItem,
+  ForumHighlightsResponse,
+  MaterialPurchaseItem,
   NavSection,
+  ProRefundRequestItem,
   StudyLogItem,
+  StudyMaterialItem,
   StudyNotebook,
   StudyNotePage,
   StudyTask,
+  SuperUsersPointsResponse,
 } from '../types';
 
 interface DashboardViewProps {
@@ -66,6 +82,8 @@ interface DashboardViewProps {
   exams: ExamScheduleItem[];
   countdowns: ExamCountdownItem[];
   studyLogs: StudyLogItem[];
+  studyMaterials?: StudyMaterialItem[];
+  materialPurchases?: MaterialPurchaseItem[];
   onNavigate: (section: NavSection) => void;
 }
 
@@ -100,9 +118,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   exams,
   countdowns,
   studyLogs,
+  studyMaterials = [],
+  materialPurchases = [],
   onNavigate,
 }) => {
-  const { isGuest, effectivePlan, isEffectiveProOrAdmin, exitGuestToSignIn } = useAuth();
+  const {
+    isGuest,
+    effectivePlan,
+    isEffectiveProOrAdmin,
+    isApprovedContributor,
+    isAdmin,
+    isSuper,
+    exitGuestToSignIn,
+  } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
   const userKey = isGuest ? 'guest' : dbUser?.uid || String(dbUser?.id || 'user');
 
@@ -114,6 +142,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null);
   const [dragOverWidgetId, setDragOverWidgetId] = useState<DashboardWidgetId | null>(null);
+
+  // Forum Highlights + Role Console Widget Summaries
+  const [forumHighlights, setForumHighlights] = useState<ForumHighlightsResponse>({
+    popular: [],
+    recent: [],
+  });
+  const [forumTab, setForumTab] = useState<'popular' | 'recent'>('popular');
+  const [contribSummary, setContribSummary] = useState<{ folders: number; files: number } | null>(
+    null
+  );
+  const [adminSummary, setAdminSummary] = useState<{
+    pendingPoints: number;
+    pendingContribs: number;
+    pendingRefunds: number;
+    totalUsers: number;
+  } | null>(null);
+  const [superSummary, setSuperSummary] = useState<SuperUsersPointsResponse['summary'] | null>(
+    null
+  );
 
   const today = new Date();
   const todayStr = fmtDate(today);
@@ -127,6 +174,95 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setPrefs(loadDashboardPrefs(userKey));
     setPinState(loadCountdownPins(userKey));
   }, [userKey]);
+
+  useEffect(() => {
+    let active = true;
+    void apiOptionalAuthFetch<ForumHighlightsResponse>('/api/forum/highlights')
+      .then((res) => {
+        if (active && res) {
+          setForumHighlights({
+            popular: Array.isArray(res.popular) ? res.popular : [],
+            recent: Array.isArray(res.recent) ? res.recent : [],
+          });
+        }
+      })
+      .catch(() => {
+        // silent fallback if offline
+      });
+    return () => {
+      active = false;
+    };
+  }, [userKey]);
+
+  useEffect(() => {
+    let active = true;
+    if (isGuest || !dbUser) {
+      setContribSummary(null);
+      setAdminSummary(null);
+      setSuperSummary(null);
+      return;
+    }
+
+    if (isApprovedContributor) {
+      void apiFetch<{ folders: ContributorFolderItem[]; files: ContributorFileItem[] }>(
+        '/api/contributor-console'
+      )
+        .then((res) => {
+          if (active) {
+            setContribSummary({
+              folders: (res.folders || []).length,
+              files: (res.files || []).length,
+            });
+          }
+        })
+        .catch(() => {});
+    } else {
+      setContribSummary(null);
+    }
+
+    if (isAdmin) {
+      void Promise.all([
+        apiFetch<{
+          analytics?: { totalUsers?: number; pendingContributorRequests?: number };
+          refundRequests?: ProRefundRequestItem[];
+        }>('/api/admin/overview').catch(() => null),
+        apiFetch<AdminPointTransactionsResponse>('/api/admin/point-transactions').catch(() => null),
+      ]).then(([ov, tx]) => {
+        if (!active) return;
+        setAdminSummary({
+          pendingPoints: tx?.summary?.pending ?? 0,
+          pendingContribs: ov?.analytics?.pendingContributorRequests ?? 0,
+          pendingRefunds: (ov?.refundRequests || []).filter((r) => r.status === 'pending').length,
+          totalUsers: ov?.analytics?.totalUsers ?? 0,
+        });
+      });
+    } else {
+      setAdminSummary(null);
+    }
+
+    if (isSuper) {
+      void apiFetch<SuperUsersPointsResponse>('/api/super/users-points')
+        .then((res) => {
+          if (active && res?.summary) {
+            setSuperSummary(res.summary);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setSuperSummary(null);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [isGuest, dbUser, isApprovedContributor, isAdmin, isSuper]);
+
+  const isWidgetEligibleForUser = (wId: DashboardWidgetId): boolean => {
+    if (wId === 'contributor-console') return isApprovedContributor;
+    if (wId === 'admin-console') return isAdmin;
+    if (wId === 'super-console') return isSuper;
+    return true;
+  };
 
   const pinnedCountdowns = useMemo(() => {
     return countdowns
@@ -376,6 +512,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const renderWidget = (widgetId: DashboardWidgetId) => {
+    if (!isWidgetEligibleForUser(widgetId)) return null;
     if (prefs.hidden.includes(widgetId)) return null;
     const size = getWidgetSize(widgetId);
 
@@ -909,6 +1046,358 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       );
     }
 
+    if (widgetId === 'forum-highlights') {
+      const items = forumTab === 'popular' ? forumHighlights.popular : forumHighlights.recent;
+      return wrapWidgetTile(
+        'forum-highlights',
+        <div className="p-6 flex-1 flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Study Forum Highlights
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setForumTab('popular')}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold ${
+                    forumTab === 'popular'
+                      ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  <TrendingUp className="h-3 w-3" />
+                  Popular
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForumTab('recent')}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold ${
+                    forumTab === 'recent'
+                      ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Recent
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('forum')}
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap shrink-0"
+              >
+                Open Forum
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="py-10 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No forum questions or discussions yet. Start a thread in Study Forum!
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigate('forum')}
+                className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100"
+              >
+                Ask a Question
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {items.slice(0, size.rowSpan === 2 ? 6 : 4).map((post) => (
+                <button
+                  key={post.id}
+                  type="button"
+                  onClick={() => onNavigate('forum')}
+                  className="w-full py-3 text-left flex items-start justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded px-1 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {post.title}
+                      </span>
+                      {post.isSolved && (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      <span>{post.subject}</span>
+                      {post.examBoard && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>{post.examBoard}</span>
+                        </>
+                      )}
+                      <span aria-hidden="true">·</span>
+                      <span>@{post.authorUsername}</span>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] font-mono text-slate-500 dark:text-slate-400 shrink-0 tabular-nums">
+                    <div>{post.replyCount} repl</div>
+                    <div>{post.attemptCount} tries</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (widgetId === 'purchased-materials') {
+      const matById = new Map(studyMaterials.map((m) => [m.id, m]));
+      const activePurchases = materialPurchases.filter((p) => {
+        if (p.accessType === 'buy') return true;
+        if (!p.expiresAt) return true;
+        return new Date(p.expiresAt).getTime() > Date.now();
+      });
+      return wrapWidgetTile(
+        'purchased-materials',
+        <div className="p-6 flex-1 flex flex-col">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Purchased Study Materials ({activePurchases.length})
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('study-materials')}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap shrink-0"
+            >
+              Browse Repository
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {isGuest ? (
+            <div className="py-10 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Sign in to unlock, rent, or buy multi-format study notes &amp; papers with points.
+              </p>
+              <button
+                type="button"
+                onClick={exitGuestToSignIn}
+                className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+              >
+                Sign In
+              </button>
+            </div>
+          ) : activePurchases.length === 0 ? (
+            <div className="py-10 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No active rented or purchased study materials yet.
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigate('study-materials')}
+                className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100"
+              >
+                Explore Study Materials
+              </button>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {activePurchases.slice(0, size.rowSpan === 2 ? 6 : 4).map((p) => {
+                const mat = matById.get(p.materialId);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onNavigate('study-materials')}
+                    className="w-full py-3 text-left flex items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded px-1 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {mat?.title || p.materialTitle}
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="uppercase font-semibold">
+                          {mat?.mediaKind || 'file'}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{mat?.subject || 'Study Resource'}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{p.totalCost} pts</span>
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold shrink-0 ${
+                        p.accessType === 'buy'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
+                      }`}
+                    >
+                      {p.accessType === 'buy'
+                        ? 'Owned'
+                        : p.expiresAt
+                          ? `Until ${p.expiresAt.slice(0, 10)}`
+                          : 'Rented'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (widgetId === 'contributor-console') {
+      return wrapWidgetTile(
+        'contributor-console',
+        <div className="p-6 flex-1 flex flex-col justify-between gap-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <FolderUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Contributors&apos; Console
+              </h2>
+            </div>
+            <span className="rounded bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
+              Contributor
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-3">
+              <div className="font-display text-xl font-bold text-slate-900 dark:text-white tabular-nums">
+                {contribSummary?.folders ?? 0}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Folders</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-3">
+              <div className="font-display text-xl font-bold text-slate-900 dark:text-white tabular-nums">
+                {contribSummary?.files ?? 0}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Shared Files</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('contributor-console')}
+              className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              Open Contributors&apos; Console
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('formula-calculator')}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Define Equations
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (widgetId === 'admin-console') {
+      return wrapWidgetTile(
+        'admin-console',
+        <div className="p-6 flex-1 flex flex-col justify-between gap-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Admin Console
+              </h2>
+            </div>
+            <span className="rounded bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700 dark:text-blue-300">
+              Admin
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 text-center">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                {adminSummary?.pendingPoints ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Pending Pts</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-slate-900 dark:text-white tabular-nums">
+                {adminSummary?.pendingContribs ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Contrib Reqs</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-slate-900 dark:text-white tabular-nums">
+                {adminSummary?.pendingRefunds ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Refund Reqs</div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('admin')}
+            className="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            Open Admin Console ({adminSummary?.totalUsers ?? 0} users)
+          </button>
+        </div>
+      );
+    }
+
+    if (widgetId === 'super-console') {
+      return wrapWidgetTile(
+        'super-console',
+        <div className="p-6 flex-1 flex flex-col justify-between gap-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
+              <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">
+                Super Console
+              </h2>
+            </div>
+            <span className="rounded bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
+              Super
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 text-center">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-slate-900 dark:text-white tabular-nums">
+                {superSummary?.totalUsers ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Users</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                {superSummary?.totalPointsCirculating ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Circulating Pts</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 p-2.5">
+              <div className="font-display text-lg font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">
+                {superSummary?.proUsers ?? 0}
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Pro Users</div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('super')}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 dark:bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-amber-700"
+          >
+            <Users className="h-3.5 w-3.5" />
+            Open Super Console
+          </button>
+        </div>
+      );
+    }
+
     // quick-actions
     return wrapWidgetTile(
       'quick-actions',
@@ -964,14 +1453,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Math Solvers
+                Math Solvers (Lite)
               </span>
               <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               {isProOrAdmin
-                ? 'Calculus, Coordinate, Algebra, Vectors 3D & Trig.'
-                : 'Pro & Admin specialized math solvers suite.'}
+                ? 'Lite Version — Calculus, Coordinate, Algebra, Vectors 3D & Trig.'
+                : 'Lite Version — Pro & Admin specialized math solvers suite.'}
             </p>
           </div>
         </button>
@@ -1145,10 +1634,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {prefs.order.map((wId, idx) => {
+            {prefs.order.filter(isWidgetEligibleForUser).map((wId, idx, eligibleArr) => {
               const meta = DASHBOARD_WIDGET_META[wId];
               const isHidden = prefs.hidden.includes(wId);
               const size = getWidgetSize(wId);
+              const visibleLength = eligibleArr.length;
               return (
                 <div
                   key={wId}
@@ -1244,7 +1734,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        disabled={idx === prefs.order.length - 1}
+                        disabled={idx === visibleLength - 1}
                         onClick={() => moveWidgetOrder(wId, 1)}
                         aria-label={`Move ${meta.label} down`}
                         className="rounded border border-slate-200 dark:border-slate-700 p-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-35"

@@ -427,6 +427,17 @@ interface LocalStoreData {
   forumReplyVotes: StoreForumReplyVote[];
   forumAttachments: StoreForumAttachment[];
   formulaEquations: StoreFormulaEquation[];
+  formulaMeteredSessions?: Record<string, StoreFormulaMeteredSession>;
+}
+
+export interface StoreFormulaMeteredSession {
+  enabled: boolean;
+  quarterNumber: number;
+  quarterExpiresAt: string;
+  lastChargedPoints: number;
+  totalSessionPoints: number;
+  startedAt: string;
+  updatedAt: string;
 }
 
 export interface StoreFormulaEquation {
@@ -436,6 +447,7 @@ export interface StoreFormulaEquation {
   authorUsername: string;
   title: string;
   subject: string;
+  caseName?: string;
   expression: string;
   description: string;
   symbolsJson: { symbol: string; meaning: string; unit?: string }[];
@@ -614,6 +626,7 @@ export function getLocalStore(): LocalStoreData {
         forumReplyVotes: parsed.forumReplyVotes || [],
         forumAttachments: parsed.forumAttachments || [],
         formulaEquations: parsed.formulaEquations || [],
+        formulaMeteredSessions: parsed.formulaMeteredSessions || {},
       });
       return cachedStore;
     } catch {
@@ -650,6 +663,7 @@ export function getLocalStore(): LocalStoreData {
     forumReplyVotes: [],
     forumAttachments: [],
     formulaEquations: [],
+    formulaMeteredSessions: {},
   };
   persistLocalStore();
   return cachedStore;

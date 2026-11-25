@@ -596,12 +596,15 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             author_username TEXT NOT NULL DEFAULT 'contributor',
             title TEXT NOT NULL,
             subject TEXT NOT NULL DEFAULT 'Physics',
+            case_name TEXT NOT NULL DEFAULT 'General',
             expression TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             symbols_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          ALTER TABLE formula_equations ADD COLUMN IF NOT EXISTS case_name TEXT NOT NULL DEFAULT 'General';
 
           CREATE INDEX IF NOT EXISTS idx_forum_members_room_user ON forum_members(room_id, user_id);
           CREATE INDEX IF NOT EXISTS idx_forum_posts_room_created ON forum_posts(room_id, created_at DESC);

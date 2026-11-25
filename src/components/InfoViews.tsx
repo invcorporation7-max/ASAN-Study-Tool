@@ -390,7 +390,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         'Dashboard, Infinite Monthly Calendar & Persistent Timers',
         'Up to 10 A4 PDF note documents (local browser)',
         'Up to 150 tasks (local browser)',
-        'Excludes Cloud Sync, Tool Mail, Points, PDF Booklet Tool, Workspace & Specialized Calculators',
+        'Excludes Cloud Sync, Tool Mail, Points, PDF Booklet Tool, Workspace & Specialized Calculators (Lite)',
       ],
     },
     {
@@ -404,8 +404,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         `500 initial points + earn points (+${rewards.questionPaperUpload} paper, +${rewards.forumSatisfactoryAnswer} forum answer, +${rewards.examTimer30Min}/30m exam timer, +${rewards.calendarStudyEvent} study calendar${
           rewards.noteCreate > 0 ? `, +${rewards.noteCreate} note` : ''
         })`,
-        'Study Forum (Global Q&A, Groups, 1-to-1 DMs), Contributor Formula Calculator & Upgraded Tool Mail',
-        'Excludes Specialized Calculators, PDF Booklet Tool & Google Sheets Workspace',
+        'Study Forum (Global Q&A, Groups, 1-to-1 DMs), Metered Formula Calculator (30 pts/hr billed quarterly) & Upgraded Tool Mail',
+        'Excludes Specialized Calculators (Lite), PDF Booklet Tool & Google Sheets Workspace',
       ],
     },
     {
@@ -415,7 +415,8 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
       price: '500 Pts / Mo · 5,100 Pts / Yr (15% Off)',
       features: [
         'Everything in Basic plan + Study Time Logger (In/Out − 2.5% − Sleep)',
-        'Specialized Calculators Suite (Calculus, Coordinate Geometry, Algebra, Vector & 3D, Trigonometry)',
+        'Unlimited Formula Equation & Case Calculator (Pro included; no hourly pts needed)',
+        'Specialized Calculators Suite — Lite Version (Calculus, Coordinate Geometry, Algebra, Vector & 3D, Trigonometry)',
         'PDF Tool: A4 Booklet & Imposition Studio (Full/Half/Quarter)',
         'Google Workspace (Sheets "master" / "test_dates" sync, Docs export, Meet rooms)',
         'Expirable 8-char Pro Key (1 yr activation window, 1 mo or 12 mo Pro term)',
@@ -1113,10 +1114,10 @@ export const AboutCreatorsView: React.FC = () => {
             <strong>Multi-Format Study Material Repository:</strong> Upload, filter, preview inline, and share <strong>Photos, Videos, Text, PDFs, Word, Excel, PowerPoint, and Audio Recordings</strong> (including built-in browser voice recording) with automatic format recognition.
           </li>
           <li>
-            <strong>Contributor Formula Calculator &amp; Wide Conic/Circle Solver:</strong> Approved Contributors, Admins, and Super define formula equations with symbol meanings; students supply known input parameters and request N target outputs using semantic parameter matching, multi-equation chaining, and wide symbolic Circle &amp; Conic solvers (Major/Minor Axis, Latus Rectum, Directrix, Foci, Vertices, Asymptotes).
+            <strong>Case-Based &amp; Auto-Detect Formula Calculator (Pro or Metered 30 pts/hr) + Specialized Calculators (Lite):</strong> Approved Contributors, Admins, and Super define case-scoped equations with symbol meanings; students choose a case or Auto-Detect, enter input parameters (like <code className="font-mono">u=5, t=5, s=250</code>), and compute target outputs or wide Circle &amp; Conic properties. Available via Pro or manual Metered Access (30 pts/hr billed quarterly every 15 minutes), alongside the Specialized Calculators Lite Version.
           </li>
           <li>
-            <strong>Student Etiquette &amp; Updated Legal Terms:</strong> Updated Privacy Policy and Terms of Service establishing clear academic integrity, peer collaboration etiquette, and fair points governance.
+            <strong>Customizable Dashboard Widgets:</strong> Added widgets for Forum Highlights (Most Popular / Recent), Purchased Study Materials, and role-gated Contributors&apos;, Admin, and Super Console cards.
           </li>
         </ul>
       </div>

@@ -649,6 +649,11 @@ export type DashboardWidgetId =
   | 'tasks'
   | 'schedule'
   | 'monthly-calendar'
+  | 'forum-highlights'
+  | 'purchased-materials'
+  | 'contributor-console'
+  | 'admin-console'
+  | 'super-console'
   | 'quick-actions';
 
 export interface DashboardTileSize {
@@ -697,10 +702,51 @@ export interface FormulaEquationItem {
   authorUsername: string;
   title: string;
   subject: string;
+  caseName?: string;
   expression: string;
   description: string;
   symbols: FormulaSymbolDef[];
   createdAt: string;
   updatedAt: string;
 }
+
+export interface FormulaAccessStatus {
+  accessMode: 'pro' | 'metered';
+  hasAccess: boolean;
+  proIncluded: boolean;
+  enabled: boolean;
+  hourlyRate: number;
+  quarterMinutes: number;
+  quarterNumber: number;
+  quarterExpiresAt: string;
+  lastChargedPoints: number;
+  nextQuarterCost: number;
+  totalSessionPoints: number;
+  needsRenewal?: boolean;
+  points?: number;
+}
+
+export interface ForumHighlightItem {
+  id: number;
+  roomId: number;
+  roomTitle: string;
+  postKind: 'question' | 'message';
+  title: string;
+  contentPreview: string;
+  subject: string;
+  examBoard: string;
+  authorName: string;
+  authorUsername: string;
+  isSolved: boolean;
+  replyCount: number;
+  attemptCount: number;
+  popularityScore: number;
+  createdAt: string;
+}
+
+export interface ForumHighlightsResponse {
+  popular: ForumHighlightItem[];
+  recent: ForumHighlightItem[];
+}
+
 

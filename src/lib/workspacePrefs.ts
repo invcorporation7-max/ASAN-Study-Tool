@@ -10,8 +10,13 @@ import type {
 export const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetId[] = [
   'metrics',
   'exam-countdowns',
+  'forum-highlights',
+  'purchased-materials',
   'tasks',
   'schedule',
+  'contributor-console',
+  'admin-console',
+  'super-console',
   'monthly-calendar',
   'quick-actions',
 ];
@@ -21,8 +26,13 @@ export const DEFAULT_HIDDEN_WIDGETS: DashboardWidgetId[] = ['monthly-calendar'];
 export const DEFAULT_WIDGET_SIZES: Record<DashboardWidgetId, DashboardTileSize> = {
   metrics: { colSpan: 2, rowSpan: 1 },
   'exam-countdowns': { colSpan: 2, rowSpan: 1 },
+  'forum-highlights': { colSpan: 1, rowSpan: 1 },
+  'purchased-materials': { colSpan: 1, rowSpan: 1 },
   tasks: { colSpan: 1, rowSpan: 1 },
   schedule: { colSpan: 1, rowSpan: 1 },
+  'contributor-console': { colSpan: 1, rowSpan: 1 },
+  'admin-console': { colSpan: 1, rowSpan: 1 },
+  'super-console': { colSpan: 1, rowSpan: 1 },
   'monthly-calendar': { colSpan: 1, rowSpan: 1 },
   'quick-actions': { colSpan: 2, rowSpan: 1 },
 };
@@ -39,6 +49,14 @@ export const DASHBOARD_WIDGET_META: Record<
     label: 'Exam Countdowns (Optional)',
     description: 'Optional live ticking cards for pinned national exams and custom countdowns.',
   },
+  'forum-highlights': {
+    label: 'Study Forum (Popular & Recent)',
+    description: 'Switch between the most popular discussions and latest posts in Study Forum.',
+  },
+  'purchased-materials': {
+    label: 'Purchased Study Materials',
+    description: 'Active rentals and purchased notes/papers with expiry timers and quick access.',
+  },
   tasks: {
     label: 'Priority Study Tasks',
     description: 'Quick view of upcoming study tasks and completion status.',
@@ -47,13 +65,25 @@ export const DASHBOARD_WIDGET_META: Record<
     label: 'Upcoming Schedule',
     description: 'Next upcoming calendar sessions, tuition classes, and exams.',
   },
+  'contributor-console': {
+    label: "Contributors' Console Widget",
+    description: 'Quick summary and launcher for approved Contributors.',
+  },
+  'admin-console': {
+    label: 'Admin Console Widget',
+    description: 'Pending point verifications, moderation overview, and Admin quick launcher.',
+  },
+  'super-console': {
+    label: 'Super Console Widget',
+    description: 'Circulating economy summary, role stats, and Super Console launcher.',
+  },
   'monthly-calendar': {
     label: 'Current Month Calendar (Optional)',
     description: 'Optional live monthly calendar highlighting today, events, tasks, and exams.',
   },
   'quick-actions': {
     label: 'Quick Tool Launchers',
-    description: 'One-click shortcuts to A4 Notes, PDF Studio, Math Solvers, and Tool Mail.',
+    description: 'One-click shortcuts to A4 Notes, PDF Studio, Math Solvers (Lite), and Tool Mail.',
   },
 };
 
@@ -284,7 +314,7 @@ export const APP_SHORTCUT_CATALOG: AppShortcutCatalogEntry[] = [
   { id: 'study-materials', label: 'Study Material Notes', category: 'Community & Account' },
   { id: 'subscriptions', label: 'Subscriptions', category: 'Community & Account' },
   { id: 'notifications', label: 'Notifications', category: 'Community & Account' },
-  { id: 'specialized-calculators', label: 'Specialized Calculators', category: 'Pro Tools', proOnly: true },
+  { id: 'specialized-calculators', label: 'Specialized Calculators (Lite)', category: 'Pro Tools', proOnly: true },
   { id: 'pdf-tool', label: 'PDF Tool', category: 'Pro Tools', proOnly: true },
   { id: 'workspace', label: 'Google Workspace', category: 'Pro Tools', proOnly: true, requiresWorkspace: true },
   { id: 'spectra', label: 'Spectra AI', category: 'Pro Tools', proOnly: true },

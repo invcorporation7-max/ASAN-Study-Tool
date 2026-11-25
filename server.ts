@@ -119,6 +119,7 @@ import {
   createForumPost,
   createForumReply,
   getForumAttachmentForUser,
+  getForumHighlights,
   getForumPostDetail,
   getOrCreateDmRoom,
   listForumRoomPosts,
@@ -131,7 +132,11 @@ import {
 import {
   createFormulaEquation,
   deleteFormulaEquation,
+  getFormulaAccessStatus,
   listFormulaEquations,
+  renewFormulaMeteredSession,
+  startFormulaMeteredSession,
+  stopFormulaMeteredSession,
   updateFormulaEquation,
 } from './src/db/formulas.ts';
 import {
@@ -2504,7 +2509,62 @@ async function startServer() {
     }
   });
 
+  app.get('/api/forum/highlights', optionalAuth, async (req: AuthRequest, res) => {
+    try {
+      const data = await getForumHighlights(req.dbUser?.id ?? null);
+      res.json(data);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load forum highlights',
+      });
+    }
+  });
+
   // --- FORMULA EQUATION CALCULATOR (Contributor-Defined Equations & Parameter Matching) ---
+  app.get('/api/formula-access/status', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const status = await getFormulaAccessStatus(req.dbUser!);
+      res.json(status);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to check formula access status',
+      });
+    }
+  });
+
+  app.post('/api/formula-access/start', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const status = await startFormulaMeteredSession(req.dbUser!);
+      res.json(status);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to enable metered formula access',
+      });
+    }
+  });
+
+  app.post('/api/formula-access/renew', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const status = await renewFormulaMeteredSession(req.dbUser!);
+      res.json(status);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to renew metered quarter',
+      });
+    }
+  });
+
+  app.post('/api/formula-access/stop', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const status = await stopFormulaMeteredSession(req.dbUser!);
+      res.json(status);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to disable metered formula access',
+      });
+    }
+  });
+
   app.get('/api/formulas', optionalAuth, async (_req, res) => {
     try {
       const rows = await listFormulaEquations();
@@ -2527,13 +2587,14 @@ async function startServer() {
           error: 'Defining formula equations requires approved Contributor, Admin, or Super role.',
         });
       }
-      const { title, subject, expression, description, symbols } = req.body || {};
+      const { title, subject, caseName, expression, description, symbols } = req.body || {};
       const created = await createFormulaEquation({
         authorId: req.dbUser!.id,
         authorName: req.dbUser!.displayName,
         authorUsername: req.dbUser!.username,
         title: String(title || ''),
         subject: String(subject || 'General'),
+        caseName: typeof caseName === 'string' && caseName.trim() ? caseName : 'General',
         expression: String(expression || ''),
         description: String(description || ''),
         symbols: Array.isArray(symbols) ? symbols : [],
@@ -2557,6 +2618,7 @@ async function startServer() {
         isAdminOrSuper,
         ...(req.body?.title !== undefined ? { title: String(req.body.title) } : {}),
         ...(req.body?.subject !== undefined ? { subject: String(req.body.subject) } : {}),
+        ...(req.body?.caseName !== undefined ? { caseName: String(req.body.caseName) } : {}),
         ...(req.body?.expression !== undefined ? { expression: String(req.body.expression) } : {}),
         ...(req.body?.description !== undefined ? { description: String(req.body.description) } : {}),
         ...(Array.isArray(req.body?.symbols) ? { symbols: req.body.symbols } : {}),

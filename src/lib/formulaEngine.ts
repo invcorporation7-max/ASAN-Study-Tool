@@ -64,7 +64,38 @@ export function fmtCalcNumber(n: number, digits = 6): string {
   return Number(clean.toPrecision(digits)).toString();
 }
 
-export function tokenizeFormula(input: string): Tok[] {
+function splitCompositeIdentifier(
+  rawId: string,
+  knownSymbols?: string[]
+): string[] {
+  if (!knownSymbols || knownSymbols.length === 0) return [rawId];
+  const fn = normFn(rawId);
+  if (MATH_FUNCS.has(fn) || rawId.toLowerCase() === 'pi') return [rawId];
+  if (knownSymbols.includes(rawId)) return [rawId];
+  const lowerMatch = knownSymbols.find((s) => s.toLowerCase() === rawId.toLowerCase());
+  if (lowerMatch) return [rawId];
+
+  // Greedily decompose e.g. "ut" -> ["u", "t"] or "at" -> ["a", "t"] using knownSymbols
+  const sorted = [...knownSymbols]
+    .filter((s) => s.length > 0)
+    .sort((a, b) => b.length - a.length);
+
+  const parts: string[] = [];
+  let idx = 0;
+  while (idx < rawId.length) {
+    const rest = rawId.slice(idx);
+    let matched = sorted.find((s) => rest.startsWith(s));
+    if (!matched) {
+      matched = sorted.find((s) => rest.toLowerCase().startsWith(s.toLowerCase()));
+    }
+    if (!matched) return [rawId];
+    parts.push(rest.slice(0, matched.length));
+    idx += matched.length;
+  }
+  return parts.length > 1 ? parts : [rawId];
+}
+
+export function tokenizeFormula(input: string, knownSymbols?: string[]): Tok[] {
   const src = input
     .replace(/−|–/g, '-')
     .replace(/×|·/g, '*')
@@ -108,7 +139,11 @@ export function tokenizeFormula(input: string): Tok[] {
     if (/[a-zA-Z_]/.test(ch)) {
       let j = i;
       while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
-      raw.push({ type: 'id', value: src.slice(i, j) });
+      const ident = src.slice(i, j);
+      const splitIds = splitCompositeIdentifier(ident, knownSymbols);
+      for (const part of splitIds) {
+        raw.push({ type: 'id', value: part });
+      }
       i = j;
       continue;
     }
@@ -153,8 +188,8 @@ export function tokenizeFormula(input: string): Tok[] {
   return out;
 }
 
-export function parseFormulaAst(expr: string): FormulaAst {
-  const tokens = tokenizeFormula(expr);
+export function parseFormulaAst(expr: string, knownSymbols?: string[]): FormulaAst {
+  const tokens = tokenizeFormula(expr, knownSymbols);
   if (tokens.length === 0) throw new Error('Expression is empty');
   let pos = 0;
   const peek = () => tokens[pos];
@@ -420,11 +455,16 @@ const SYNONYM_MAP: Record<string, string> = {
 };
 
 export function normalizeSemanticText(text: string): string {
-  return text
+  const rawTokens = text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w && !STOP_WORDS.has(w))
+    .filter(Boolean);
+  const filtered =
+    rawTokens.length > 1
+      ? rawTokens.filter((w) => !STOP_WORDS.has(w))
+      : rawTokens;
+  return filtered
     .map((w) => SYNONYM_MAP[w] || w)
     .join(' ')
     .trim();
@@ -432,15 +472,29 @@ export function normalizeSemanticText(text: string): string {
 
 export function scoreMeaningMatch(userDesc: string, symbolDef: FormulaSymbolDef, userSymbolHint?: string): number {
   const hint = (userSymbolHint || '').trim();
-  if (hint && hint.toLowerCase() === symbolDef.symbol.toLowerCase()) {
-    return 100;
+  const rawDesc = (userDesc || '').trim();
+  if (hint) {
+    if (hint === symbolDef.symbol) return 100;
+    if (hint.toLowerCase() === symbolDef.symbol.toLowerCase()) return 96;
+    // If user explicitly provided a symbol identifier (e.g. `t`) and the target symbol is different (e.g. `a`), do not cross-match unless meaning explicitly matches
+    if (rawDesc === hint && symbolDef.symbol && hint.length <= 3) {
+      return 0;
+    }
+  }
+  if (rawDesc) {
+    if (rawDesc === symbolDef.symbol) return 100;
+    if (rawDesc.toLowerCase() === symbolDef.symbol.toLowerCase()) return 94;
   }
   const uNorm = normalizeSemanticText(userDesc);
   const sNorm = normalizeSemanticText(symbolDef.meaning);
   if (!uNorm || !sNorm) return 0;
   if (uNorm === sNorm) return 95;
-  if (uNorm === symbolDef.symbol.toLowerCase()) return 85;
-  if (sNorm.includes(uNorm) || uNorm.includes(sNorm)) {
+  if (uNorm === symbolDef.symbol.toLowerCase()) return 88;
+  // Require at least 3 characters on both sides before substring matching (prevents 'a' matching 'acceleration', 't' matching 'time interval' via 't' in another word, etc.)
+  if (
+    Math.min(uNorm.length, sNorm.length) >= 3 &&
+    (sNorm.includes(uNorm) || uNorm.includes(sNorm))
+  ) {
     const ratio = Math.min(uNorm.length, sNorm.length) / Math.max(uNorm.length, sNorm.length);
     return Math.round(62 + ratio * 25);
   }
@@ -459,12 +513,13 @@ function solveSingleUnknownEquation(
   expression: string,
   knownVars: Record<string, number>,
   unknownSymbol: string,
-  angleUnit: 'rad' | 'deg' = 'rad'
+  angleUnit: 'rad' | 'deg' = 'rad',
+  knownSymbols?: string[]
 ): number | null {
   const parts = expression.split('=');
   if (parts.length !== 2) return null;
-  const lhsAst = parseFormulaAst(parts[0]);
-  const rhsAst = parseFormulaAst(parts[1]);
+  const lhsAst = parseFormulaAst(parts[0], knownSymbols);
+  const rhsAst = parseFormulaAst(parts[1], knownSymbols);
 
   const f = (x: number): number => {
     const env = { ...knownVars, [unknownSymbol]: x };
@@ -614,13 +669,51 @@ export interface SolvedOutputItem {
   steps: string[];
 }
 
+export const GEOMETRY_CASE_LABEL = 'Circle & Conic Geometry';
+
 export interface FormulaSolveResponse {
   ok: boolean;
   mode: 'geometry_symbolic' | 'formula_chain' | 'mixed';
+  detectedCase?: string;
+  caseMode?: 'auto' | 'manual';
   outputs: SolvedOutputItem[];
   unmatchedOutputs: string[];
   derivationSteps: string[];
   warnings: string[];
+}
+
+export function parseQuickParamString(raw: string): UserParamInput[] {
+  const segments: string[] = [];
+  let cur = '';
+  let depth = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if ((ch === ')' || ch === ']' || ch === '}') && depth > 0) depth--;
+    if ((ch === ',' || ch === ';' || ch === '\n') && depth === 0) {
+      if (cur.trim()) segments.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) segments.push(cur.trim());
+
+  const parsed: UserParamInput[] = [];
+  for (const seg of segments) {
+    const eqIdx = seg.indexOf('=');
+    if (eqIdx === -1) continue;
+    const lhs = seg.slice(0, eqIdx).trim();
+    const rhs = seg.slice(eqIdx + 1).trim();
+    if (!lhs || !rhs) continue;
+    const isShortSymbol = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(lhs) && lhs.length <= 12;
+    parsed.push({
+      description: lhs,
+      symbolHint: isShortSymbol ? lhs : undefined,
+      value: rhs,
+    });
+  }
+  return parsed;
 }
 
 function parsePointTuple(raw: string): [number, number] | null {
@@ -1380,19 +1473,114 @@ function matchGeometryFieldKey(desc: string): string | null {
   return null;
 }
 
+export function autoDetectFormulaCase(
+  formulas: FormulaEquationItem[],
+  inputs: UserParamInput[],
+  requestedOutputs: UserOutputRequest[]
+): { caseName: string; confidence: number } {
+  // Check Geometry model first if user supplied conic/circle style inputs
+  const geoModel = tryBuildGeometryModel(inputs);
+  if (geoModel) {
+    const geoOutHit = requestedOutputs.some((req) => Boolean(matchGeometryFieldKey(req.description)));
+    if (geoOutHit || requestedOutputs.length === 0) {
+      return { caseName: GEOMETRY_CASE_LABEL, confidence: 100 };
+    }
+  }
+
+  const caseBuckets = new Map<string, FormulaEquationItem[]>();
+  for (const f of formulas) {
+    const cName = (f.caseName || 'General').trim() || 'General';
+    const arr = caseBuckets.get(cName) || [];
+    arr.push(f);
+    caseBuckets.set(cName, arr);
+  }
+
+  let bestCase = 'General';
+  let bestScore = -1;
+
+  for (const [cName, list] of caseBuckets.entries()) {
+    let caseScore = 0;
+    for (const f of list) {
+      const symDefs = f.symbols || [];
+      if (symDefs.length === 0) continue;
+      let matchedInputs = 0;
+      let matchedOutputs = 0;
+      let qualitySum = 0;
+
+      for (const sd of symDefs) {
+        let bestIn = 0;
+        for (const inp of inputs) {
+          if (!inp.description.trim() && !inp.symbolHint?.trim()) continue;
+          const sc = scoreMeaningMatch(inp.description, sd, inp.symbolHint);
+          if (sc > bestIn) bestIn = sc;
+        }
+        if (bestIn >= 55) {
+          matchedInputs++;
+          qualitySum += bestIn;
+        }
+
+        let bestOut = 0;
+        for (const req of requestedOutputs) {
+          if (!req.description.trim() && !req.symbolHint?.trim()) continue;
+          const sc = scoreMeaningMatch(req.description, sd, req.symbolHint);
+          if (sc > bestOut) bestOut = sc;
+        }
+        if (bestOut >= 55) {
+          matchedOutputs++;
+          qualitySum += bestOut;
+        }
+      }
+
+      // Bonus when an equation has exactly 1 missing symbol (exact solve!) & matches a requested output
+      const missingCount = Math.max(0, symDefs.length - matchedInputs);
+      let eqScore = qualitySum + matchedInputs * 25 + matchedOutputs * 35;
+      if (missingCount === 1 && matchedOutputs >= 1) {
+        eqScore += 160;
+      } else if (missingCount === 1) {
+        eqScore += 70;
+      }
+      if (eqScore > caseScore) caseScore = eqScore;
+    }
+
+    if (caseScore > bestScore) {
+      bestScore = caseScore;
+      bestCase = cName;
+    }
+  }
+
+  return { caseName: bestCase, confidence: Math.max(0, bestScore) };
+}
+
 export function solveWithFormulaSystem(
   formulas: FormulaEquationItem[],
   inputs: UserParamInput[],
   requestedOutputs: UserOutputRequest[],
-  angleUnit: 'rad' | 'deg' = 'rad'
+  angleUnit: 'rad' | 'deg' = 'rad',
+  selectedCase = '__auto__'
 ): FormulaSolveResponse {
   const derivationSteps: string[] = [];
   const warnings: string[] = [];
   const outputs: SolvedOutputItem[] = [];
   const unmatchedOutputs: string[] = [];
 
-  // Step A: Try Symbolic Coordinate Geometry / Circle / Conic Solver first when applicable
-  const geoModel = tryBuildGeometryModel(inputs);
+  const isManual = Boolean(selectedCase && selectedCase !== '__auto__' && selectedCase !== '__all__');
+  const caseMode: 'auto' | 'manual' = isManual ? 'manual' : 'auto';
+
+  const autoInfo = isManual
+    ? { caseName: selectedCase, confidence: 100 }
+    : autoDetectFormulaCase(formulas, inputs, requestedOutputs);
+  const resolvedCase = autoInfo.caseName;
+
+  if (caseMode === 'auto' && resolvedCase) {
+    derivationSteps.push(`Auto-detected case: "${resolvedCase}"`);
+  } else if (caseMode === 'manual') {
+    derivationSteps.push(`Selected case: "${resolvedCase}"`);
+  }
+
+  // Step A: Symbolic Coordinate Geometry / Circle / Conic Solver when applicable
+  const allowGeometry =
+    resolvedCase === GEOMETRY_CASE_LABEL || !isManual;
+  const geoModel = allowGeometry ? tryBuildGeometryModel(inputs) : null;
   const remainingOutputs: UserOutputRequest[] = [];
 
   if (geoModel) {
@@ -1431,6 +1619,8 @@ export function solveWithFormulaSystem(
     return {
       ok: true,
       mode: 'geometry_symbolic',
+      detectedCase: GEOMETRY_CASE_LABEL,
+      caseMode,
       outputs,
       unmatchedOutputs: [],
       derivationSteps,
@@ -1445,31 +1635,47 @@ export function solveWithFormulaSystem(
     value: number;
     symbolHint?: string;
     source: string;
+    caseName?: string;
   }
 
   const knownQuantities: KnownQuantity[] = [];
   for (const inp of inputs) {
-    if (!inp.description.trim()) continue;
+    const label = inp.description.trim() || (inp.symbolHint || '').trim();
+    if (!label) continue;
     const numVal = evalSimpleConstant(inp.value);
     if (numVal === null) continue;
     knownQuantities.push({
-      meaningNorm: normalizeSemanticText(inp.description),
-      meaningLabel: inp.description.trim(),
+      meaningNorm: normalizeSemanticText(label),
+      meaningLabel: label,
       value: numVal,
       symbolHint: inp.symbolHint?.trim(),
       source: 'user_input',
     });
   }
 
-  // Maintain solved map keyed by normalized meaning + symbol matches
+  // Filter / prioritize formulas by resolved case
+  const scopedFormulas = isManual
+    ? formulas.filter((f) => ((f.caseName || 'General').trim() || 'General') === resolvedCase)
+    : [
+        ...formulas.filter((f) => ((f.caseName || 'General').trim() || 'General') === resolvedCase),
+        ...formulas.filter((f) => ((f.caseName || 'General').trim() || 'General') !== resolvedCase),
+      ];
+
   const derivedByFormulaSymbol = new Map<string, number>();
   const usedFormulas = new Set<number>();
 
-  // Multi-pass iterative solver (up to 6 chaining passes across contributor formulas)
   for (let pass = 0; pass < 6; pass++) {
     let progressed = false;
 
-    for (const formula of formulas) {
+    interface CandidateSolve {
+      formula: FormulaEquationItem;
+      targetDef: FormulaSymbolDef;
+      env: Record<string, number>;
+      priority: number;
+    }
+    const candidates: CandidateSolve[] = [];
+
+    for (const formula of scopedFormulas) {
       if (usedFormulas.has(formula.id)) continue;
       const symDefs = formula.symbols || [];
       if (symDefs.length === 0) continue;
@@ -1483,7 +1689,6 @@ export function solveWithFormulaSystem(
           env[sd.symbol] = derivedByFormulaSymbol.get(directKey)!;
           continue;
         }
-        // Match best known quantity to this symbol definition
         let bestScore = 0;
         let bestQty: KnownQuantity | null = null;
         for (const kq of knownQuantities) {
@@ -1502,39 +1707,62 @@ export function solveWithFormulaSystem(
 
       if (missingSyms.length === 1) {
         const targetDef = missingSyms[0];
-        const solvedVal = solveSingleUnknownEquation(
-          formula.expression,
+        const fCase = (formula.caseName || 'General').trim() || 'General';
+        const isSameCase = fCase === resolvedCase ? 100 : 0;
+        const matchesRequestedOutput = remainingOutputs.some(
+          (req) => scoreMeaningMatch(req.description, targetDef, req.symbolHint) >= 55
+        )
+          ? 200
+          : 0;
+        candidates.push({
+          formula,
+          targetDef,
           env,
-          targetDef.symbol,
-          angleUnit
-        );
-        if (solvedVal !== null && Number.isFinite(solvedVal)) {
-          usedFormulas.add(formula.id);
-          derivedByFormulaSymbol.set(`${formula.id}:${targetDef.symbol}`, solvedVal);
-          const substSummary = Object.entries(env)
-            .map(([k, v]) => `${k}=${fmtCalcNumber(v)}`)
-            .join(', ');
-          const stepLine = `Using "${formula.title}" [${formula.expression}] with ${substSummary} ⇒ ${targetDef.symbol} (${targetDef.meaning}) = ${fmtCalcNumber(solvedVal)}${targetDef.unit ? ` ${targetDef.unit}` : ''}.`;
-          derivationSteps.push(stepLine);
+          priority: isSameCase + matchesRequestedOutput,
+        });
+      }
+    }
 
-          knownQuantities.push({
-            meaningNorm: normalizeSemanticText(targetDef.meaning),
-            meaningLabel: targetDef.meaning,
-            value: solvedVal,
-            symbolHint: targetDef.symbol,
-            source: formula.title,
-          });
-          progressed = true;
-        }
+    candidates.sort((a, b) => b.priority - a.priority);
+
+    for (const cand of candidates) {
+      if (usedFormulas.has(cand.formula.id)) continue;
+      // Skip if target symbol is already solved within the same case unless needed by a new formula
+      const knownSymbols = (cand.formula.symbols || []).map((s) => s.symbol);
+      const solvedVal = solveSingleUnknownEquation(
+        cand.formula.expression,
+        cand.env,
+        cand.targetDef.symbol,
+        angleUnit,
+        knownSymbols
+      );
+      if (solvedVal !== null && Number.isFinite(solvedVal)) {
+        usedFormulas.add(cand.formula.id);
+        derivedByFormulaSymbol.set(`${cand.formula.id}:${cand.targetDef.symbol}`, solvedVal);
+        const substSummary = Object.entries(cand.env)
+          .map(([k, v]) => `${k}=${fmtCalcNumber(v)}`)
+          .join(', ');
+        const stepLine = `Using "${cand.formula.title}" (${cand.formula.caseName || 'General'}) [${cand.formula.expression}] with ${substSummary} ⇒ ${cand.targetDef.symbol} (${cand.targetDef.meaning}) = ${fmtCalcNumber(solvedVal)}${cand.targetDef.unit ? ` ${cand.targetDef.unit}` : ''}.`;
+        derivationSteps.push(stepLine);
+
+        knownQuantities.push({
+          meaningNorm: normalizeSemanticText(cand.targetDef.meaning),
+          meaningLabel: cand.targetDef.meaning,
+          value: solvedVal,
+          symbolHint: cand.targetDef.symbol,
+          source: cand.formula.title,
+          caseName: cand.formula.caseName || 'General',
+        });
+        progressed = true;
       }
     }
 
     if (!progressed) break;
   }
 
-  // Match remaining requested outputs to known / derived quantities
   for (const req of remainingOutputs) {
-    const reqNorm = normalizeSemanticText(req.description);
+    const reqLabel = req.description.trim() || (req.symbolHint || '').trim();
+    const reqNorm = normalizeSemanticText(reqLabel);
     let bestQty: KnownQuantity | null = null;
     let bestScore = 0;
 
@@ -1544,23 +1772,24 @@ export function solveWithFormulaSystem(
         meaning: kq.meaningLabel,
         unit: '',
       };
-      const sc = scoreMeaningMatch(req.description, fakeDef, req.symbolHint);
-      const bonus = kq.source !== 'user_input' ? 4 : 0;
-      if (sc + bonus > bestScore) {
-        bestScore = sc + bonus;
+      const sc = scoreMeaningMatch(reqLabel, fakeDef, req.symbolHint);
+      const derivedBonus = kq.source !== 'user_input' ? 6 : 0;
+      const caseBonus = kq.caseName === resolvedCase ? 5 : 0;
+      if (sc + derivedBonus + caseBonus > bestScore) {
+        bestScore = sc + derivedBonus + caseBonus;
         bestQty = kq;
       }
     }
 
-    // Also try checking direct formula symbols if a formula gave that output
-    if (bestQty && bestScore >= 55 && reqNorm) {
-      // Find matching formula metadata if derived
-      const matchingFormula = formulas.find((f) => f.title === bestQty!.source);
+    if (bestQty && bestScore >= 55 && (reqNorm || reqLabel)) {
+      const matchingFormula = scopedFormulas.find((f) => f.title === bestQty!.source);
       const symDef = matchingFormula?.symbols.find(
-        (s) => normalizeSemanticText(s.meaning) === bestQty!.meaningNorm || s.symbol === bestQty!.symbolHint
+        (s) =>
+          s.symbol === bestQty!.symbolHint ||
+          normalizeSemanticText(s.meaning) === bestQty!.meaningNorm
       );
       outputs.push({
-        requestedDescription: req.description,
+        requestedDescription: req.description || reqLabel,
         matchedSymbol: bestQty.symbolHint || symDef?.symbol || 'val',
         matchedMeaning: bestQty.meaningLabel,
         valueDisplay: fmtCalcNumber(bestQty.value),
@@ -1574,13 +1803,15 @@ export function solveWithFormulaSystem(
         steps: derivationSteps.filter((s) => !matchingFormula || s.includes(matchingFormula.title)),
       });
     } else {
-      unmatchedOutputs.push(req.description);
+      unmatchedOutputs.push(req.description || reqLabel);
     }
   }
 
   if (unmatchedOutputs.length > 0 && outputs.length === 0 && inputs.length > 0) {
     warnings.push(
-      'No contributor equation or coordinate geometry rule matched all input & output parameter descriptions. Check parameter descriptions or ask a Contributor to add the equation.'
+      isManual
+        ? `No equation in case "${resolvedCase}" matched all input & output parameters. Try switching Case to "Auto-Detect Case" or verify your parameters.`
+        : 'No contributor equation or coordinate geometry rule matched all input & output parameter descriptions. Check parameter descriptions or ask a Contributor to add the equation.'
     );
   }
 
@@ -1591,9 +1822,12 @@ export function solveWithFormulaSystem(
       : geoModel
         ? 'geometry_symbolic'
         : 'formula_chain',
+    detectedCase: resolvedCase,
+    caseMode,
     outputs,
     unmatchedOutputs,
     derivationSteps,
     warnings,
   };
 }
+

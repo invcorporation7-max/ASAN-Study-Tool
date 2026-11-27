@@ -33,14 +33,19 @@ export const users = pgTable('users', {
   displayName: text('display_name').notNull().default('Student'),
   username: text('username').notNull().default(''),
   photoUrl: text('photo_url').notNull().default(''),
-  plan: text('plan').notNull().default('basic'), // 'basic' | 'pro'
+  plan: text('plan').notNull().default('basic'), // 'basic' | 'pro' | 'elite'
   viewPlanMode: text('view_plan_mode').notNull().default('auto'), // 'auto' | 'basic'
   role: text('role').notNull().default('user'), // 'user' | 'contributor' | 'admin' | 'super'
   passwordHash: text('password_hash').notNull().default(''),
   authMode: text('auth_mode').notNull().default('google'), // 'google' | 'password'
   points: integer('points').notNull().default(500),
+  infinitePoints: boolean('infinite_points').notNull().default(false),
   proStartedAt: text('pro_started_at').notNull().default(''),
   proExpiresAt: text('pro_expires_at').notNull().default(''),
+  eliteStartedAt: text('elite_started_at').notNull().default(''),
+  eliteExpiresAt: text('elite_expires_at').notNull().default(''),
+  eliteVisualEffects: boolean('elite_visual_effects').notNull().default(true),
+  activeProGifted: boolean('active_pro_gifted').notNull().default(false),
   lastExpiryReminderFor: text('last_expiry_reminder_for').notNull().default(''),
   contributorApproved: boolean('contributor_approved').notNull().default(false),
   contributorRequested: boolean('contributor_requested').notNull().default(false),
@@ -182,8 +187,13 @@ export const userMessages = pgTable('user_messages', {
 export const licenseKeys = pgTable('license_keys', {
   id: serial('id').primaryKey(),
   keyCode: text('key_code').notNull().unique(),
-  keyType: text('key_type').notNull().default('pro'), // 'pro' | 'admin'
+  keyType: text('key_type').notNull().default('pro'), // 'pro' | 'elite' | 'admin'
   durationMonths: integer('duration_months').notNull().default(1),
+  sourceType: text('source_type').notNull().default('points'), // 'points' | 'admin_gift' | 'super_grant'
+  noRefund: boolean('no_refund').notNull().default(false),
+  purchaseCost: integer('purchase_cost').notNull().default(0),
+  platformFee: integer('platform_fee').notNull().default(0),
+  couponCode: text('coupon_code').notNull().default(''),
   issuedToUserId: integer('issued_to_user_id').references(() => users.id, {
     onDelete: 'set null',
   }),
@@ -198,7 +208,8 @@ export const licenseKeys = pgTable('license_keys', {
   activatedAt: text('activated_at').notNull().default(''),
   subStartsAt: text('sub_starts_at').notNull().default(''),
   subEndsAt: text('sub_ends_at').notNull().default(''),
-  status: text('status').notNull().default('unused'), // 'unused' | 'active' | 'expired'
+  cancelledAt: text('cancelled_at').notNull().default(''),
+  status: text('status').notNull().default('unused'), // 'unused' | 'active' | 'expired' | 'cancelled'
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -272,7 +283,14 @@ export const materialPurchases = pgTable('material_purchases', {
   hours: integer('hours').notNull().default(1),
   hourlyRate: integer('hourly_rate').notNull().default(10),
   pageCount: integer('page_count').notNull().default(1),
+  baseCost: integer('base_cost').notNull().default(0),
+  platformFee: integer('platform_fee').notNull().default(3),
+  discountPercent: integer('discount_percent').notNull().default(0),
+  couponCode: text('coupon_code').notNull().default(''),
   totalCost: integer('total_cost').notNull().default(10),
+  status: text('status').notNull().default('active'), // 'active' | 'cancelled' | 'expired'
+  cancelledAt: text('cancelled_at').notNull().default(''),
+  refundAmount: integer('refund_amount').notNull().default(0),
   expiresAt: text('expires_at').notNull().default(''),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -502,6 +520,67 @@ export const formulaEquations = pgTable('formula_equations', {
   symbolsJson: jsonb('symbols_json').$type<{ symbol: string; meaning: string; unit?: string }[]>().notNull().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const coupons = pgTable('coupons', {
+  id: serial('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  description: text('description').notNull().default(''),
+  scope: text('scope').notNull().default('all'),
+  discountType: text('discount_type').notNull().default('percent'), // 'percent' | 'flat'
+  discountValue: integer('discount_value').notNull().default(10),
+  maxUses: integer('max_uses').notNull().default(0),
+  usedCount: integer('used_count').notNull().default(0),
+  expiresAt: text('expires_at').notNull().default(''),
+  active: boolean('active').notNull().default(true),
+  createdByUserId: integer('created_by_user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const appSubscriptions = pgTable('app_subscriptions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  appKey: text('app_key').notNull().default('formula_calculator'),
+  appName: text('app_name').notNull().default('Formula Equation Calculator'),
+  billingMode: text('billing_mode').notNull().default('metered_hourly'),
+  hourlyRate: integer('hourly_rate').notNull().default(30),
+  baseCost: integer('base_cost').notNull().default(0),
+  platformFee: integer('platform_fee').notNull().default(8),
+  discountPercent: integer('discount_percent').notNull().default(0),
+  couponCode: text('coupon_code').notNull().default(''),
+  totalCost: integer('total_cost').notNull().default(0),
+  status: text('status').notNull().default('active'), // 'active' | 'paused' | 'cancelled' | 'expired'
+  startedAt: text('started_at').notNull().default(''),
+  expiresAt: text('expires_at').notNull().default(''),
+  cancelledAt: text('cancelled_at').notNull().default(''),
+  refundAmount: integer('refund_amount').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const planSubscriptions = pgTable('plan_subscriptions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  tier: text('tier').notNull().default('pro'), // 'pro' | 'elite'
+  term: text('term').notNull().default('monthly'), // 'monthly' | 'annual'
+  sourceType: text('source_type').notNull().default('points'), // 'points' | 'key' | 'admin_gift'
+  keyCode: text('key_code').notNull().default(''),
+  noRefund: boolean('no_refund').notNull().default(false),
+  baseCost: integer('base_cost').notNull().default(0),
+  platformFee: integer('platform_fee').notNull().default(25),
+  couponCode: text('coupon_code').notNull().default(''),
+  totalCost: integer('total_cost').notNull().default(0),
+  status: text('status').notNull().default('active'), // 'active' | 'cancelled' | 'expired'
+  startedAt: text('started_at').notNull().default(''),
+  expiresAt: text('expires_at').notNull().default(''),
+  cancelledAt: text('cancelled_at').notNull().default(''),
+  refundAmount: integer('refund_amount').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({

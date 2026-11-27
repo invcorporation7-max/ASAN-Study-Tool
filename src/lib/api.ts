@@ -274,9 +274,17 @@ export async function apiPublicFetch<T>(
       }
       throw new Error('Backend API returned HTML instead of JSON.');
     }
-    const data = await safeJson<{ error?: string }>(res);
+    const data = await safeJson<{ error?: string; code?: string }>(res);
     if (!res.ok) {
-      throw new Error(data?.error || `Request failed (${res.status})`);
+      const apiErr = new Error(data?.error || `Request failed (${res.status})`) as Error & {
+        code?: string;
+        status?: number;
+        data?: unknown;
+      };
+      apiErr.code = data?.code;
+      apiErr.status = res.status;
+      apiErr.data = data;
+      throw apiErr;
     }
     return data as T;
   } catch (err) {
@@ -378,8 +386,16 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const data = await safeJson<{ error?: string }>(res);
-    throw new Error(data?.error || `Request failed (${res.status})`);
+    const data = await safeJson<{ error?: string; code?: string }>(res);
+    const apiErr = new Error(data?.error || `Request failed (${res.status})`) as Error & {
+      code?: string;
+      status?: number;
+      data?: unknown;
+    };
+    apiErr.code = data?.code;
+    apiErr.status = res.status;
+    apiErr.data = data;
+    throw apiErr;
   }
 
   return (await safeJson<T>(res));
@@ -668,17 +684,25 @@ export function buildGmailLicenseComposeUrl(params: {
   recipientEmail: string;
   keyCode: string;
   activationExpiresAt: string;
+  keyType?: 'pro' | 'elite';
+  durationMonths?: number;
 }) {
-  const subject = `Your ASAN-Study_tool Pro License Key: ${params.keyCode}`;
+  const tierLabel = params.keyType === 'elite' ? 'Elite' : 'Pro';
+  const charCount = params.keyType === 'elite' ? 12 : 8;
+  const durationLabel =
+    params.durationMonths && params.durationMonths >= 12
+      ? '1 year (12 months) from activation'
+      : '1 month from activation';
+  const subject = `Your ASAN-Study_tool ${tierLabel} License Key: ${params.keyCode}`;
   const body = [
     `Hello,`,
     ``,
-    `Here is your ASAN-Study_tool 8-character Pro License Key:`,
+    `Here is your ASAN-Study_tool ${charCount}-character ${tierLabel} License Key:`,
     `License Key: ${params.keyCode}`,
     `Valid for Activation Until: ${params.activationExpiresAt.slice(0, 10)} (1 year)`,
-    `Subscription Duration: 1 month from activation`,
+    `Subscription Duration: ${durationLabel}`,
     ``,
-    `Open ASAN-Study_tool -> Subscriptions -> Activate License Key to redeem.`,
+    `Open ASAN-Study_tool -> Subscriptions and Plans -> Activate License Key to redeem.`,
   ].join('\n');
 
   return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(

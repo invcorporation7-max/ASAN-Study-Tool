@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
+  Atom,
   BookOpen,
   Calendar,
   CalendarDays,
@@ -37,6 +38,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { apiFetch, apiOptionalAuthFetch } from '../lib/api';
 import { FREE_TIER_MAX_NOTES, FREE_TIER_MAX_TASKS } from '../lib/guestStore';
+import { INFINITE_POINTS_SENTINEL } from '../lib/pricing';
 import {
   CountdownPinState,
   DASHBOARD_WIDGET_META,
@@ -132,6 +134,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     exitGuestToSignIn,
   } = useAuth();
   const isProOrAdmin = isEffectiveProOrAdmin;
+  const isElite = effectivePlan === 'elite';
+  const eliteGlow = isElite && dbUser?.eliteVisualEffects !== false;
   const userKey = isGuest ? 'guest' : dbUser?.uid || String(dbUser?.id || 'user');
 
   const [prefs, setPrefs] = useState<DashboardPreferences>(() => loadDashboardPrefs(userKey));
@@ -501,7 +505,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div
           className={`flex-1 flex flex-col ${
             outerCard
-              ? 'rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 asan-card-hover'
+              ? `rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 asan-card-hover ${
+                  eliteGlow ? 'asan-elite-card' : isProOrAdmin ? 'asan-pro-card' : ''
+                }`
               : ''
           }`}
         >
@@ -1153,6 +1159,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     if (widgetId === 'purchased-materials') {
       const matById = new Map(studyMaterials.map((m) => [m.id, m]));
       const activePurchases = materialPurchases.filter((p) => {
+        if (p.status === 'cancelled') return false;
         if (p.accessType === 'buy') return true;
         if (!p.expiresAt) return true;
         return new Date(p.expiresAt).getTime() > Date.now();
@@ -1403,7 +1410,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       'quick-actions',
       <div
         className={`grid gap-4 ${
-          size.colSpan === 1 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5'
+          size.colSpan === 1 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3'
         }`}
       >
         <button
@@ -1460,7 +1467,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               {isProOrAdmin
                 ? 'Lite Version — Calculus, Coordinate, Algebra, Vectors 3D & Trig.'
-                : 'Lite Version — Pro & Admin specialized math solvers suite.'}
+                : 'Lite Version — Pro, Elite & Admin specialized math solvers suite.'}
+            </p>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('chemistry-lab')}
+          className={`asan-card-hover flex items-start gap-3.5 rounded-xl border p-4 text-left ${
+            eliteGlow
+              ? 'asan-elite-card border-cyan-400/50 dark:border-cyan-400/50 bg-white dark:bg-slate-900'
+              : 'border-blue-900/25 dark:border-cyan-500/35 bg-white dark:bg-slate-900'
+          }`}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-950/10 dark:bg-cyan-950/60 text-blue-900 dark:text-cyan-300">
+            {isElite ? <Atom className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Virtual Laboratories
+              </span>
+              <span className="asan-elite-badge rounded px-1.5 py-0.5 text-[9px]">ELITE</span>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              {isElite
+                ? 'Interactive Mechanics, Optics, Circuits & 3D Motion Visualizer.'
+                : 'Elite-only Physics & Chemistry Labs + 3D Motion Visualizer.'}
             </p>
           </div>
         </button>
@@ -1494,14 +1528,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {isProOrAdmin ? 'PDF Studio' : 'Pro & Keys'}
+                {isProOrAdmin ? 'PDF Studio' : 'Subscriptions & Plans'}
               </span>
-              <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
+              <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO / ELITE</span>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               {isProOrAdmin
                 ? 'Full, Half, and Quarter A4 imposition studio.'
-                : 'Unlock Pro (500 pts/mo) or redeem an 8-char key.'}
+                : 'Upgrade to Pro (500 pts/mo), Elite (750 pts/mo), or redeem 8/12-char keys.'}
             </p>
           </div>
         </button>
@@ -1575,7 +1609,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-sm font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 tabular-nums"
             >
               <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              {dbUser?.points ?? 0} Points
+              {dbUser?.infinitePoints || (dbUser?.points ?? 0) >= INFINITE_POINTS_SENTINEL
+                ? '∞ Points'
+                : `${(dbUser?.points ?? 0).toLocaleString()} Points`}
             </button>
           )}
           <button

@@ -214,6 +214,11 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
           ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
           ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_mode TEXT NOT NULL DEFAULT 'google';
           ALTER TABLE users ADD COLUMN IF NOT EXISTS workspace_permissions TEXT NOT NULL DEFAULT '';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS infinite_points BOOLEAN NOT NULL DEFAULT false;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS elite_started_at TEXT NOT NULL DEFAULT '';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS elite_expires_at TEXT NOT NULL DEFAULT '';
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS elite_visual_effects BOOLEAN NOT NULL DEFAULT true;
+          ALTER TABLE users ADD COLUMN IF NOT EXISTS active_pro_gifted BOOLEAN NOT NULL DEFAULT false;
 
           CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
@@ -331,6 +336,11 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             key_code TEXT NOT NULL UNIQUE,
             key_type TEXT NOT NULL DEFAULT 'pro',
             duration_months INTEGER NOT NULL DEFAULT 1,
+            source_type TEXT NOT NULL DEFAULT 'points',
+            no_refund BOOLEAN NOT NULL DEFAULT false,
+            purchase_cost INTEGER NOT NULL DEFAULT 0,
+            platform_fee INTEGER NOT NULL DEFAULT 0,
+            coupon_code TEXT NOT NULL DEFAULT '',
             issued_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             issued_to_email TEXT NOT NULL DEFAULT '',
             issued_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -339,9 +349,17 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             activated_at TEXT NOT NULL DEFAULT '',
             sub_starts_at TEXT NOT NULL DEFAULT '',
             sub_ends_at TEXT NOT NULL DEFAULT '',
+            cancelled_at TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'unused',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'points';
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS no_refund BOOLEAN NOT NULL DEFAULT false;
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS purchase_cost INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS platform_fee INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '';
+          ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS cancelled_at TEXT NOT NULL DEFAULT '';
 
           CREATE TABLE IF NOT EXISTS point_transactions (
             id SERIAL PRIMARY KEY,
@@ -414,10 +432,25 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
             hours INTEGER NOT NULL DEFAULT 1,
             hourly_rate INTEGER NOT NULL DEFAULT 10,
             page_count INTEGER NOT NULL DEFAULT 1,
+            base_cost INTEGER NOT NULL DEFAULT 0,
+            platform_fee INTEGER NOT NULL DEFAULT 3,
+            discount_percent INTEGER NOT NULL DEFAULT 0,
+            coupon_code TEXT NOT NULL DEFAULT '',
             total_cost INTEGER NOT NULL DEFAULT 10,
+            status TEXT NOT NULL DEFAULT 'active',
+            cancelled_at TEXT NOT NULL DEFAULT '',
+            refund_amount INTEGER NOT NULL DEFAULT 0,
             expires_at TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
           );
+
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS base_cost INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS platform_fee INTEGER NOT NULL DEFAULT 3;
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS discount_percent INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '';
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS cancelled_at TEXT NOT NULL DEFAULT '';
+          ALTER TABLE material_purchases ADD COLUMN IF NOT EXISTS refund_amount INTEGER NOT NULL DEFAULT 0;
 
           CREATE TABLE IF NOT EXISTS exam_blueprints (
             id SERIAL PRIMARY KEY,
@@ -605,6 +638,61 @@ export async function ensureDatabaseSchema(): Promise<boolean> {
           );
 
           ALTER TABLE formula_equations ADD COLUMN IF NOT EXISTS case_name TEXT NOT NULL DEFAULT 'General';
+
+          CREATE TABLE IF NOT EXISTS coupons (
+            id SERIAL PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            scope TEXT NOT NULL DEFAULT 'all',
+            discount_type TEXT NOT NULL DEFAULT 'percent',
+            discount_value INTEGER NOT NULL DEFAULT 10,
+            max_uses INTEGER NOT NULL DEFAULT 0,
+            used_count INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT NOT NULL DEFAULT '',
+            active BOOLEAN NOT NULL DEFAULT true,
+            created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS app_subscriptions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_key TEXT NOT NULL DEFAULT 'formula_calculator',
+            app_name TEXT NOT NULL DEFAULT 'Formula Equation Calculator',
+            billing_mode TEXT NOT NULL DEFAULT 'metered_hourly',
+            hourly_rate INTEGER NOT NULL DEFAULT 30,
+            base_cost INTEGER NOT NULL DEFAULT 0,
+            platform_fee INTEGER NOT NULL DEFAULT 8,
+            discount_percent INTEGER NOT NULL DEFAULT 0,
+            coupon_code TEXT NOT NULL DEFAULT '',
+            total_cost INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            started_at TEXT NOT NULL DEFAULT '',
+            expires_at TEXT NOT NULL DEFAULT '',
+            cancelled_at TEXT NOT NULL DEFAULT '',
+            refund_amount INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS plan_subscriptions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tier TEXT NOT NULL DEFAULT 'pro',
+            term TEXT NOT NULL DEFAULT 'monthly',
+            source_type TEXT NOT NULL DEFAULT 'points',
+            key_code TEXT NOT NULL DEFAULT '',
+            no_refund BOOLEAN NOT NULL DEFAULT false,
+            base_cost INTEGER NOT NULL DEFAULT 0,
+            platform_fee INTEGER NOT NULL DEFAULT 25,
+            coupon_code TEXT NOT NULL DEFAULT '',
+            total_cost INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            started_at TEXT NOT NULL DEFAULT '',
+            expires_at TEXT NOT NULL DEFAULT '',
+            cancelled_at TEXT NOT NULL DEFAULT '',
+            refund_amount INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          );
 
           CREATE INDEX IF NOT EXISTS idx_forum_members_room_user ON forum_members(room_id, user_id);
           CREATE INDEX IF NOT EXISTS idx_forum_posts_room_created ON forum_posts(room_id, created_at DESC);

@@ -10,13 +10,23 @@ import {
   Layers,
   Lock,
   Mail,
+  Moon,
   RotateCcw,
   Send,
   ShieldCheck,
+  Sparkles,
+  Sun,
   Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import {
+  ELITE_ANNUAL_TOTAL,
+  ELITE_MONTHLY_TOTAL,
+  PRO_ANNUAL_TOTAL,
+  PRO_MONTHLY_TOTAL,
+} from '../lib/pricing';
 import {
   apiFetch,
   apiPublicFetch,
@@ -160,19 +170,28 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     setViewPlanMode,
     signIn,
     switchPlanAdmin,
+    updateProfile,
     refreshProfile,
     workspacePermissions,
     updateWorkspacePermissions,
   } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const currentPlan = effectivePlan;
   const isAdmin = !isGuest && (dbUser?.role === 'admin' || dbUser?.role === 'super');
   const isActivePro =
     !isGuest &&
     dbUser?.plan === 'pro' &&
     (!dbUser.proExpiresAt || new Date(dbUser.proExpiresAt).getTime() > Date.now());
-  const canPreviewBasic = !isGuest && !isActivePro && isAdmin;
+  const isActiveElite =
+    !isGuest &&
+    dbUser?.plan === 'elite' &&
+    (!dbUser.eliteExpiresAt || new Date(dbUser.eliteExpiresAt).getTime() > Date.now());
+  const isActivePaid = isActivePro || isActiveElite;
+  const canPreviewBasic = !isGuest && !isActivePaid && isAdmin;
   const userKey = isGuest ? 'guest' : dbUser?.uid || 'user';
   const [switching, setSwitching] = useState(false);
+  const [fxBusy, setFxBusy] = useState(false);
+  const [overlapPendingKey, setOverlapPendingKey] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [keyStatus, setKeyStatus] = useState<string | null>(null);
@@ -358,69 +377,87 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleRedeemKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleaned = keyInput.trim().toUpperCase();
-    if (!cleaned) return;
+  const submitRedeemKey = async (cleaned: string, proHandling?: 'keep' | 'cancel') => {
     setRedeeming(true);
     setKeyStatus(null);
     setKeyError(null);
     try {
       const res = await apiFetch<{ message?: string }>('/api/subscriptions/redeem-key', {
         method: 'POST',
-        body: JSON.stringify({ keyCode: cleaned }),
+        body: JSON.stringify({
+          keyCode: cleaned,
+          ...(proHandling ? { proHandling } : {}),
+        }),
       });
       setKeyInput('');
+      setOverlapPendingKey(null);
       await refreshProfile();
       setKeyStatus(res.message || 'License key activated successfully!');
     } catch (err) {
-      setKeyError(err instanceof Error ? err.message : 'Failed to activate license key');
+      const code = (err as { code?: string })?.code;
+      const msg = err instanceof Error ? err.message : 'Failed to activate license key';
+      if (
+        code === 'PRO_OVERLAP_CHOICE_REQUIRED' ||
+        /keep or cancel Pro|keep.*cancel/i.test(msg)
+      ) {
+        setOverlapPendingKey(cleaned);
+        setKeyError(
+          'Your account has an active Pro plan. Elite includes all Pro features — choose whether to Keep Pro (resumes after Elite) or Cancel Pro now.'
+        );
+      } else {
+        setKeyError(msg);
+      }
     } finally {
       setRedeeming(false);
     }
   };
 
+  const handleRedeemKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = keyInput.trim().toUpperCase();
+    if (!cleaned) return;
+    await submitRedeemKey(cleaned);
+  };
+
   const tiers = [
     {
-      id: 'free',
-      name: 'Free Tier',
-      audience: 'No login required · Instant browser access',
-      price: 'Free (0 Login)',
-      features: [
-        'Dashboard, Infinite Monthly Calendar & Persistent Timers',
-        'Up to 10 A4 PDF note documents (local browser)',
-        'Up to 150 tasks (local browser)',
-        'Excludes Cloud Sync, Tool Mail, Points, PDF Booklet Tool, Workspace & Specialized Calculators (Lite)',
-      ],
-    },
-    {
-      id: 'basic',
+      id: 'basic' as const,
       name: 'Basic Plan',
-      audience: 'Logged in with Google · 500 Initial Points · Blue Ring',
+      audience: 'Logged in Account · 500 Initial Points · Blue Ring',
       price: 'Free on Login',
       features: [
         'Unlimited A4 PDF notes & unlimited tasks + Exam Master Cards view',
-        'Optional ASAN-user-content Drive folder for .txt tasks & notes backup',
         `500 initial points + earn points (+${rewards.questionPaperUpload} paper, +${rewards.forumSatisfactoryAnswer} forum answer, +${rewards.examTimer30Min}/30m exam timer, +${rewards.calendarStudyEvent} study calendar${
           rewards.noteCreate > 0 ? `, +${rewards.noteCreate} note` : ''
         })`,
-        'Study Forum (Global Q&A, Groups, 1-to-1 DMs), Metered Formula Calculator (30 pts/hr billed quarterly) & Upgraded Tool Mail',
-        'Excludes Specialized Calculators (Lite), PDF Booklet Tool & Google Sheets Workspace',
+        'Study Forum (Global Q&A, Groups, 1-to-1 DMs), Metered Formula Calculator (30 pts/hr + 8 pt app fee) & Upgraded Tool Mail',
+        'Repository rentals & purchases (+3 pt platform fee)',
       ],
     },
     {
-      id: 'pro',
+      id: 'pro' as const,
       name: 'Pro Plan',
-      audience: 'Login required · Rainbow Ring · Monthly or Annual (15% Off)',
-      price: '500 Pts / Mo · 5,100 Pts / Yr (15% Off)',
+      audience: 'Rainbow Ring · 475 + 25 Fee / Mo · 11+1 Annual',
+      price: `${PRO_MONTHLY_TOTAL} Pts / Mo · ${PRO_ANNUAL_TOTAL.toLocaleString()} Pts / Yr`,
       features: [
-        'Everything in Basic plan + Study Time Logger (In/Out − 2.5% − Sleep)',
+        'Everything in Basic + Study Time Logger (In/Out − 2.5% − Sleep)',
         'Unlimited Formula Equation & Case Calculator (Pro included; no hourly pts needed)',
-        'Specialized Calculators Suite — Lite Version (Calculus, Coordinate Geometry, Algebra, Vector & 3D, Trigonometry)',
-        'PDF Tool: A4 Booklet & Imposition Studio (Full/Half/Quarter)',
-        'Google Workspace (Sheets "master" / "test_dates" sync, Docs export, Meet rooms)',
-        'Expirable 8-char Pro Key (1 yr activation window, 1 mo or 12 mo Pro term)',
-        'Locked until expiry or willing cancellation (Refund: 60% non-timed, remaining time − 5% timed; requires Admin approval)',
+        'Specialized Calculators Suite — Lite Version (Calculus, Coords, Algebra, Vector & 3D, Trig)',
+        'PDF Tool: A4 Booklet & Imposition Studio + Google Workspace Sync',
+        '8-char Pro License Key (cannot pause once active; willing cancel subject to non-refundable 25-pt fee)',
+      ],
+    },
+    {
+      id: 'elite' as const,
+      name: 'Elite Plan',
+      audience: 'Points or 12-Char Key Only · Animated Navy/Aqua Ring · 50% Off',
+      price: `${ELITE_MONTHLY_TOTAL} Pts / Mo · ${ELITE_ANNUAL_TOTAL.toLocaleString()} Pts / Yr`,
+      features: [
+        'Includes ALL Pro features (with Keep/Cancel choice if upgrading over active Pro)',
+        'Exclusive Access: The Virtual Laboratories (Mechanics, Optics, Titration, RC Lab) & The 3D Motion Visualizer',
+        '50% Automatic Discount on ALL Study Material Repository items & Metered Apps (platform fees 3 / 8 pts still apply)',
+        'Animated Elite Visual Effects (Navy Blue light / Aqua dark border glow, periodic shine sweep & ring shine)',
+        '12-char Elite License Key (725 + 25 fee / mo · 8,000 pts / yr for 11+1 months + 25 fee)',
       ],
     },
   ];
@@ -443,21 +480,26 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleToggleEliteEffects = async () => {
+    if (isGuest || currentPlan !== 'elite' || !dbUser) return;
+    setFxBusy(true);
+    try {
+      const next = dbUser.eliteVisualEffects === false;
+      await updateProfile({ eliteVisualEffects: next });
+    } finally {
+      setFxBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
-            View Plans and Settings
+            Settings
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Active View: <strong className="text-slate-900 dark:text-slate-100 capitalize">{currentPlan}</strong>
-            {dbUser?.viewPlanMode === 'basic' && dbUser.plan === 'pro' && (
-              <span className="text-xs text-blue-600 dark:text-blue-400">
-                {' '}
-                (Basic preview — Pro tenure still runs until {dbUser.proExpiresAt.slice(0, 10)})
-              </span>
-            )}
+            Active Plan: <strong className="text-slate-900 dark:text-slate-100 capitalize">{currentPlan}</strong>
             {!isGuest && dbUser?.role !== 'user' && (
               <span>
                 {' '}
@@ -506,7 +548,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                 Admin Account Plan:
               </span>
               {(['basic', 'pro'] as const).map((p) => {
-                const blocked = p === 'basic' && isActivePro;
+                const blocked = p === 'basic' && isActivePaid;
                 return (
                   <button
                     key={p}
@@ -514,7 +556,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                     disabled={switching || blocked}
                     title={
                       blocked
-                        ? 'Active Pro accounts stay on Pro until expiry or willing cancellation in Subscriptions'
+                        ? 'Active Pro or Elite plans cannot pause; cancel or wait for expiry in Subscriptions and Plans'
                         : undefined
                     }
                     onClick={() => handlePlanSwitch(p)}
@@ -533,19 +575,98 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
+      {/* Appearance & Elite Visual Effects Controls */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex items-center justify-between gap-4 asan-card-hover">
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {theme === 'dark' ? (
+                <Moon className="h-4 w-4 text-cyan-400 shrink-0" />
+              ) : (
+                <Sun className="h-4 w-4 text-amber-500 shrink-0" />
+              )}
+              <span>Appearance Theme</span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Switch between crisp Light mode and high-contrast Dark mode ({theme === 'dark' ? 'Dark Active' : 'Light Active'}).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap shrink-0"
+          >
+            {theme === 'dark' ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5" />}
+            {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
+          </button>
+        </div>
+
+        <div
+          className={`rounded-xl border p-5 flex items-center justify-between gap-4 asan-card-hover bg-white dark:bg-slate-900 ${
+            currentPlan === 'elite' && dbUser?.eliteVisualEffects !== false
+              ? 'asan-elite-card border-blue-900/40 dark:border-cyan-400/50'
+              : 'border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <Sparkles className="h-4 w-4 text-blue-900 dark:text-cyan-400 shrink-0" />
+              <span>Visual Effects</span>
+              <span className="asan-elite-badge rounded px-1.5 py-0.5 text-[9px] font-bold">
+                ELITE ONLY
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {currentPlan === 'elite'
+                ? 'Animated Navy Blue (light) / Aqua (dark) glowing border with periodic shine sweep & profile ring shimmer.'
+                : 'Exclusive to Elite members — upgrade to Elite to unlock animated glow borders & avatar shine effects.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={currentPlan === 'elite' && dbUser?.eliteVisualEffects !== false}
+            disabled={isGuest || currentPlan !== 'elite' || fxBusy}
+            onClick={() => void handleToggleEliteEffects()}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors disabled:opacity-45 ${
+              currentPlan === 'elite' && dbUser?.eliteVisualEffects !== false
+                ? 'border-blue-900 dark:border-cyan-400 bg-blue-900 dark:bg-cyan-500'
+                : 'border-slate-300 dark:border-slate-600 bg-slate-200 dark:bg-slate-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                currentPlan === 'elite' && dbUser?.eliteVisualEffects !== false
+                  ? 'translate-x-6'
+                  : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Membership Plan Comparison (Basic, Pro, Elite — Free Tier Excluded) */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {tiers.map((tier) => {
           const isCurrent = currentPlan === tier.id;
           const isProTier = tier.id === 'pro';
+          const isEliteTier = tier.id === 'elite';
+          const eliteFx = dbUser?.eliteVisualEffects !== false;
           return (
             <div
               key={tier.id}
               className={`rounded-xl border p-6 flex flex-col justify-between space-y-6 asan-card-hover ${
-                isProTier
-                  ? 'asan-pro-card border-indigo-300 dark:border-indigo-700'
-                  : 'bg-white dark:bg-slate-900'
+                isEliteTier
+                  ? `${eliteFx ? 'asan-elite-card' : ''} border-blue-900/50 dark:border-cyan-400/60 bg-white dark:bg-slate-900`
+                  : isProTier
+                    ? 'asan-pro-card border-indigo-300 dark:border-indigo-700'
+                    : 'bg-white dark:bg-slate-900'
               } ${
-                isCurrent && !isProTier ? 'border-blue-600 dark:border-blue-500' : !isProTier ? 'border-slate-200 dark:border-slate-800' : ''
+                isCurrent && !isProTier && !isEliteTier
+                  ? 'border-blue-600 dark:border-blue-500'
+                  : !isProTier && !isEliteTier
+                    ? 'border-slate-200 dark:border-slate-800'
+                    : ''
               }`}
             >
               <div className="space-y-4">
@@ -558,9 +679,14 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                       {isProTier && (
                         <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px]">PRO</span>
                       )}
+                      {isEliteTier && (
+                        <span className="asan-elite-badge rounded px-1.5 py-0.5 text-[9px] font-bold">
+                          ELITE
+                        </span>
+                      )}
                     </div>
                     {isCurrent && (
-                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                      <span className="text-xs font-semibold text-blue-600 dark:text-cyan-400">
                         Active
                       </span>
                     )}
@@ -568,7 +694,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{tier.audience}</p>
                 </div>
 
-                <div className="font-display text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                <div className="font-display text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                   {tier.price}
                 </div>
 
@@ -578,7 +704,7 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                       key={feat}
                       className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300"
                     >
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-cyan-400" />
                       <span>{feat}</span>
                     </li>
                   ))}
@@ -593,13 +719,19 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                 >
                   Sign In to Unlock Basic (+500 Pts)
                 </button>
-              ) : tier.id === 'pro' && !isCurrent ? (
+              ) : (tier.id === 'pro' || tier.id === 'elite') && !isCurrent ? (
                 <button
                   type="button"
                   onClick={() => (isGuest ? signIn() : onNavigate?.('subscriptions'))}
-                  className="w-full rounded-lg bg-slate-900 dark:bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700"
+                  className={`w-full rounded-lg py-2.5 text-xs font-semibold text-white ${
+                    isEliteTier
+                      ? 'bg-blue-900 dark:bg-cyan-600 hover:bg-blue-800 dark:hover:bg-cyan-500'
+                      : 'bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700'
+                  }`}
                 >
-                  {isGuest ? 'Sign In to Upgrade to Pro' : 'Upgrade in Subscriptions'}
+                  {isGuest
+                    ? `Sign In to Upgrade to ${tier.id === 'elite' ? 'Elite' : 'Pro'}`
+                    : 'Manage in Subscriptions and Plans'}
                 </button>
               ) : (
                 <button
@@ -619,40 +751,65 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
         })}
       </div>
 
-      {/* Inline 8-Character License Key Activation */}
+      {/* Inline 8-Char Pro / 12-Char Elite License Key Activation */}
       {!isGuest && (
         <form
           onSubmit={handleRedeemKey}
-          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between asan-card-hover"
+          className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-3 asan-card-hover"
         >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              Activate 8-Character License Key
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                Activate License Key (8-Char Pro / 12-Char Elite)
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Enter an 8-character Pro key or 12-character Elite key to activate immediately.
+              </p>
+              {keyStatus && <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{keyStatus}</p>}
+              {keyError && <p className="text-xs font-medium text-red-600 dark:text-red-400">{keyError}</p>}
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Enter a Pro License Key or Admin Key to activate your plan immediately.
-            </p>
-            {keyStatus && <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{keyStatus}</p>}
-            {keyError && <p className="text-xs font-medium text-red-600 dark:text-red-400">{keyError}</p>}
+            <div className="flex items-center gap-2 shrink-0">
+              <input
+                type="text"
+                maxLength={12}
+                value={keyInput}
+                onChange={(e) => {
+                  setKeyInput(e.target.value.toUpperCase());
+                  setOverlapPendingKey(null);
+                }}
+                placeholder="8 OR 12-CHAR KEY"
+                className="w-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={redeeming || !keyInput.trim()}
+                className="rounded-lg bg-slate-900 dark:bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-60 whitespace-nowrap shrink-0"
+              >
+                {redeeming ? 'Activating...' : 'Activate'}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <input
-              type="text"
-              maxLength={12}
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
-              placeholder="8-CHAR KEY"
-              className="w-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 font-mono text-xs uppercase tracking-wider focus:border-blue-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={redeeming || !keyInput.trim()}
-              className="rounded-lg bg-slate-900 dark:bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-60"
-            >
-              {redeeming ? 'Activating...' : 'Activate'}
-            </button>
-          </div>
+          {overlapPendingKey && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+              <button
+                type="button"
+                disabled={redeeming}
+                onClick={() => void submitRedeemKey(overlapPendingKey, 'keep')}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                Keep Pro Alongside Elite
+              </button>
+              <button
+                type="button"
+                disabled={redeeming}
+                onClick={() => void submitRedeemKey(overlapPendingKey, 'cancel')}
+                className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/60 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 disabled:opacity-60"
+              >
+                Cancel Pro &amp; Activate Elite
+              </button>
+            </div>
+          )}
         </form>
       )}
 
@@ -847,6 +1004,11 @@ export const PlansView: React.FC<PlansViewProps> = ({ onNavigate }) => {
                     {entry.proOnly && (
                       <span className="asan-pro-badge rounded px-1 py-0.5 text-[9px] shrink-0">
                         PRO
+                      </span>
+                    )}
+                    {entry.eliteOnly && (
+                      <span className="asan-elite-badge rounded px-1 py-0.5 text-[9px] shrink-0">
+                        ELITE
                       </span>
                     )}
                   </div>
@@ -1090,39 +1252,42 @@ export const AboutCreatorsView: React.FC = () => {
         )}
       </div>
 
-      {/* About Site & Release Tag v1.8 */}
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover">
+      {/* About Site & Release Tag v1.9 */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 asan-card-hover asan-elite-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
-              About Site · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.8</span>
+              About Site · Version <span className="font-mono text-blue-700 dark:text-blue-400">v1.9</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Current production release highlights for ASAN-Study_tool.
             </p>
           </div>
-          <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-            Release v1.8
+          <span className="font-mono text-xs font-bold text-blue-700 dark:text-cyan-400 px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800">
+            Release v1.9
           </span>
         </div>
 
         <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed list-disc pl-5">
           <li>
-            <strong>Real-Time Study Forum &amp; Upgraded Tool Mail:</strong> Global Q&amp;A Arena, Study Groups, and 1-to-1 Direct Messages powered by WebSocket/SSE live sync, a native Summernote rich-text editor (headings, tables, colors, embeds, PDF/image attachments), interactive competitive/board answer fields (<strong>JEE Main, JEE Advanced, NEET UG, ISC, CBSE, CUET</strong> — Single/Multi MCQ, Integer, Double, Matrix Match, Assertion-Reason, Comprehension, Subjective), collaborative peer discussions, and Super-controlled satisfaction point rewards (strictly non-self-awardable).
+            <strong>Virtual Chemistry Lab &amp; Qualitative Analysis Workbench:</strong> 10-slot test tube stand/rack holding multiple test tubes with independent volume and precipitate tracking; designated clamped test tube holder; solid salt shelf with known crystals (NaCl, CuSO₄, FeSO₄, Pb(NO₃)₂, CaCO₃, NH₄Cl, ZnSO₄) and unknown sachets (C-10, C-11, C-12, C-13) or acid/base beakers (C-14, C-15); wash bottle distilled water dispensing; student &amp; strong reagents shelf (Dil/Conc HCl, H₂SO₄, HNO₃, NaOH, NH₄OH, BaCl₂, AgNO₃, KI); indicators (phenolphthalein, methyl orange, blue/red litmus); Bunsen burner heating with flame collar adjustment (blue non-luminous vs yellow luminous flame); and contributor experiment customizer with color picker.
           </li>
           <li>
-            <strong>Multi-Format Study Material Repository:</strong> Upload, filter, preview inline, and share <strong>Photos, Videos, Text, PDFs, Word, Excel, PowerPoint, and Audio Recordings</strong> (including built-in browser voice recording) with automatic format recognition.
+            <strong>Virtual Physics Lab &amp; Visual Instruments Suite:</strong> High-fidelity visual apparatus models showing instruments in action: Simple Pendulum (oscillating string &amp; bob, protractor arc, timer), Vernier Callipers (jaws clamping thin wire, magnified coincidence loupe, radius calculation), Screw Gauge / Micrometer (anvil, spindle clamping spherical bob, pitch scale &amp; circular thimble), Spherometer (triangular legs on curved convex lens, sagitta height &amp; focal length calculation), Hooke&apos;s Law (retort stand, suspended helical spring, pointer on millimeter ruler, slotted weights), Stokes&apos; Law (tall glycerine cylinder, steel balls of different radii, terminal velocity &amp; viscosity calculation), and Resonance Tube (adjustable water column, vibrating tuning fork, standing acoustic wave visualizer).
           </li>
           <li>
-            <strong>Case-Based &amp; Auto-Detect Formula Calculator (Pro or Metered 30 pts/hr) + Specialized Calculators (Lite):</strong> Approved Contributors, Admins, and Super define case-scoped equations with symbol meanings; students choose a case or Auto-Detect, enter input parameters (like <code className="font-mono">u=5, t=5, s=250</code>), and compute target outputs or wide Circle &amp; Conic properties. Available via Pro or manual Metered Access (30 pts/hr billed quarterly every 15 minutes), alongside the Specialized Calculators Lite Version.
+            <strong>3D Motion Visualizer with Editable 2D Whiteboard Slice:</strong> 3D coordinate system with transparent origin (0,0,0) halo and transparent X-Z floor grid; selectable translucent 2D slice plane (XY, YZ, or XZ) coupled directly to an interactive HTML5 whiteboard canvas with real-time 3D texture updates; zoom in/out with single slider control; translation controls (+X, -X, +Y, -Y, +Z, -Z); coordinate rotation about X/Y/Z axes OR about an arbitrary fixed line unit vector; 3D shapes (box, cylinder, sphere, cone, torus) and 2D lamina (circle, rectangle, triangle); and kinematics equations displayed in Cartesian, Polar/Cylindrical, and Vector forms with live animated 3D vector arrows (r⃗=cyan, v⃗=amber, a⃗=rose).
           </li>
           <li>
-            <strong>Customizable Dashboard Widgets:</strong> Added widgets for Forum Highlights (Most Popular / Recent), Purchased Study Materials, and role-gated Contributors&apos;, Admin, and Super Console cards.
+            <strong>Elite Styling &amp; Blue Border Glow:</strong> All individual cards and options shine occasionally with pulsing blue borders and luminous glow on hover.
+          </li>
+          <li>
+            <strong>Developer Tools Console (Search &ldquo;dev-tools&rdquo;):</strong> Developer shortcut and search bar query for &ldquo;dev-tools&rdquo; opens the developer test console to preview Contributor View, Admin View, Super View, inspect dummy users, and seed test records.
           </li>
         </ul>
       </div>
 
-      {/* Previous Releases Accordion (v1.7 & v1.6) */}
+      {/* Previous Releases Accordion (v1.8, v1.7 & v1.6) */}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 asan-card-hover">
         <button
           type="button"
@@ -1132,10 +1297,10 @@ export const AboutCreatorsView: React.FC = () => {
         >
           <div>
             <h2 className="font-display text-base font-bold text-slate-900 dark:text-slate-100">
-              Previous Releases · <span className="font-mono text-blue-700 dark:text-blue-400">v1.7 &amp; v1.6</span>
+              Previous Releases · <span className="font-mono text-blue-700 dark:text-blue-400">v1.8, v1.7 &amp; v1.6</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Click to {olderVersionsOpen ? 'collapse' : 'expand'} update headings from earlier releases v1.7 and v1.6.
+              Click to {olderVersionsOpen ? 'collapse' : 'expand'} update headings from earlier releases v1.8, v1.7 and v1.6.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1152,6 +1317,18 @@ export const AboutCreatorsView: React.FC = () => {
 
         {olderVersionsOpen && (
           <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3.5 space-y-4 text-xs text-slate-700 dark:text-slate-300">
+            <div>
+              <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mb-1.5">
+                Release v1.8
+              </div>
+              <ul className="space-y-1.5 font-medium list-disc pl-5">
+                <li>Real-Time Study Forum &amp; Upgraded Tool Mail with Summernote editor and competitive question fields</li>
+                <li>Multi-Format Study Material Repository (Photos, Videos, Text, PDFs, Office docs, Audio)</li>
+                <li>Case-Based &amp; Auto-Detect Formula Calculator + Specialized Calculators Lite</li>
+                <li>Elite Membership Tier with animated Navy/Aqua visual effects and 50% discount</li>
+                <li>Customizable Dashboard Widgets for forum, materials, and admin consoles</li>
+              </ul>
+            </div>
             <div>
               <div className="font-mono font-bold text-slate-900 dark:text-slate-100 mb-1.5">
                 Release v1.7

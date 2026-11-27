@@ -704,7 +704,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* Google Sheets Schedule Sync Bar */}
           {isWorkspaceEnabled && !workspacePermissions.sheetsSync && (
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400 asan-card-hover">
-              Google Sheets schedule sync is disabled in View Plans and Settings → Google Workspace Function Permissions.
+              Google Sheets schedule sync is disabled in Settings → Google Workspace Function Permissions.
             </div>
           )}
           {isWorkspaceEnabled && workspacePermissions.sheetsSync && (

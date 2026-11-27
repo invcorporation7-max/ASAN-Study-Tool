@@ -30,6 +30,7 @@ import {
   fetchStudyMaterialBlob,
   uploadFileToDriveFolder,
 } from '../lib/api';
+import { INFINITE_POINTS_SENTINEL } from '../lib/pricing';
 import type {
   ContributorFileItem,
   ContributorFolderItem,
@@ -45,6 +46,11 @@ import { GA4AnalyticsPanel } from './GA4AnalyticsPanel';
 import { PointsVerificationPanel } from './PointsVerificationPanel';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
+function formatPts(pts: number, infinite?: boolean): string {
+  if (infinite || pts >= INFINITE_POINTS_SENTINEL) return '∞ pts';
+  return `${pts.toLocaleString()} pts`;
+}
+
 interface AdminOverviewResponse {
   constantAdminKey: string;
   contributorWeeklyPoints?: number;
@@ -58,6 +64,7 @@ interface AdminOverviewResponse {
     totalUsers: number;
     basicUsers: number;
     proUsers: number;
+    eliteUsers?: number;
     adminUsers: number;
     approvedContributors: number;
     pendingContributorRequests: number;
@@ -217,9 +224,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
       });
       setKeyRecipient('');
       setStatusMsg(
-        `Generated ${keyTerm === 'annual' ? 'Annual (12m)' : 'Monthly (1m)'} Pro Key ${
+        `Gifted ${keyTerm === 'annual' ? 'Annual (12m)' : 'Monthly (1m)'} single-use 8-char Pro Activation Key ${
           res.key.keyCode
-        } and delivered to ${res.recipientEmail} via Admin Tool Mail.`
+        } (No Refund · 0 pts on cancel) and delivered to ${res.recipientEmail} via Tool Mail.`
       );
       await loadOverview();
     } catch (err) {
@@ -369,7 +376,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
         }),
       });
       setStatusMsg(
-        `Super Mode: ${signed >= 0 ? `+${signed}` : signed} pts applied to @${res.user.username} (New balance: ${res.user.points} pts). Tool Mail notice sent with reason.`
+        `Super Mode: ${signed >= 0 ? `+${signed}` : signed} pts applied to @${res.user.username} (New balance: ${formatPts(res.user.points, res.user.infinitePoints)}). Tool Mail notice sent with reason.`
       );
       setPointsReason('');
       await Promise.all([loadOverview(), refreshProfile()]);
@@ -717,8 +724,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                 {data.analytics.totalUsers}
               </div>
               <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                {data.analytics.proUsers} Pro · {data.analytics.basicUsers} Basic ·{' '}
-                {data.analytics.adminUsers} Admin/Super
+                {data.analytics.eliteUsers ?? 0} Elite · {data.analytics.proUsers} Pro ·{' '}
+                {data.analytics.basicUsers} Basic · {data.analytics.adminUsers} Admin/Super
               </div>
             </div>
 
@@ -911,6 +918,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                         <span className="font-semibold text-slate-900 dark:text-slate-100">
                           {reqItem.displayName} (@{reqItem.username} · {reqItem.shortUid})
                         </span>
+                        {reqItem.planTerm?.includes('elite') && (
+                          <span className="asan-elite-badge rounded px-1.5 py-0.5 text-[10px] font-bold">
+                            ELITE
+                          </span>
+                        )}
                         <span
                           className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${
                             reqItem.status === 'approved'
@@ -926,9 +938,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                       <div className="text-slate-600 dark:text-slate-300 tabular-nums">
                         Policy:{' '}
                         <strong>
-                          {reqItem.refundBasis === 'flat_60_percent'
-                            ? '60% Non-Time-Dependent'
-                            : `Remaining (${reqItem.remainingPercent}%) − 5%`}
+                          {reqItem.refundBasis === 'no_refund_admin_gift'
+                            ? 'No Refund (Admin Gift · 0 pts)'
+                            : reqItem.refundBasis === 'flat_60_percent'
+                              ? '60% Non-Time-Dependent'
+                              : `Remaining (${reqItem.remainingPercent}%) − 5%`}
                         </strong>{' '}
                         · Paid: <strong>{reqItem.pointsPaid} pts</strong> · Days Left:{' '}
                         <strong>
@@ -1029,7 +1043,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                   >
                     {data.users.map((u) => (
                       <option key={u.id} value={u.id}>
-                        @{u.username} ({u.shortUid}) · {u.points} pts
+                        @{u.username} ({u.shortUid}) · {formatPts(u.points, u.infinitePoints)}
                       </option>
                     ))}
                   </select>
@@ -1107,8 +1121,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                     }
                     className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs font-medium"
                   >
-                    <option value="terminate_pro">Terminate Pro Plan (Revert to Basic)</option>
-                    <option value="grant_pro">Grant 1-Month Pro Plan</option>
+                    <option value="terminate_pro">Terminate Paid Plan (Revert to Basic)</option>
+                    <option value="grant_pro">Mail 8-Char Pro Gift Key (1m · No Refund)</option>
                     <option value="cancel_contributor">Cancel Contributor Approval</option>
                     <option value="revoke_admin">Revoke Admin Authorization</option>
                   </select>
@@ -1203,7 +1217,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                                       : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                                 }`}
                               >
-                                {k.status}
+                                {k.status === 'unused' ? 'new' : k.status}
                               </span>
                             </td>
                             <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
@@ -1241,10 +1255,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 <KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                Generate Expirable 8-Char Pro Key
+                Gift Single-Use 8-Char Pro Activation Key
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Valid 1 year to activate, grants 1 month or 12 months Pro from activation. Delivered automatically to Tool Mail.
+                Mails an 8-character single-use Pro activation key to the user&apos;s Tool Mail (plan does not start until activated; No Refund Policy · 0 pts on cancel). Elite (12-char) is strictly points-only.
               </p>
               <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-xs">
                 <button
@@ -1406,6 +1420,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                               plan={u.plan}
                               role={u.role}
                               contributorApproved={u.contributorApproved}
+                              visualEffects={u.eliteVisualEffects !== false}
                               size="sm"
                             />
                             <div className="min-w-0">
@@ -1428,15 +1443,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span
                               className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                                u.plan === 'pro'
-                                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-                                  : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                u.plan === 'elite'
+                                  ? 'asan-elite-badge'
+                                  : u.plan === 'pro'
+                                    ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                    : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                               }`}
                             >
                               {u.plan}
-                              {u.plan === 'pro' && u.proExpiresAt
-                                ? ` → ${u.proExpiresAt.slice(0, 10)}`
-                                : ''}
+                              {u.plan === 'elite' && u.eliteExpiresAt
+                                ? ` → ${u.eliteExpiresAt.slice(0, 10)}`
+                                : u.plan === 'pro' && u.proExpiresAt
+                                  ? ` → ${u.proExpiresAt.slice(0, 10)}`
+                                  : ''}
                             </span>
                             {u.contributorApproved && (
                               <span className="rounded bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
@@ -1461,7 +1480,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onRefreshCountdowns }) => 
                           </div>
                         </td>
                         <td className="py-3 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
-                          {u.points} pts
+                          {formatPts(u.points, u.infinitePoints)}
                         </td>
                         <td className="py-3 pr-3 text-slate-600 dark:text-slate-300">
                           {uploadCount} upload(s)

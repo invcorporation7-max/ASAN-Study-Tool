@@ -24,21 +24,33 @@ import { CONSTANT_ADMIN_LICENSE_KEY, UPLOADS_DIR } from './src/db/localStore.ts'
 import { fetchGa4Report, getPublicMeasurementId } from './src/lib/ga4.ts';
 import { richHtmlToPlainText, sanitizeRichHtmlServer } from './src/lib/htmlSanitizer.ts';
 import {
+  calculatePlanQuote,
+  calculateRepoOrAppQuote,
+  type PricingTargetScope,
+} from './src/lib/pricing.ts';
+import {
   authorizeAdminEmail,
   cancelProAndRequestRefund,
+  createCoupon,
+  deleteCouponById,
   generateProLicenseKey,
   getPointRewardsConfig,
   getPointTransactions,
+  getUserAppSubscriptions,
   getUserLicenseKeys,
+  getUserPlanSubscriptions,
   getUserRefundRequests,
+  listCoupons,
   listPublicCreditsContributors,
   listRefundRequestsForAdmin,
   listToolUsers,
   loginPasswordUser,
+  purchasePlanWithPoints,
   purchaseProWithPoints,
   redeemLicenseKey,
   registerPasswordUser,
   requestContributorRole,
+  resolveValidCouponForScope,
   reviewProRefundRequest,
   sanitizeUserForClient,
   setContributorStatus,
@@ -47,11 +59,13 @@ import {
   setPointRewardsConfig,
   superAdjustUserPoints,
   superTerminateOrCancel,
+  updateCouponStatus,
   updateUserPlan,
   updateUserProfile,
 } from './src/db/users.ts';
 import {
   acquireStudyMaterial,
+  cancelMaterialPurchase,
   createCalendarEvent,
   createCalendarEventsBulk,
   createContactMessage,
@@ -78,6 +92,7 @@ import {
   deleteToolMessage,
   detectPdfPageCountFromBuffer,
   detectStudyMediaKind,
+  extendMaterialPurchase,
   getAdminAnalytics,
   getContactMessages,
   getContributorFileById,
@@ -130,8 +145,10 @@ import {
   toggleForumReplyVote,
 } from './src/db/forum.ts';
 import {
+  cancelAppSubscription,
   createFormulaEquation,
   deleteFormulaEquation,
+  extendAppSubscription,
   getFormulaAccessStatus,
   listFormulaEquations,
   renewFormulaMeteredSession,
@@ -591,6 +608,22 @@ async function startServer() {
         String(identifier || email || ''),
         String(password || '')
       );
+      if (user.uid === 'dev_test_1') {
+        const payload = Buffer.from(
+          JSON.stringify({
+            userId: -1,
+            uid: 'dev_test_1',
+            email: 'dev@asan-study.local',
+            isTestUser: true,
+            issuedAt: Date.now(),
+            exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+          })
+        ).toString('base64');
+        return res.json({
+          token: `inbuilt.${payload}`,
+          user: { ...sanitizeUserForClient(user), authMode: 'password' },
+        });
+      }
       const token = signLocalSessionToken({
         userId: user.id,
         uid: user.uid,
@@ -643,6 +676,7 @@ async function startServer() {
         scheduleSheetId,
         viewPlanMode,
         workspacePermissions,
+        eliteVisualEffects,
       } = req.body || {};
       const parsedWorkspacePerms =
         workspacePermissions && typeof workspacePermissions === 'object'
@@ -676,6 +710,7 @@ async function startServer() {
         viewPlanMode:
           viewPlanMode === 'basic' || viewPlanMode === 'auto' ? viewPlanMode : undefined,
         workspacePermissions: parsedWorkspacePerms,
+        ...(typeof eliteVisualEffects === 'boolean' ? { eliteVisualEffects } : {}),
       });
       res.json({
         ...sanitizeUserForClient(updated),
@@ -683,11 +718,14 @@ async function startServer() {
       });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to update profile';
-      const status = msg.includes('Pro users cannot')
-        ? 403
-        : msg.includes('already taken') || msg.includes('at least 3')
-          ? 400
-          : 500;
+      const status =
+        msg.includes('Pro users cannot') ||
+        msg.includes('cannot pause') ||
+        msg.includes('Elite')
+          ? 403
+          : msg.includes('already taken') || msg.includes('at least 3')
+            ? 400
+            : 500;
       res.status(status).json({ error: msg });
     }
   });
@@ -712,7 +750,7 @@ async function startServer() {
     }
   });
 
-  // Points & Subscriptions & 8-Char License Keys
+  // Points & Subscriptions & 8/12-Char License Keys
   app.get('/api/points', requireAuth, async (req: AuthRequest, res) => {
     try {
       const transactions = await getPointTransactions(req.dbUser!.id);
@@ -726,20 +764,31 @@ async function startServer() {
 
   app.get('/api/subscriptions', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const [keys, transactions, refundRequests] = await Promise.all([
-        getUserLicenseKeys(req.dbUser!.id, req.dbUser!.email),
-        getPointTransactions(req.dbUser!.id),
-        getUserRefundRequests(req.dbUser!.id),
-      ]);
+      const [keys, transactions, refundRequests, planSubscriptions, appSubscriptions, materialPurchases] =
+        await Promise.all([
+          getUserLicenseKeys(req.dbUser!.id, req.dbUser!.email),
+          getPointTransactions(req.dbUser!.id),
+          getUserRefundRequests(req.dbUser!.id),
+          getUserPlanSubscriptions(req.dbUser!.id),
+          getUserAppSubscriptions(req.dbUser!.id),
+          getUserMaterialPurchases(req.dbUser!.id),
+        ]);
       res.json({
         plan: req.dbUser!.plan,
         role: req.dbUser!.role,
         points: req.dbUser!.points,
+        infinitePoints: Boolean(req.dbUser!.infinitePoints),
         proStartedAt: req.dbUser!.proStartedAt,
         proExpiresAt: req.dbUser!.proExpiresAt,
+        eliteStartedAt: req.dbUser!.eliteStartedAt || '',
+        eliteExpiresAt: req.dbUser!.eliteExpiresAt || '',
+        activeProGifted: Boolean(req.dbUser!.activeProGifted),
         keys,
         transactions,
         refundRequests,
+        planSubscriptions,
+        appSubscriptions,
+        materialPurchases,
       });
     } catch (error: unknown) {
       res.status(500).json({
@@ -748,76 +797,199 @@ async function startServer() {
     }
   });
 
+  app.post('/api/coupons/validate', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { code, targetScope, tier, term, baseSubtotal } = req.body || {};
+      const allowedScopes: PricingTargetScope[] = [
+        'pro_plan',
+        'elite_plan',
+        'apps_metered',
+        'repository_rent',
+        'repository_buy',
+      ];
+      const scope: PricingTargetScope = allowedScopes.includes(targetScope)
+        ? targetScope
+        : tier === 'elite'
+          ? 'elite_plan'
+          : 'pro_plan';
+      const cleanCode = typeof code === 'string' ? code.trim() : '';
+      const coupon = cleanCode ? await resolveValidCouponForScope(cleanCode, scope) : null;
+      const nowMs = Date.now();
+      const u = req.dbUser!;
+      let effectivePlan = 'basic';
+      if (u.plan === 'elite' && (!u.eliteExpiresAt || new Date(u.eliteExpiresAt).getTime() > nowMs)) {
+        effectivePlan = 'elite';
+      } else if (u.plan === 'pro' && (!u.proExpiresAt || new Date(u.proExpiresAt).getTime() > nowMs)) {
+        effectivePlan = 'pro';
+      }
+
+      const quote =
+        scope === 'pro_plan' || scope === 'elite_plan'
+          ? calculatePlanQuote({
+              tier: scope === 'elite_plan' ? 'elite' : 'pro',
+              term: term === 'annual' ? 'annual' : 'monthly',
+              coupon,
+            })
+          : calculateRepoOrAppQuote({
+              targetScope: scope,
+              baseSubtotal: Math.max(0, Math.round(Number(baseSubtotal) || 0)),
+              effectivePlan,
+              role: u.role,
+              coupon,
+            });
+      res.json({ valid: true, coupon, quote });
+    } catch (error: unknown) {
+      res.status(400).json({
+        valid: false,
+        error: error instanceof Error ? error.message : 'Invalid coupon code.',
+      });
+    }
+  });
+
   app.post('/api/subscriptions/redeem-points', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { term } = req.body || {};
+      const { tier, term, couponCode, proHandling } = req.body || {};
+      const planTier = tier === 'elite' ? 'elite' : 'pro';
       const planTerm = term === 'annual' ? 'annual' : 'monthly';
-      const updatedUser = await purchaseProWithPoints(req.dbUser!.id, planTerm);
+      const handling =
+        proHandling === 'keep' || proHandling === 'cancel' ? proHandling : undefined;
+      const updatedUser = await purchasePlanWithPoints(req.dbUser!.id, {
+        tier: planTier,
+        term: planTerm,
+        couponCode: typeof couponCode === 'string' ? couponCode : undefined,
+        proHandling: handling,
+      });
+      const tierLabel = planTier === 'elite' ? 'Elite' : 'Pro';
       res.json({
         user: sanitizeUserForClient(updatedUser),
         message:
           planTerm === 'annual'
-            ? 'Annual Pro plan activated for 12 months (5,100 points — 15% discount).'
-            : 'Monthly Pro plan activated for 1 month (500 points).',
+            ? `Annual ${tierLabel} plan activated for 12 months (11 months + 1 free + 25 platform fee).`
+            : `Monthly ${tierLabel} plan activated for 1 month (${
+                planTier === 'elite' ? '725 + 25 = 750' : '475 + 25 = 500'
+              } points).`,
       });
     } catch (error: unknown) {
+      const errObj = error as Error & { code?: string; proExpiresAt?: string };
       const msg = error instanceof Error ? error.message : 'Failed to redeem points';
-      res.status(msg.includes('Insufficient') ? 400 : 500).json({ error: msg });
-    }
-  });
-
-  app.post('/api/subscriptions/purchase-key', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { recipientEmail, term } = req.body || {};
-      const planTerm = term === 'annual' ? 'annual' : 'monthly';
-      const result = await generateProLicenseKey({
-        issuedByUserId: req.dbUser!.id,
-        targetEmailOrUsername:
-          typeof recipientEmail === 'string' ? recipientEmail : undefined,
-        chargePoints: true,
-        term: planTerm,
-      });
-      res.status(201).json(result);
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to purchase license key';
-      const status =
-        msg.includes('Insufficient') || msg.includes('not found') ? 400 : 500;
-      res.status(status).json({ error: msg });
-    }
-  });
-
-  app.post('/api/subscriptions/redeem-key', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { keyCode } = req.body || {};
-      if (!keyCode || typeof keyCode !== 'string') {
-        return res.status(400).json({ error: '8-character license key is required.' });
+      if (errObj?.code === 'PRO_OVERLAP_CHOICE_REQUIRED') {
+        return res.status(409).json({
+          error: msg,
+          code: 'PRO_OVERLAP_CHOICE_REQUIRED',
+          requiresProChoice: true,
+          proExpiresAt: errObj.proExpiresAt || '',
+        });
       }
-      const result = await redeemLicenseKey(req.dbUser!.id, keyCode);
-      res.json({
-        ...result,
-        user: result.user ? sanitizeUserForClient(result.user) : undefined,
-      });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to activate license key';
-      const status = msg.includes('hand-selected')
-        ? 403
-        : msg.includes('Invalid') ||
-            msg.includes('expired') ||
-            msg.includes('already') ||
-            msg.includes('must be')
+      const status =
+        msg.includes('Insufficient') || msg.includes('Coupon') || msg.includes('coupon')
           ? 400
           : 500;
       res.status(status).json({ error: msg });
     }
   });
 
+  app.post('/api/subscriptions/extend', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { tier, term, couponCode } = req.body || {};
+      const planTier = tier === 'elite' ? 'elite' : 'pro';
+      const planTerm = term === 'annual' ? 'annual' : 'monthly';
+      const updatedUser = await purchasePlanWithPoints(req.dbUser!.id, {
+        tier: planTier,
+        term: planTerm,
+        couponCode: typeof couponCode === 'string' ? couponCode : undefined,
+        proHandling: 'keep',
+      });
+      res.json({
+        user: sanitizeUserForClient(updatedUser),
+        message: `Extended ${planTier === 'elite' ? 'Elite' : 'Pro'} (${planTerm}) successfully.`,
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to extend subscription';
+      const status =
+        msg.includes('Insufficient') || msg.includes('Coupon') || msg.includes('coupon')
+          ? 400
+          : 500;
+      res.status(status).json({ error: msg });
+    }
+  });
+
+  app.post('/api/subscriptions/purchase-key', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { recipientEmail, term, tier, keyType, couponCode } = req.body || {};
+      const planTerm = term === 'annual' ? 'annual' : 'monthly';
+      const resolvedKeyType = tier === 'elite' || keyType === 'elite' ? 'elite' : 'pro';
+      const result = await generateProLicenseKey({
+        issuedByUserId: req.dbUser!.id,
+        targetEmailOrUsername:
+          typeof recipientEmail === 'string' ? recipientEmail : undefined,
+        chargePoints: true,
+        term: planTerm,
+        keyType: resolvedKeyType,
+        couponCode: typeof couponCode === 'string' ? couponCode : undefined,
+        sourceType: 'points',
+      });
+      res.status(201).json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to purchase license key';
+      const status =
+        msg.includes('Insufficient') ||
+        msg.includes('not found') ||
+        msg.includes('Coupon') ||
+        msg.includes('coupon') ||
+        msg.includes('Elite')
+          ? 400
+          : 500;
+      res.status(status).json({ error: msg });
+    }
+  });
+
+  app.post('/api/subscriptions/redeem-key', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { keyCode, proHandling } = req.body || {};
+      if (!keyCode || typeof keyCode !== 'string') {
+        return res
+          .status(400)
+          .json({ error: '8-character (Pro) or 12-character (Elite) license key is required.' });
+      }
+      const handling =
+        proHandling === 'keep' || proHandling === 'cancel' ? proHandling : undefined;
+      const result = await redeemLicenseKey(req.dbUser!.id, keyCode, handling);
+      res.json({
+        ...result,
+        user: result.user ? sanitizeUserForClient(result.user) : undefined,
+      });
+    } catch (error: unknown) {
+      const errObj = error as Error & { code?: string; proExpiresAt?: string };
+      const msg = error instanceof Error ? error.message : 'Failed to activate license key';
+      if (errObj?.code === 'PRO_OVERLAP_CHOICE_REQUIRED') {
+        return res.status(409).json({
+          error: msg,
+          code: 'PRO_OVERLAP_CHOICE_REQUIRED',
+          requiresProChoice: true,
+          proExpiresAt: errObj.proExpiresAt || '',
+        });
+      }
+      const status =
+        msg.includes('hand-selected') || msg.includes('locked to the recipient')
+          ? 403
+          : msg.includes('Invalid') ||
+              msg.includes('expired') ||
+              msg.includes('already') ||
+              msg.includes('must be')
+            ? 400
+            : 500;
+      res.status(status).json({ error: msg });
+    }
+  });
+
   app.post('/api/subscriptions/cancel-pro', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { reason, purchaseType } = req.body || {};
+      const { reason, purchaseType, tier } = req.body || {};
       const result = await cancelProAndRequestRefund({
         userId: req.dbUser!.id,
         reason: typeof reason === 'string' ? reason : '',
         purchaseType: purchaseType === 'non_timed' ? 'non_timed' : 'timed',
+        tier: tier === 'elite' ? 'elite' : tier === 'pro' ? 'pro' : undefined,
       });
       res.json({
         user: sanitizeUserForClient(result.user),
@@ -825,8 +997,8 @@ async function startServer() {
         message: result.message,
       });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Failed to cancel Pro subscription';
-      res.status(msg.includes('Only active Pro') ? 400 : 500).json({ error: msg });
+      const msg = error instanceof Error ? error.message : 'Failed to cancel subscription';
+      res.status(msg.includes('No active') || msg.includes('Only active') ? 400 : 500).json({ error: msg });
     }
   });
 
@@ -1390,10 +1562,11 @@ async function startServer() {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid material ID' });
-      const { accessType, hours } = req.body || {};
+      const { accessType, hours, couponCode } = req.body || {};
       const result = await acquireStudyMaterial(req.dbUser!.id, id, {
         accessType: accessType === 'buy' ? 'buy' : 'rent',
         hours: Number(hours) || 1,
+        couponCode: typeof couponCode === 'string' ? couponCode : undefined,
       });
       res.status(201).json(result);
     } catch (error: unknown) {
@@ -1401,12 +1574,56 @@ async function startServer() {
       const status =
         msg.includes('not found')
           ? 404
-          : msg.includes('Insufficient') || msg.includes('already')
+          : msg.includes('Insufficient') ||
+              msg.includes('already') ||
+              msg.includes('Coupon') ||
+              msg.includes('coupon')
             ? 400
             : 500;
       res.status(status).json({ error: msg });
     }
   });
+
+  app.post(
+    '/api/study-materials/purchases/:id/cancel',
+    requireAuth,
+    async (req: AuthRequest, res) => {
+      try {
+        const purchaseId = Number(req.params.id);
+        if (!Number.isFinite(purchaseId)) {
+          return res.status(400).json({ error: 'Invalid purchase ID' });
+        }
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+        const result = await cancelMaterialPurchase(req.dbUser!.id, purchaseId, { reason });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to cancel purchase';
+        res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
+      }
+    }
+  );
+
+  app.post(
+    '/api/study-materials/purchases/:id/extend',
+    requireAuth,
+    async (req: AuthRequest, res) => {
+      try {
+        const purchaseId = Number(req.params.id);
+        if (!Number.isFinite(purchaseId)) {
+          return res.status(400).json({ error: 'Invalid purchase ID' });
+        }
+        const { hours, couponCode } = req.body || {};
+        const result = await extendMaterialPurchase(req.dbUser!.id, purchaseId, {
+          hours: Number(hours) || 1,
+          couponCode: typeof couponCode === 'string' ? couponCode : undefined,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to extend purchase';
+        res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
+      }
+    }
+  );
 
   app.get('/api/study-materials/:id/download', requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -1719,20 +1936,82 @@ async function startServer() {
       try {
         const { recipientEmail, term } = req.body || {};
         const planTerm = term === 'annual' ? 'annual' : 'monthly';
+        // Admin gifts only single-use 8-char Pro activation keys (No-Refund policy); Elite is points-only
         const result = await generateProLicenseKey({
           issuedByUserId: req.dbUser!.id,
           targetEmailOrUsername:
             typeof recipientEmail === 'string' ? recipientEmail : undefined,
           chargePoints: false,
           term: planTerm,
+          keyType: 'pro',
+          sourceType: 'admin_gift',
         });
         res.status(201).json(result);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : 'Failed to generate key';
-        res.status(msg.includes('not found') ? 404 : 500).json({ error: msg });
+        res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
       }
     }
   );
+
+  // Super-Only Promotional Coupons (strictly role === 'super', Admins get 403)
+  app.get('/api/super/coupons', requireAuth, requireSuper, async (_req: AuthRequest, res) => {
+    try {
+      const rows = await listCoupons();
+      res.json(rows);
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to load coupons',
+      });
+    }
+  });
+
+  app.post('/api/super/coupons', requireAuth, requireSuper, async (req: AuthRequest, res) => {
+    try {
+      const { code, description, scope, discountType, discountValue, maxUses, expiresAt } =
+        req.body || {};
+      const created = await createCoupon(req.dbUser!.id, {
+        code: String(code || ''),
+        description: typeof description === 'string' ? description : '',
+        scope: typeof scope === 'string' ? scope : 'all',
+        discountType: discountType === 'flat' ? 'flat' : 'percent',
+        discountValue: Number(discountValue) || 10,
+        maxUses: Number(maxUses) || 0,
+        expiresAt: typeof expiresAt === 'string' ? expiresAt : '',
+      });
+      res.status(201).json(created);
+    } catch (error: unknown) {
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Failed to create coupon',
+      });
+    }
+  });
+
+  app.patch('/api/super/coupons/:id', requireAuth, requireSuper, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid coupon ID' });
+      const active = typeof req.body?.active === 'boolean' ? req.body.active : undefined;
+      const updated = await updateCouponStatus(id, { active });
+      res.json(updated);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to update coupon';
+      res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
+    }
+  });
+
+  app.delete('/api/super/coupons/:id', requireAuth, requireSuper, async (req: AuthRequest, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid coupon ID' });
+      await deleteCouponById(id);
+      res.json({ ok: true });
+    } catch (error: unknown) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to delete coupon',
+      });
+    }
+  });
 
   // Super / Developer Mode Endpoints (STRICTLY invcorporation7@gmail.com)
   app.post('/api/super/adjust-points', requireAuth, requireSuper, async (req: AuthRequest, res) => {
@@ -2534,7 +2813,9 @@ async function startServer() {
 
   app.post('/api/formula-access/start', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const status = await startFormulaMeteredSession(req.dbUser!);
+      const couponCode =
+        typeof req.body?.couponCode === 'string' ? req.body.couponCode : undefined;
+      const status = await startFormulaMeteredSession(req.dbUser!, { couponCode });
       res.json(status);
     } catch (error: unknown) {
       res.status(400).json({
@@ -2545,7 +2826,9 @@ async function startServer() {
 
   app.post('/api/formula-access/renew', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const status = await renewFormulaMeteredSession(req.dbUser!);
+      const couponCode =
+        typeof req.body?.couponCode === 'string' ? req.body.couponCode : undefined;
+      const status = await renewFormulaMeteredSession(req.dbUser!, { couponCode });
       res.json(status);
     } catch (error: unknown) {
       res.status(400).json({
@@ -2562,6 +2845,35 @@ async function startServer() {
       res.status(400).json({
         error: error instanceof Error ? error.message : 'Failed to disable metered formula access',
       });
+    }
+  });
+
+  app.post('/api/app-subscriptions/:id/cancel', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const subId = Number(req.params.id);
+      if (!Number.isFinite(subId)) return res.status(400).json({ error: 'Invalid subscription ID' });
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+      const result = await cancelAppSubscription(req.dbUser!.id, subId, { reason });
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to cancel app subscription';
+      res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
+    }
+  });
+
+  app.post('/api/app-subscriptions/:id/extend', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const subId = Number(req.params.id);
+      if (!Number.isFinite(subId)) return res.status(400).json({ error: 'Invalid subscription ID' });
+      const { quarters, couponCode } = req.body || {};
+      const result = await extendAppSubscription(req.dbUser!.id, subId, {
+        quarters: Number(quarters) || 1,
+        couponCode: typeof couponCode === 'string' ? couponCode : undefined,
+      });
+      res.json(result);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to extend app subscription';
+      res.status(msg.includes('not found') ? 404 : 400).json({ error: msg });
     }
   });
 

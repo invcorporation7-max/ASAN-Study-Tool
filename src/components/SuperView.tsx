@@ -10,6 +10,10 @@ import {
   Search,
   ShieldAlert,
   Sliders,
+  Ticket,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
   TrendingDown,
   TrendingUp,
   Users,
@@ -22,9 +26,11 @@ import {
   fetchContributorFileBlob,
   uploadFileToDriveFolder,
 } from '../lib/api';
+import { INFINITE_POINTS_SENTINEL, type CouponScope } from '../lib/pricing';
 import type {
   ContributorFileItem,
   ContributorFolderItem,
+  CouponItem,
   LicenseKeyItem,
   PointRewardsConfig,
   SuperUserPointRow,
@@ -34,8 +40,24 @@ import { GA4AnalyticsPanel } from './GA4AnalyticsPanel';
 import { PointsVerificationPanel } from './PointsVerificationPanel';
 import { UserAvatarBadge } from './UserAvatarBadge';
 
-type UserFilter = 'all' | 'pro' | 'basic' | 'contributors' | 'admins' | 'google' | 'password';
+type UserFilter = 'all' | 'elite' | 'pro' | 'basic' | 'contributors' | 'admins' | 'google' | 'password';
 type UserSort = 'points_desc' | 'points_asc' | 'newest' | 'name_asc';
+
+function formatPts(pts: number, infinite?: boolean): string {
+  if (infinite || pts >= INFINITE_POINTS_SENTINEL) return '∞ pts';
+  return `${pts.toLocaleString()} pts`;
+}
+
+const COUPON_SCOPE_OPTIONS: { value: CouponScope; label: string }[] = [
+  { value: 'all', label: 'All Purchases (Plans, Apps & Repository)' },
+  { value: 'all_plans', label: 'Pro & Elite Plans' },
+  { value: 'pro_plan', label: 'Pro Plan Only' },
+  { value: 'elite_plan', label: 'Elite Plan Only' },
+  { value: 'apps_metered', label: 'Metered Apps & Tool Subscriptions' },
+  { value: 'all_repository', label: 'All Repository Items (Rent & Buy)' },
+  { value: 'repository_rent', label: 'Repository Hourly Rentals Only' },
+  { value: 'repository_buy', label: 'Repository Permanent Buys Only' },
+];
 
 export const SuperView: React.FC = () => {
   const {
@@ -87,11 +109,25 @@ export const SuperView: React.FC = () => {
   const [savingRewards, setSavingRewards] = useState(false);
   const [syncingMaster, setSyncingMaster] = useState(false);
 
+  // Super-Only Promotional Coupons State
+  const [coupons, setCoupons] = useState<CouponItem[]>([]);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponDesc, setCouponDesc] = useState('');
+  const [couponScope, setCouponScope] = useState<CouponScope>('all');
+  const [couponType, setCouponType] = useState<'percent' | 'flat'>('percent');
+  const [couponValue, setCouponValue] = useState('20');
+  const [couponMaxUses, setCouponMaxUses] = useState('50');
+  const [couponExpiresAt, setCouponExpiresAt] = useState(() => {
+    const d = new Date(Date.now() + 72 * 3600 * 1000);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
+  const [couponBusy, setCouponBusy] = useState(false);
+
   const loadSuperData = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [superRes, adminRes, rewardsRes] = await Promise.all([
+      const [superRes, adminRes, rewardsRes, couponsRes] = await Promise.all([
         apiFetch<SuperUsersPointsResponse>('/api/super/users-points'),
         apiFetch<{ licenseKeys?: LicenseKeyItem[] }>('/api/admin/overview').catch(() => ({
           licenseKeys: [],
@@ -99,9 +135,11 @@ export const SuperView: React.FC = () => {
         apiFetch<PointRewardsConfig | { rewards?: PointRewardsConfig }>('/api/point-rewards').catch(() => ({
           rewards: undefined,
         })),
+        apiFetch<CouponItem[]>('/api/super/coupons').catch(() => []),
       ]);
       setLedger(superRes);
       setLicenseKeys(adminRes.licenseKeys || []);
+      setCoupons(Array.isArray(couponsRes) ? couponsRes : []);
       setWeeklyStipendInput(String(superRes.summary.contributorWeeklyPoints));
       const resolvedRewards =
         (rewardsRes as { rewards?: PointRewardsConfig })?.rewards ||
@@ -136,8 +174,9 @@ export const SuperView: React.FC = () => {
     if (!ledger) return [];
     const q = searchTerm.trim().toLowerCase();
     const list = ledger.users.filter((u) => {
+      if (filterMode === 'elite' && u.plan !== 'elite') return false;
       if (filterMode === 'pro' && u.plan !== 'pro') return false;
-      if (filterMode === 'basic' && u.plan === 'pro') return false;
+      if (filterMode === 'basic' && (u.plan === 'pro' || u.plan === 'elite')) return false;
       if (filterMode === 'contributors' && !u.contributorApproved) return false;
       if (filterMode === 'admins' && u.role !== 'admin' && u.role !== 'super') return false;
       if (filterMode === 'google' && (u.authMode || 'google') !== 'google') return false;
@@ -213,7 +252,7 @@ export const SuperView: React.FC = () => {
       });
       setPointsReason('');
       setStatusMsg(
-        `Updated @${res.user.username} to ${res.user.points.toLocaleString()} pts (${
+        `Updated @${res.user.username} to ${formatPts(res.user.points, res.user.infinitePoints)} (${
           signedAmount > 0 ? `+${signedAmount}` : signedAmount
         } pts) and delivered Tool Mail notice.`
       );
@@ -223,6 +262,67 @@ export const SuperView: React.FC = () => {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to adjust points');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponCode.trim()) return;
+    setCouponBusy(true);
+    setStatusMsg(null);
+    setErrorMsg(null);
+    try {
+      const expiresIso = couponExpiresAt ? new Date(couponExpiresAt).toISOString() : '';
+      const created = await apiFetch<CouponItem>('/api/super/coupons', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: couponCode.trim().toUpperCase(),
+          description: couponDesc.trim(),
+          scope: couponScope,
+          discountType: couponType,
+          discountValue: Math.max(1, Math.round(Number(couponValue) || 10)),
+          maxUses: Math.max(0, Math.round(Number(couponMaxUses) || 0)),
+          expiresAt: expiresIso,
+        }),
+      });
+      setCouponCode('');
+      setCouponDesc('');
+      setStatusMsg(`Created promotional coupon ${created.code} (${created.scope.replace('_', ' ')}).`);
+      await loadSuperData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to create coupon');
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const handleToggleCoupon = async (c: CouponItem) => {
+    setCouponBusy(true);
+    setErrorMsg(null);
+    try {
+      await apiFetch(`/api/super/coupons/${c.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: !c.active }),
+      });
+      await loadSuperData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to toggle coupon');
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const handleDeleteCoupon = async (c: CouponItem) => {
+    setCouponBusy(true);
+    setErrorMsg(null);
+    try {
+      await apiFetch(`/api/super/coupons/${c.id}`, { method: 'DELETE' });
+      setStatusMsg(`Deleted coupon ${c.code}.`);
+      await loadSuperData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to delete coupon');
+    } finally {
+      setCouponBusy(false);
     }
   };
 
@@ -520,8 +620,9 @@ export const SuperView: React.FC = () => {
               <div className="mt-1.5 font-display text-2xl font-bold text-slate-900 dark:text-slate-100">
                 {ledger.summary.totalUsers}
               </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {ledger.summary.proUsers} Pro · {ledger.summary.basicUsers} Basic
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                {ledger.summary.eliteUsers ?? 0} Elite · {ledger.summary.proUsers} Pro ·{' '}
+                {ledger.summary.basicUsers} Basic
               </div>
             </div>
 
@@ -612,6 +713,7 @@ export const SuperView: React.FC = () => {
                   {(
                     [
                       ['all', 'All'],
+                      ['elite', 'Elite'],
                       ['pro', 'Pro'],
                       ['basic', 'Basic'],
                       ['contributors', 'Contributors'],
@@ -683,6 +785,7 @@ export const SuperView: React.FC = () => {
                               plan={u.plan}
                               role={u.role}
                               contributorApproved={u.contributorApproved}
+                              visualEffects={u.eliteVisualEffects !== false}
                               size="sm"
                             />
                             <div className="min-w-0">
@@ -724,13 +827,20 @@ export const SuperView: React.FC = () => {
                         <td className="py-3 pr-3">
                           <span
                             className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                              u.plan === 'pro'
-                                ? 'border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
-                                : 'border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
+                              u.plan === 'elite'
+                                ? 'asan-elite-badge'
+                                : u.plan === 'pro'
+                                  ? 'border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
+                                  : 'border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
                             }`}
                           >
                             {u.plan}
                           </span>
+                          {u.plan === 'elite' && u.eliteExpiresAt && (
+                            <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                              ends {u.eliteExpiresAt.slice(0, 10)}
+                            </div>
+                          )}
                           {u.plan === 'pro' && u.proExpiresAt && (
                             <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
                               ends {u.proExpiresAt.slice(0, 10)}
@@ -739,7 +849,7 @@ export const SuperView: React.FC = () => {
                         </td>
                         <td className="py-3 pr-3 text-right">
                           <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 font-mono text-xs font-bold text-amber-900 dark:text-amber-300">
-                            {u.points.toLocaleString()} pts
+                            {formatPts(u.points, u.infinitePoints)}
                           </span>
                         </td>
                         <td className="py-3 pr-3 text-right text-[11px]">
@@ -793,7 +903,7 @@ export const SuperView: React.FC = () => {
               >
                 {ledger.users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    @{u.username} ({u.shortUid}) · {u.points.toLocaleString()} pts
+                    @{u.username} ({u.shortUid}) · {formatPts(u.points, u.infinitePoints)}
                   </option>
                 ))}
               </select>
@@ -871,8 +981,8 @@ export const SuperView: React.FC = () => {
                 }
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3 py-2 text-xs font-medium"
               >
-                <option value="terminate_pro">Terminate Pro Plan (Revert to Basic)</option>
-                <option value="grant_pro">Grant 1-Month Pro Plan</option>
+                <option value="terminate_pro">Terminate Paid Plan (Revert to Basic)</option>
+                <option value="grant_pro">Mail 8-Char Pro Gift Key (1m · No Refund)</option>
                 <option value="cancel_contributor">Cancel Contributor Approval</option>
                 <option value="revoke_admin">Revoke Admin Authorization</option>
               </select>
@@ -1093,6 +1203,215 @@ export const SuperView: React.FC = () => {
             )}
           </section>
 
+          {/* Super-Only Promotional Coupons Manager */}
+          <section className="asan-card-hover rounded-xl border border-violet-200 dark:border-violet-800/80 bg-white dark:bg-slate-900 p-4 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="flex items-center gap-2 font-display text-base font-bold text-slate-900 dark:text-slate-100">
+                  <Ticket className="h-4 w-4 text-violet-700 dark:text-violet-400" />
+                  Promotional Coupons Manager ({coupons.length})
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Super-exclusive discounts for Pro/Elite plans, metered apps, or repository rentals &amp; buys. Admins cannot access or create coupons.
+                </p>
+              </div>
+              <span className="rounded border border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/60 px-2.5 py-0.5 text-[10px] font-bold uppercase text-violet-800 dark:text-violet-300">
+                SUPER ONLY
+              </span>
+            </div>
+
+            <form onSubmit={handleCreateCoupon} className="grid grid-cols-1 gap-3 sm:grid-cols-12 items-end">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                  placeholder="EXAM20"
+                  maxLength={24}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-xs font-bold uppercase text-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-3">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Applies To (Scope)
+                </label>
+                <select
+                  value={couponScope}
+                  onChange={(e) => setCouponScope(e.target.value as CouponScope)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-xs text-slate-900 dark:text-slate-100"
+                >
+                  {COUPON_SCOPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Discount
+                </label>
+                <div className="mt-1 flex gap-1">
+                  <select
+                    value={couponType}
+                    onChange={(e) => setCouponType(e.target.value as 'percent' | 'flat')}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-xs text-slate-900 dark:text-slate-100"
+                  >
+                    <option value="percent">%</option>
+                    <option value="flat">Pts</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={couponType === 'percent' ? 100 : 10000}
+                    required
+                    value={couponValue}
+                    onChange={(e) => setCouponValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 py-2 text-xs font-semibold tabular-nums text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+              <div className="sm:col-span-1">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Max Uses
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={couponMaxUses}
+                  onChange={(e) => setCouponMaxUses(e.target.value)}
+                  placeholder="0=∞"
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-xs tabular-nums text-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Expires At
+                </label>
+                <input
+                  type="datetime-local"
+                  value={couponExpiresAt}
+                  onChange={(e) => setCouponExpiresAt(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-xs tabular-nums text-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={couponBusy}
+                  className="w-full rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60"
+                >
+                  {couponBusy ? 'Saving...' : 'Create Coupon'}
+                </button>
+              </div>
+              <div className="sm:col-span-12">
+                <input
+                  type="text"
+                  value={couponDesc}
+                  onChange={(e) => setCouponDesc(e.target.value)}
+                  placeholder="Optional description (e.g. Weekend JEE sprint 20% off repository & metered apps)"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </form>
+
+            {coupons.length === 0 ? (
+              <p className="py-3 text-center text-xs text-slate-500 dark:text-slate-400">
+                No promotional coupons created yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
+                      <th className="py-2 pr-3 font-medium">Code</th>
+                      <th className="py-2 pr-3 font-medium">Scope</th>
+                      <th className="py-2 pr-3 font-medium">Discount</th>
+                      <th className="py-2 pr-3 font-medium">Uses</th>
+                      <th className="py-2 pr-3 font-medium">Expires</th>
+                      <th className="py-2 pr-3 font-medium">Status</th>
+                      <th className="py-2 text-right font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
+                    {coupons.map((c) => {
+                      const expired = c.expiresAt && new Date(c.expiresAt).getTime() <= Date.now();
+                      return (
+                        <tr key={c.id}>
+                          <td className="py-2.5 pr-3">
+                            <span className="font-mono font-bold text-violet-800 dark:text-violet-300">
+                              {c.code}
+                            </span>
+                            {c.description && (
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                {c.description}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-3 capitalize text-slate-700 dark:text-slate-300">
+                            {c.scope.replace(/_/g, ' ')}
+                          </td>
+                          <td className="py-2.5 pr-3 font-semibold text-emerald-700 dark:text-emerald-400">
+                            {c.discountType === 'percent'
+                              ? `${c.discountValue}% off`
+                              : `−${c.discountValue} pts`}
+                          </td>
+                          <td className="py-2.5 pr-3 text-slate-600 dark:text-slate-300">
+                            {c.usedCount} / {c.maxUses > 0 ? c.maxUses : '∞'}
+                          </td>
+                          <td className="py-2.5 pr-3 text-slate-500 dark:text-slate-400">
+                            {c.expiresAt ? new Date(c.expiresAt).toLocaleString() : 'No expiry'}
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                !c.active || expired
+                                  ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
+                                  : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                              }`}
+                            >
+                              {expired ? 'Expired' : c.active ? 'Active' : 'Paused'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={couponBusy}
+                                onClick={() => void handleToggleCoupon(c)}
+                                className="inline-flex items-center gap-1 rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              >
+                                {c.active ? (
+                                  <ToggleRight className="h-3.5 w-3.5 text-emerald-600" />
+                                ) : (
+                                  <ToggleLeft className="h-3.5 w-3.5 text-slate-400" />
+                                )}
+                                {c.active ? 'Pause' : 'Enable'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={couponBusy}
+                                onClick={() => void handleDeleteCoupon(c)}
+                                className="rounded p-1 text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600"
+                                aria-label={`Delete coupon ${c.code}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
           {/* License Key Cancellation Control */}
           {licenseKeys.length > 0 && (
             <section className="asan-card-hover rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-3">
@@ -1101,7 +1420,7 @@ export const SuperView: React.FC = () => {
                   License Key Cancellation Control ({licenseKeys.length})
                 </h2>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Revoke unused or active 8-char Pro license keys
+                  Revoke new or active 8-char Pro &amp; 12-char Elite license keys
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -1109,6 +1428,7 @@ export const SuperView: React.FC = () => {
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                       <th className="py-2 pr-3 font-medium">Key</th>
+                      <th className="py-2 pr-3 font-medium">Tier</th>
                       <th className="py-2 pr-3 font-medium">Issued To</th>
                       <th className="py-2 pr-3 font-medium">Status</th>
                       <th className="py-2 pr-3 font-medium">Term</th>
@@ -1116,45 +1436,65 @@ export const SuperView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
-                    {licenseKeys.slice(0, 30).map((k) => (
-                      <tr key={k.id}>
-                        <td className="py-2 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
-                          {k.keyCode}
-                        </td>
-                        <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
-                          {k.issuedToEmail || 'Unassigned'}
-                        </td>
-                        <td className="py-2 pr-3 capitalize">
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                              k.status === 'cancelled'
-                                ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
-                                : k.status === 'active'
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
-                                  : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
-                            }`}
-                          >
-                            {k.status}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
-                          {k.durationMonths === 12 ? '12 mo' : '1 mo'}
-                        </td>
-                        <td className="py-2 text-right">
-                          {k.status !== 'cancelled' && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void handleCancelLicenseKey(k)}
-                              className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-2 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
+                    {licenseKeys.slice(0, 30).map((k) => {
+                      const isEliteKey = k.keyType === 'elite' || k.keyCode.length === 12;
+                      const displayStatus = k.status === 'unused' ? 'new' : k.status;
+                      return (
+                        <tr key={k.id}>
+                          <td className="py-2 pr-3 font-mono font-semibold text-slate-900 dark:text-slate-100">
+                            {k.keyCode}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                                isEliteKey
+                                  ? 'asan-elite-badge'
+                                  : 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300'
+                              }`}
                             >
-                              <Ban className="h-3 w-3" />
-                              Cancel Key
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                              {isEliteKey ? '12-ch Elite' : '8-ch Pro'}
+                            </span>
+                            {k.noRefund && (
+                              <span className="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-[9px] text-slate-500 dark:text-slate-400">
+                                Gift
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
+                            {k.issuedToEmail || 'Unassigned'}
+                          </td>
+                          <td className="py-2 pr-3 capitalize">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                k.status === 'cancelled'
+                                  ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300'
+                                  : k.status === 'active'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300'
+                              }`}
+                            >
+                              {displayStatus}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
+                            {k.durationMonths === 12 ? '12 mo' : '1 mo'}
+                          </td>
+                          <td className="py-2 text-right">
+                            {k.status !== 'cancelled' && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void handleCancelLicenseKey(k)}
+                                className="inline-flex items-center gap-1 rounded border border-red-200 dark:border-red-800/70 bg-red-50 dark:bg-red-950/40 px-2 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
+                              >
+                                <Ban className="h-3 w-3" />
+                                Cancel Key
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

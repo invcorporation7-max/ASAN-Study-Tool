@@ -294,6 +294,7 @@ export interface AppShortcutCatalogEntry {
   label: string;
   category: string;
   proOnly?: boolean;
+  eliteOnly?: boolean;
   requiresWorkspace?: boolean;
   requiresContributor?: boolean;
   requiresAdmin?: boolean;
@@ -312,14 +313,17 @@ export const APP_SHORTCUT_CATALOG: AppShortcutCatalogEntry[] = [
   { id: 'forum', label: 'Study Forum', category: 'Community & Account' },
   { id: 'messages', label: 'Tool Mail', category: 'Community & Account' },
   { id: 'study-materials', label: 'Study Material Notes', category: 'Community & Account' },
-  { id: 'subscriptions', label: 'Subscriptions', category: 'Community & Account' },
+  { id: 'subscriptions', label: 'Subscriptions and Plans', category: 'Community & Account' },
   { id: 'notifications', label: 'Notifications', category: 'Community & Account' },
   { id: 'specialized-calculators', label: 'Specialized Calculators (Lite)', category: 'Pro Tools', proOnly: true },
+  { id: 'chemistry-lab', label: 'Chemistry Virtual Lab', category: 'Elite Labs', eliteOnly: true },
+  { id: 'physics-lab', label: 'Physics Virtual Lab', category: 'Elite Labs', eliteOnly: true },
+  { id: 'motion-3d', label: '3D Motion Visualizer', category: 'Elite Labs', eliteOnly: true },
   { id: 'pdf-tool', label: 'PDF Tool', category: 'Pro Tools', proOnly: true },
   { id: 'workspace', label: 'Google Workspace', category: 'Pro Tools', proOnly: true, requiresWorkspace: true },
   { id: 'spectra', label: 'Spectra AI', category: 'Pro Tools', proOnly: true },
   { id: 'more', label: 'More Features', category: 'General' },
-  { id: 'plans', label: 'View Plans and Settings', category: 'Settings & Info' },
+  { id: 'plans', label: 'Settings', category: 'Settings & Info' },
   { id: 'about', label: 'About the Creators', category: 'Settings & Info' },
   { id: 'contact', label: 'Contact', category: 'Settings & Info' },
   { id: 'contributor-console', label: "Contributors' Console", category: 'Roles', requiresContributor: true },

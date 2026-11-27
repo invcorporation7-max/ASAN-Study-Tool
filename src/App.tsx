@@ -5,14 +5,17 @@ import {
   ArrowUp,
   Bell,
   BookOpen,
+  Box,
   Calculator,
   Calendar,
   CheckCircle2,
   CheckSquare,
   Clock,
   Cloud,
+  Compass,
   CreditCard,
   Crown,
+  FlaskConical,
   FolderOpen,
   FolderUp,
   FunctionSquare,
@@ -38,6 +41,7 @@ import {
   PinOff,
   RefreshCw,
   Search,
+  Settings,
   ShieldCheck,
   Sigma,
   Sparkles,
@@ -76,6 +80,10 @@ import { TasksView } from './components/TasksView';
 import { TechnicalLoadingScreen } from './components/TechnicalLoadingScreen';
 import { TimersView } from './components/TimersView';
 import { UserAvatarBadge } from './components/UserAvatarBadge';
+import { ChemistryLabView } from './components/ChemistryLabView';
+import { PhysicsLabView } from './components/PhysicsLabView';
+import { MotionVisualizer3D } from './components/MotionVisualizer3D';
+import { DevToolsModal } from './components/DevToolsModal';
 import { WorkspaceView } from './components/WorkspaceView';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -114,6 +122,7 @@ interface AppCatalogEntry {
   category: 'Core Study Workspace' | 'Community & Account' | 'Pro & Extended Tools';
   icon: React.FC<{ className?: string }>;
   proOnly?: boolean;
+  eliteOnly?: boolean;
 }
 
 const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
@@ -184,8 +193,8 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
   },
   {
     id: 'subscriptions',
-    label: 'Subscriptions',
-    description: 'Manage your plan tier, ASAN points balance, and renewals.',
+    label: 'Subscriptions and Plans',
+    description: 'Upgrade Basic / Pro / Elite plans, redeem license keys, and manage active subscriptions.',
     category: 'Community & Account',
     icon: Sparkles,
   },
@@ -220,6 +229,30 @@ const ALL_TOOLS_CATALOG: AppCatalogEntry[] = [
     category: 'Pro & Extended Tools',
     icon: Cloud,
     proOnly: true,
+  },
+  {
+    id: 'chemistry-lab',
+    label: 'Chemistry Virtual Lab',
+    description: 'Student shelf, unknown C-10 salts, strong reagents, indicators, burette, pipettes & Bunsen burner reactions.',
+    category: 'Pro & Extended Tools',
+    icon: FlaskConical,
+    eliteOnly: true,
+  },
+  {
+    id: 'physics-lab',
+    label: 'Physics Virtual Lab',
+    description: 'Simple pendulum, vernier callipers, screw gauge, spherometer, Hooke’s law, Stokes’ law & resonance tube.',
+    category: 'Pro & Extended Tools',
+    icon: Compass,
+    eliteOnly: true,
+  },
+  {
+    id: 'motion-3d',
+    label: '3D Motion Visualizer',
+    description: 'Interactive WebGL 3D physics motion simulations and particle visualizer.',
+    category: 'Pro & Extended Tools',
+    icon: Box,
+    eliteOnly: true,
   },
   {
     id: 'spectra',
@@ -269,7 +302,7 @@ const SECONDARY_NAV: {
   label: string;
   icon: React.FC<{ className?: string }>;
 }[] = [
-  { id: 'plans', label: 'View Plans and Settings', icon: CreditCard },
+  { id: 'plans', label: 'Settings', icon: Settings },
   { id: 'about', label: 'About the Creators', icon: Info },
   { id: 'contact', label: 'Contact', icon: Mail },
 ];
@@ -288,15 +321,18 @@ const SECTION_LABELS: Record<NavSection, string> = {
   messages: 'Tool Mail',
   'study-materials': 'Study Material Notes',
   'contributor-console': "Contributors' Console",
-  subscriptions: 'Subscriptions',
+  subscriptions: 'Subscriptions and Plans',
   notifications: 'Notifications',
   admin: 'Admin Console',
   super: 'Super Console',
   'pdf-tool': 'PDF Tool',
+  'chemistry-lab': 'Chemistry Virtual Lab',
+  'physics-lab': 'Physics Virtual Lab',
+  'motion-3d': '3D Motion Visualizer',
   workspace: 'Google Workspace',
   spectra: 'Spectra AI',
   more: 'More Features',
-  plans: 'View Plans and Settings',
+  plans: 'Settings',
   about: 'About the Creators',
   contact: 'Contact',
 };
@@ -420,6 +456,18 @@ const MainShell: React.FC = () => {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [devToolsModalOpen, setDevToolsModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleDevKey = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setDevToolsModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleDevKey);
+    return () => window.removeEventListener('keydown', handleDevKey);
+  }, []);
 
   // Navbar Search & Bell Popover State
   const [searchQuery, setSearchQuery] = useState('');
@@ -621,6 +669,16 @@ const MainShell: React.FC = () => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
     const results: SearchResultItem[] = [];
+
+    if (q.includes('dev-tool') || q.includes('devtool') || q.includes('dev tool') || q === 'dev') {
+      results.push({
+        id: 'developer-tools-modal',
+        title: '🛠️ Developer Tools Console (Dev-Tools)',
+        subtitle: 'Preview Contributor, Admin, Super views & Seed dummy test data',
+        section: 'dashboard',
+        categoryKey: 'sections',
+      });
+    }
 
     (Object.keys(SECTION_LABELS) as NavSection[]).forEach((secId) => {
       if (secId === 'super' && !isSuper) return;
@@ -1113,7 +1171,8 @@ const MainShell: React.FC = () => {
           {pinnedTools.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
-            const locked = Boolean(item.proOnly && !isProOrAdmin);
+            const lockedElite = Boolean(item.eliteOnly && effectivePlan !== 'elite');
+            const lockedPro = Boolean(item.proOnly && !isProOrAdmin);
             return (
               <button
                 key={item.id}
@@ -1138,10 +1197,21 @@ const MainShell: React.FC = () => {
                     {unreadNotifCount}
                   </span>
                 )}
-                {item.proOnly && (
+                {item.eliteOnly && (
                   <span
                     className={
-                      locked
+                      lockedElite
+                        ? 'text-[10px] font-semibold text-blue-900 dark:text-cyan-400'
+                        : 'asan-elite-badge rounded px-1.5 py-0.5 text-[9px]'
+                    }
+                  >
+                    ELITE
+                  </span>
+                )}
+                {item.proOnly && !item.eliteOnly && (
+                  <span
+                    className={
+                      lockedPro
                         ? 'text-[10px] font-semibold text-indigo-500 dark:text-indigo-400'
                         : 'asan-pro-badge rounded px-1.5 py-0.5 text-[9px]'
                     }
@@ -1295,6 +1365,7 @@ const MainShell: React.FC = () => {
                     plan={dbUser.plan}
                     role={dbUser.role}
                     contributorApproved={dbUser.contributorApproved}
+                    visualEffects={dbUser.eliteVisualEffects !== false}
                     size="sm"
                   />
                 )}
@@ -1350,7 +1421,15 @@ const MainShell: React.FC = () => {
   );
 
   return (
-    <div className="asan-app-shell h-dvh w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-hidden">
+    <div
+      className={`asan-app-shell h-dvh w-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-hidden ${
+        effectivePlan === 'elite' && dbUser?.eliteVisualEffects !== false
+          ? 'asan-elite-shell asan-plan-elite'
+          : effectivePlan === 'pro'
+          ? 'asan-plan-pro'
+          : ''
+      }`}
+    >
       {/* Smooth Collapsible Desktop Sidebar */}
       <aside
         className={`no-print hidden lg:block shrink-0 h-full overflow-hidden transition-[width,opacity] duration-300 ease-in-out ${
@@ -1488,6 +1567,12 @@ const MainShell: React.FC = () => {
                         key={res.id}
                         type="button"
                         onClick={() => {
+                          if (res.id === 'developer-tools-modal') {
+                            setDevToolsModalOpen(true);
+                            setSearchQuery('');
+                            setSearchOpen(false);
+                            return;
+                          }
                           handleNavClick(res.section);
                           setSearchQuery('');
                         }}
@@ -1607,6 +1692,7 @@ const MainShell: React.FC = () => {
             {!isGuest &&
               dbUser?.viewPlanMode === 'basic' &&
               dbUser.plan !== 'pro' &&
+              dbUser.plan !== 'elite' &&
               isAdmin && (
                 <button
                   type="button"
@@ -1641,20 +1727,22 @@ const MainShell: React.FC = () => {
                   onClick={() => handleNavClick('subscriptions')}
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 whitespace-nowrap shrink-0 tabular-nums"
                 >
-                  {dbUser && (
-                    <UserAvatarBadge
-                      name={dbUser.displayName}
-                      photoUrl={dbUser.photoUrl}
-                      plan={dbUser.plan}
-                      role={dbUser.role}
-                      contributorApproved={dbUser.contributorApproved}
-                      size="sm"
-                    />
-                  )}
-                  <span>
-                    {dbUser?.points ?? 0} pts · {effectivePlan.toUpperCase()}
-                    {dbUser?.shortUid ? ` · ${dbUser.shortUid}` : ''}
-                  </span>
+                    {dbUser && (
+                      <UserAvatarBadge
+                        name={dbUser.displayName}
+                        photoUrl={dbUser.photoUrl}
+                        plan={dbUser.plan}
+                        role={dbUser.role}
+                        contributorApproved={dbUser.contributorApproved}
+                        visualEffects={dbUser.eliteVisualEffects !== false}
+                        size="sm"
+                      />
+                    )}
+                    <span>
+                      {dbUser?.infinitePoints ? '∞' : (dbUser?.points ?? 0).toLocaleString()} pts ·{' '}
+                      {effectivePlan.toUpperCase()}
+                      {dbUser?.shortUid ? ` · ${dbUser.shortUid}` : ''}
+                    </span>
                 </button>
               </>
             )}
@@ -1864,14 +1952,18 @@ const MainShell: React.FC = () => {
                           {groupItems.map((tool) => {
                             const Icon = tool.icon;
                             const isPinned = pinnedAppIds.includes(tool.id);
+                            const isEliteLocked = Boolean(tool.eliteOnly && effectivePlan !== 'elite');
                             const isLocked = Boolean(tool.proOnly && !isProOrAdmin);
+                            const eliteFx = dbUser?.eliteVisualEffects !== false;
                             return (
                               <div
                                 key={tool.id}
                                 className={`flex flex-col justify-between rounded-xl border p-4 asan-card-hover ${
-                                  tool.proOnly
-                                    ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
-                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+                                  tool.eliteOnly
+                                    ? `${eliteFx ? 'asan-elite-card' : ''} border-blue-900/40 dark:border-cyan-400/50 bg-white dark:bg-slate-900`
+                                    : tool.proOnly
+                                      ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
+                                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
                                 }`}
                               >
                                 <div className="space-y-2">
@@ -1879,9 +1971,11 @@ const MainShell: React.FC = () => {
                                     <div className="flex items-center gap-2.5 min-w-0">
                                       <div
                                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
-                                          tool.proOnly
-                                            ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300'
-                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400'
+                                          tool.eliteOnly
+                                            ? 'border-blue-900/30 dark:border-cyan-500/40 bg-blue-50 dark:bg-cyan-950/60 text-blue-900 dark:text-cyan-300'
+                                            : tool.proOnly
+                                              ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300'
+                                              : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400'
                                         }`}
                                       >
                                         <Icon className="h-4 w-4" />
@@ -1891,13 +1985,23 @@ const MainShell: React.FC = () => {
                                           <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                                             {tool.label}
                                           </span>
-                                          {tool.proOnly && (
+                                          {tool.eliteOnly && (
+                                            <span className="asan-elite-badge rounded px-1.5 py-0.5 text-[9px] font-bold shrink-0">
+                                              ELITE
+                                            </span>
+                                          )}
+                                          {tool.proOnly && !tool.eliteOnly && (
                                             <span className="asan-pro-badge rounded px-1.5 py-0.5 text-[9px] shrink-0">
                                               PRO
                                             </span>
                                           )}
                                         </div>
-                                        {tool.proOnly && (
+                                        {tool.eliteOnly && (
+                                          <div className="text-[11px] font-medium text-blue-900 dark:text-cyan-400">
+                                            {isEliteLocked ? 'Elite Plan Exclusive' : 'Elite Unlocked'}
+                                          </div>
+                                        )}
+                                        {tool.proOnly && !tool.eliteOnly && (
                                           <div className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
                                             {isLocked ? 'Pro Plan Feature' : 'Pro Unlocked'}
                                           </div>
@@ -1926,9 +2030,11 @@ const MainShell: React.FC = () => {
                                       type="button"
                                       onClick={() => handleNavClick(tool.id)}
                                       className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
-                                        tool.proOnly
-                                          ? 'bg-indigo-600 hover:bg-indigo-700'
-                                          : 'bg-blue-600 hover:bg-blue-700'
+                                        tool.eliteOnly
+                                          ? 'bg-blue-900 dark:bg-cyan-600 hover:bg-blue-800 dark:hover:bg-cyan-500'
+                                          : tool.proOnly
+                                            ? 'bg-indigo-600 hover:bg-indigo-700'
+                                            : 'bg-blue-600 hover:bg-blue-700'
                                       }`}
                                     >
                                       Open App
@@ -2012,7 +2118,7 @@ const MainShell: React.FC = () => {
                 ) : (
                   <ProGateCard
                     featureName="Specialized Math Calculators Suite (Lite Version)"
-                    description="Lite Edition — Solve Calculus, Coordinate Geometry, Algebra, Vectors & 3D Geometry, and Trigonometry problems deterministically. Available exclusively for Pro & Admin accounts."
+                    description="Lite Edition — Solve Calculus, Coordinate Geometry, Algebra, Vectors & 3D Geometry, and Trigonometry problems deterministically. Available exclusively for Pro, Elite & Admin accounts."
                     onNavigate={setSection}
                   />
                 ))}
@@ -2032,13 +2138,46 @@ const MainShell: React.FC = () => {
               {section === 'admin' && (
                 <AdminView onRefreshCountdowns={loadAllStudyData} />
               )}
+              {section === 'chemistry-lab' &&
+                (!isGuest && effectivePlan === 'elite' ? (
+                  <ChemistryLabView />
+                ) : (
+                  <ProGateCard
+                    requiredPlan="elite"
+                    featureName="Chemistry Virtual Lab & Salt Analysis"
+                    description="Exclusive to Elite membership — Student & strong reagent shelves, known/unknown C-10 salts, indicators, burette, pipettes and Bunsen burner qualitative tests."
+                    onNavigate={setSection}
+                  />
+                ))}
+              {section === 'physics-lab' &&
+                (!isGuest && effectivePlan === 'elite' ? (
+                  <PhysicsLabView />
+                ) : (
+                  <ProGateCard
+                    requiredPlan="elite"
+                    featureName="Physics Virtual Lab Workbench"
+                    description="Exclusive to Elite membership — Simple pendulum, vernier callipers, screw gauge, spherometer, Hooke’s law, Stokes’ law, and resonance tube experiments."
+                    onNavigate={setSection}
+                  />
+                ))}
+              {section === 'motion-3d' &&
+                (!isGuest && effectivePlan === 'elite' ? (
+                  <MotionVisualizer3D />
+                ) : (
+                  <ProGateCard
+                    requiredPlan="elite"
+                    featureName="3D Motion Visualizer"
+                    description="Exclusive to Elite membership — Interactive WebGL 3D physics motion simulations and particle visualizer."
+                    onNavigate={setSection}
+                  />
+                ))}
               {section === 'pdf-tool' &&
                 (isProOrAdmin ? (
                   <PdfStudioView />
                 ) : (
                   <ProGateCard
                     featureName="PDF Tool · A4 Booklet & Imposition Studio"
-                    description="Create imposed Full, Half, and Quarter A4 booklets with clipboard image & 10pt text placeholders, Autocorrect, fold/cut guidelines, and direct PDF/PNG export. Excluded from Free & Basic plans."
+                    description="Create imposed Full, Half, and Quarter A4 booklets with clipboard image & 10pt text placeholders, Autocorrect, fold/cut guidelines, and direct PDF/PNG export. Excluded from Basic plan."
                     onNavigate={setSection}
                   />
                 ))}
@@ -2049,7 +2188,7 @@ const MainShell: React.FC = () => {
                 ) : (
                   <ProGateCard
                     featureName="Google Workspace (Opt-In Drive Folder & Sheets Sync)"
-                    description="Connect your dedicated ASAN-user-content Google Drive folder, maintain schedules in Google Sheets, export Google Docs, and launch Google Meet rooms. Excluded from Free & Basic plans."
+                    description="Connect your dedicated ASAN-user-content Google Drive folder, maintain schedules in Google Sheets, export Google Docs, and launch Google Meet rooms. Excluded from Basic plan."
                     onNavigate={setSection}
                   />
                 ))}
@@ -2059,7 +2198,7 @@ const MainShell: React.FC = () => {
                 ) : (
                   <ProGateCard
                     featureName="Spectra AI (Under Development)"
-                    description="Spectra AI is a Pro & Admin module currently under development."
+                    description="Spectra AI is a Pro, Elite & Admin module currently under development."
                     onNavigate={setSection}
                   />
                 ))}
@@ -2223,6 +2362,7 @@ const MainShell: React.FC = () => {
                     plan={dbUser.plan}
                     role={dbUser.role}
                     contributorApproved={dbUser.contributorApproved}
+                    visualEffects={dbUser.eliteVisualEffects !== false}
                     size="sm"
                   />
                   <div className="min-w-0">
@@ -2327,6 +2467,12 @@ const MainShell: React.FC = () => {
           </div>
         </div>
       )}
+
+      <DevToolsModal
+        isOpen={devToolsModalOpen}
+        onClose={() => setDevToolsModalOpen(false)}
+        onNavigateSection={setSection}
+      />
 
       <OfflineIndicator />
     </div>

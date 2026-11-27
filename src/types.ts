@@ -9,6 +9,9 @@ export type NavSection =
   | 'calculator'
   | 'formula-calculator'
   | 'specialized-calculators'
+  | 'chemistry-lab'
+  | 'physics-lab'
+  | 'motion-3d'
   | 'messages'
   | 'notifications'
   | 'study-materials'
@@ -51,14 +54,19 @@ export interface DbUser {
   displayName: string;
   username: string;
   photoUrl: string;
-  plan: 'free' | 'basic' | 'pro' | string;
+  plan: 'free' | 'basic' | 'pro' | 'elite' | string;
   viewPlanMode?: 'auto' | 'basic' | string;
   role: 'user' | 'contributor' | 'admin' | 'super' | string;
   authMode?: 'google' | 'password' | string;
   hasPassword?: boolean;
   points: number;
+  infinitePoints?: boolean;
   proStartedAt: string;
   proExpiresAt: string;
+  eliteStartedAt?: string;
+  eliteExpiresAt?: string;
+  eliteVisualEffects?: boolean;
+  activeProGifted?: boolean;
   lastExpiryReminderFor?: string;
   contributorApproved: boolean;
   contributorRequested: boolean;
@@ -357,8 +365,13 @@ export interface ContactMessageItem {
 export interface LicenseKeyItem {
   id: number;
   keyCode: string;
-  keyType: 'pro' | 'admin' | string;
+  keyType: 'pro' | 'elite' | 'admin' | string;
   durationMonths?: number;
+  sourceType?: 'points' | 'admin_gift' | 'super_grant' | string;
+  noRefund?: boolean;
+  purchaseCost?: number;
+  platformFee?: number;
+  couponCode?: string;
   issuedToUserId: number | null;
   issuedToEmail: string;
   issuedByUserId: number | null;
@@ -367,7 +380,8 @@ export interface LicenseKeyItem {
   activatedAt: string;
   subStartsAt: string;
   subEndsAt: string;
-  status: 'unused' | 'active' | 'expired' | string;
+  cancelledAt?: string;
+  status: 'unused' | 'active' | 'expired' | 'cancelled' | string;
   createdAt: string;
 }
 
@@ -452,8 +466,79 @@ export interface MaterialPurchaseItem {
   hours: number;
   hourlyRate: number;
   pageCount: number;
+  baseCost?: number;
+  platformFee?: number;
+  discountPercent?: number;
+  couponCode?: string;
   totalCost: number;
+  status?: 'active' | 'cancelled' | 'expired' | string;
+  cancelledAt?: string;
+  refundAmount?: number;
   expiresAt: string;
+  createdAt: string;
+}
+
+export interface AppSubscriptionItem {
+  id: number;
+  userId: number;
+  appKey: string;
+  appName: string;
+  billingMode: 'metered_hourly' | 'subscription' | string;
+  hourlyRate: number;
+  baseCost: number;
+  platformFee: number;
+  discountPercent: number;
+  couponCode: string;
+  totalCost: number;
+  status: 'active' | 'paused' | 'cancelled' | 'expired' | string;
+  startedAt: string;
+  expiresAt: string;
+  cancelledAt?: string;
+  refundAmount?: number;
+  createdAt: string;
+}
+
+export interface PlanSubscriptionItem {
+  id: number;
+  userId: number;
+  tier: 'pro' | 'elite' | string;
+  term: 'monthly' | 'annual' | string;
+  sourceType: 'points' | 'key' | 'admin_gift' | 'super_grant' | string;
+  keyCode: string;
+  noRefund: boolean;
+  baseCost: number;
+  platformFee: number;
+  couponCode: string;
+  totalCost: number;
+  status: 'active' | 'cancelled' | 'expired' | string;
+  startedAt: string;
+  expiresAt: string;
+  cancelledAt?: string;
+  refundAmount?: number;
+  createdAt: string;
+}
+
+export interface CouponItem {
+  id: number;
+  code: string;
+  description: string;
+  scope:
+    | 'all'
+    | 'all_plans'
+    | 'pro_plan'
+    | 'elite_plan'
+    | 'apps_metered'
+    | 'all_repository'
+    | 'repository_rent'
+    | 'repository_buy'
+    | string;
+  discountType: 'percent' | 'flat' | string;
+  discountValue: number;
+  maxUses: number;
+  usedCount: number;
+  expiresAt: string;
+  active: boolean;
+  createdByUserId: number;
   createdAt: string;
 }
 
@@ -622,6 +707,7 @@ export interface SuperUsersPointsResponse {
     totalPointsEarned: number;
     totalPointsSpent: number;
     proUsers: number;
+    eliteUsers?: number;
     basicUsers: number;
     approvedContributors: number;
     contributorWeeklyPoints: number;

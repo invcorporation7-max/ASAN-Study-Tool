@@ -20,8 +20,13 @@ export interface StoreUser {
   passwordHash: string;
   authMode: string;
   points: number;
+  infinitePoints?: boolean;
   proStartedAt: string;
   proExpiresAt: string;
+  eliteStartedAt?: string;
+  eliteExpiresAt?: string;
+  eliteVisualEffects?: boolean;
+  activeProGifted?: boolean;
   lastExpiryReminderFor: string;
   contributorApproved: boolean;
   contributorRequested: boolean;
@@ -145,6 +150,11 @@ export interface StoreLicenseKey {
   keyCode: string;
   keyType: string;
   durationMonths: number;
+  sourceType?: string;
+  noRefund?: boolean;
+  purchaseCost?: number;
+  platformFee?: number;
+  couponCode?: string;
   issuedToUserId: number | null;
   issuedToEmail: string;
   issuedByUserId: number | null;
@@ -153,6 +163,7 @@ export interface StoreLicenseKey {
   activatedAt: string;
   subStartsAt: string;
   subEndsAt: string;
+  cancelledAt?: string;
   status: string;
   createdAt: Date;
 }
@@ -219,8 +230,70 @@ export interface StoreMaterialPurchase {
   hours: number;
   hourlyRate: number;
   pageCount: number;
+  baseCost?: number;
+  platformFee?: number;
+  discountPercent?: number;
+  couponCode?: string;
   totalCost: number;
+  status?: string;
+  cancelledAt?: string;
+  refundAmount?: number;
   expiresAt: string;
+  createdAt: Date;
+}
+
+export interface StoreCoupon {
+  id: number;
+  code: string;
+  description: string;
+  scope: string;
+  discountType: string;
+  discountValue: number;
+  maxUses: number;
+  usedCount: number;
+  expiresAt: string;
+  active: boolean;
+  createdByUserId: number;
+  createdAt: Date;
+}
+
+export interface StoreAppSubscription {
+  id: number;
+  userId: number;
+  appKey: string;
+  appName: string;
+  billingMode: string;
+  hourlyRate: number;
+  baseCost: number;
+  platformFee: number;
+  discountPercent: number;
+  couponCode: string;
+  totalCost: number;
+  status: string;
+  startedAt: string;
+  expiresAt: string;
+  cancelledAt: string;
+  refundAmount: number;
+  createdAt: Date;
+}
+
+export interface StorePlanSubscription {
+  id: number;
+  userId: number;
+  tier: string;
+  term: string;
+  sourceType: string;
+  keyCode: string;
+  noRefund: boolean;
+  baseCost: number;
+  platformFee: number;
+  couponCode: string;
+  totalCost: number;
+  status: string;
+  startedAt: string;
+  expiresAt: string;
+  cancelledAt: string;
+  refundAmount: number;
   createdAt: Date;
 }
 
@@ -428,6 +501,9 @@ interface LocalStoreData {
   forumAttachments: StoreForumAttachment[];
   formulaEquations: StoreFormulaEquation[];
   formulaMeteredSessions?: Record<string, StoreFormulaMeteredSession>;
+  coupons?: StoreCoupon[];
+  appSubscriptions?: StoreAppSubscription[];
+  planSubscriptions?: StorePlanSubscription[];
 }
 
 export interface StoreFormulaMeteredSession {
@@ -583,6 +659,18 @@ function reviveDates(data: LocalStoreData): LocalStoreData {
     createdAt: toDate(fe.createdAt),
     updatedAt: toDate(fe.updatedAt),
   }));
+  data.coupons = (data.coupons || []).map((c) => ({
+    ...c,
+    createdAt: toDate(c.createdAt),
+  }));
+  data.appSubscriptions = (data.appSubscriptions || []).map((a) => ({
+    ...a,
+    createdAt: toDate(a.createdAt),
+  }));
+  data.planSubscriptions = (data.planSubscriptions || []).map((p) => ({
+    ...p,
+    createdAt: toDate(p.createdAt),
+  }));
   if (!data.settings || typeof data.settings.contributorWeeklyPoints !== 'number') {
     data.settings = { contributorWeeklyPoints: 120 };
   }
@@ -627,6 +715,9 @@ export function getLocalStore(): LocalStoreData {
         forumAttachments: parsed.forumAttachments || [],
         formulaEquations: parsed.formulaEquations || [],
         formulaMeteredSessions: parsed.formulaMeteredSessions || {},
+        coupons: parsed.coupons || [],
+        appSubscriptions: parsed.appSubscriptions || [],
+        planSubscriptions: parsed.planSubscriptions || [],
       });
       return cachedStore;
     } catch {
@@ -664,6 +755,9 @@ export function getLocalStore(): LocalStoreData {
     forumAttachments: [],
     formulaEquations: [],
     formulaMeteredSessions: {},
+    coupons: [],
+    appSubscriptions: [],
+    planSubscriptions: [],
   };
   persistLocalStore();
   return cachedStore;

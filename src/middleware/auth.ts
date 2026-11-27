@@ -29,8 +29,13 @@ export interface AuthUserRecord {
   authMode?: string;
   hasPassword?: boolean;
   points: number;
+  infinitePoints?: boolean;
   proStartedAt: string;
   proExpiresAt: string;
+  eliteStartedAt?: string;
+  eliteExpiresAt?: string;
+  eliteVisualEffects?: boolean;
+  activeProGifted?: boolean;
   lastExpiryReminderFor: string;
   contributorApproved: boolean;
   contributorRequested: boolean;

@@ -13,6 +13,7 @@ import {
   Mic,
   ShoppingBag,
   Square,
+  Tag,
   Trash2,
   X,
 } from 'lucide-react';
@@ -26,6 +27,12 @@ import {
   uploadFileToDriveFolder,
   uploadStudyMaterialBinary,
 } from '../lib/api';
+import {
+  INFINITE_POINTS_SENTINEL,
+  REPO_PLATFORM_FEE,
+  calculateRepoOrAppQuote,
+  type CouponLike,
+} from '../lib/pricing';
 import type { MaterialPurchaseItem, PointRewardsConfig, StudyMaterialItem } from '../types';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AuthMediaPreview } from './ForumAttachmentViewer';
@@ -110,6 +117,7 @@ export const StudyMaterialView: React.FC = () => {
   const {
     dbUser,
     isGuest,
+    effectivePlan,
     isWorkspaceEnabled,
     workspacePermissions,
     signIn,
@@ -119,6 +127,11 @@ export const StudyMaterialView: React.FC = () => {
     error: authError,
     clearError,
   } = useAuth();
+  const eliteGlow = effectivePlan === 'elite' && dbUser?.eliteVisualEffects !== false;
+  const formatPts = (val: number | undefined | null) =>
+    dbUser?.infinitePoints || (val ?? 0) >= INFINITE_POINTS_SENTINEL
+      ? '∞ pts'
+      : `${(val ?? 0).toLocaleString()} pts`;
 
   const [materials, setMaterials] = useState<StudyMaterialItem[]>([]);
   const [purchases, setPurchases] = useState<MaterialPurchaseItem[]>([]);
@@ -160,6 +173,9 @@ export const StudyMaterialView: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponLike | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   // Built-in Microphone Recorder state
   const [recording, setRecording] = useState(false);
@@ -389,6 +405,38 @@ export const StudyMaterialView: React.FC = () => {
     }
   };
 
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) {
+      setAppliedCoupon(null);
+      return;
+    }
+    setValidatingCoupon(true);
+    setErrorMsg(null);
+    setStatusMsg(null);
+    try {
+      let res: { valid: boolean; coupon: CouponLike };
+      try {
+        res = await apiFetch<{ valid: boolean; coupon: CouponLike }>('/api/coupons/validate', {
+          method: 'POST',
+          body: JSON.stringify({ code, targetScope: 'repository_rent', baseSubtotal: 100 }),
+        });
+      } catch {
+        res = await apiFetch<{ valid: boolean; coupon: CouponLike }>('/api/coupons/validate', {
+          method: 'POST',
+          body: JSON.stringify({ code, targetScope: 'repository_buy', baseSubtotal: 100 }),
+        });
+      }
+      setAppliedCoupon(res.coupon);
+      setStatusMsg(`Coupon "${res.coupon.code}" applied to eligible repository rentals/purchases.`);
+    } catch (err) {
+      setAppliedCoupon(null);
+      setErrorMsg(err instanceof Error ? err.message : 'Invalid repository coupon code.');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
   const handleAcquire = async (
     item: StudyMaterialItem,
     accessType: 'rent' | 'buy',
@@ -398,18 +446,24 @@ export const StudyMaterialView: React.FC = () => {
     setErrorMsg(null);
     setStatusMsg(null);
     try {
-      const res = await apiFetch<{ purchase: MaterialPurchaseItem; balanceAfter: number }>(
-        `/api/study-materials/${item.id}/acquire`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ accessType, hours }),
-        }
-      );
+      const res = await apiFetch<{
+        purchase: MaterialPurchaseItem;
+        balanceAfter?: number;
+        points?: number;
+      }>(`/api/study-materials/${item.id}/acquire`, {
+        method: 'POST',
+        body: JSON.stringify({
+          accessType,
+          hours,
+          couponCode: appliedCoupon?.code || undefined,
+        }),
+      });
       await Promise.all([refreshProfile(), loadMaterials()]);
+      const nextBalance = res.balanceAfter ?? res.points ?? dbUser?.points ?? 0;
       setStatusMsg(
         accessType === 'rent'
-          ? `Rented "${item.title}" for ${hours}h (-${res.purchase.totalCost} pts). Balance: ${res.balanceAfter} pts.`
-          : `Purchased permanent access to "${item.title}" (-${res.purchase.totalCost} pts). Balance: ${res.balanceAfter} pts.`
+          ? `Rented "${item.title}" for ${hours}h (-${res.purchase.totalCost} pts incl. ${REPO_PLATFORM_FEE}-pt fee). Balance: ${formatPts(nextBalance)}.`
+          : `Purchased permanent access to "${item.title}" (-${res.purchase.totalCost} pts incl. ${REPO_PLATFORM_FEE}-pt fee). Balance: ${formatPts(nextBalance)}.`
       );
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Could not complete acquisition');
@@ -424,7 +478,7 @@ export const StudyMaterialView: React.FC = () => {
       return;
     }
     if (!workspacePermissions.driveSync) {
-      setErrorMsg('Google Drive sync is disabled under View Plans and Settings → Google Workspace Permissions.');
+      setErrorMsg('Google Drive sync is disabled under Settings → Google Workspace Function Permissions.');
       return;
     }
     setErrorMsg(null);
@@ -582,7 +636,9 @@ export const StudyMaterialView: React.FC = () => {
         {/* Upload Card */}
         <form
           onSubmit={handleUpload}
-          className="asan-card-hover lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4"
+          className={`asan-card-hover lg:col-span-5 h-fit rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 ${
+            eliteGlow ? 'asan-elite-card' : ''
+          }`}
         >
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <FileUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -804,7 +860,11 @@ export const StudyMaterialView: React.FC = () => {
         </form>
 
         {/* Repository List */}
-        <div className="asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4">
+        <div
+          className={`asan-card-hover lg:col-span-7 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 space-y-4 ${
+            eliteGlow ? 'asan-elite-card' : ''
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -816,8 +876,50 @@ export const StudyMaterialView: React.FC = () => {
             </div>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-400 tabular-nums">
               <Coins className="h-3.5 w-3.5" />
-              {dbUser?.points ?? 0} pts
+              {formatPts(dbUser?.points ?? 0)}
             </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2 text-[11px]">
+            <div className="text-slate-600 dark:text-slate-300 tabular-nums">
+              Repository fee: <strong>+{REPO_PLATFORM_FEE} pts</strong>
+              {effectivePlan === 'elite'
+                ? ' · Elite 50% discount active'
+                : dbUser?.role === 'admin' || dbUser?.role === 'super'
+                  ? ' · Admin/Super 5% discount active'
+                  : ''}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                placeholder="Repo coupon code"
+                className="w-32 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 font-mono text-[11px] uppercase text-slate-800 dark:text-slate-100"
+              />
+              <button
+                type="button"
+                disabled={validatingCoupon || !couponInput.trim()}
+                onClick={() => void handleApplyCoupon()}
+                className="rounded bg-slate-800 dark:bg-slate-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+              >
+                {validatingCoupon ? '...' : 'Apply'}
+              </button>
+              {appliedCoupon && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppliedCoupon(null);
+                    setCouponInput('');
+                  }}
+                  title="Remove coupon"
+                  className="rounded border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-1 font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
+                >
+                  {appliedCoupon.code} ×
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -879,6 +981,20 @@ export const StudyMaterialView: React.FC = () => {
                 const selectedHours = rentHoursMap[m.id] ?? 2;
                 const hourlyRate = m.hourlyRentCost || 10;
                 const fullBuyCost = m.buyCost || hourlyRate * 4;
+                const rentQuote = calculateRepoOrAppQuote({
+                  targetScope: 'repository_rent',
+                  baseSubtotal: hourlyRate * selectedHours,
+                  effectivePlan,
+                  role: dbUser?.role || 'user',
+                  coupon: appliedCoupon,
+                });
+                const buyQuote = calculateRepoOrAppQuote({
+                  targetScope: 'repository_buy',
+                  baseSubtotal: fullBuyCost,
+                  effectivePlan,
+                  role: dbUser?.role || 'user',
+                  coupon: appliedCoupon,
+                });
                 const isBusy = acquiringId === m.id;
 
                 return (
@@ -984,7 +1100,7 @@ export const StudyMaterialView: React.FC = () => {
                             className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60 tabular-nums"
                           >
                             <Clock className="h-3.5 w-3.5" />
-                            Rent ({hourlyRate * selectedHours} pts)
+                            Rent ({rentQuote.finalCost} pts)
                           </button>
                           <button
                             type="button"
@@ -993,7 +1109,7 @@ export const StudyMaterialView: React.FC = () => {
                             className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60 tabular-nums"
                           >
                             <ShoppingBag className="h-3.5 w-3.5" />
-                            Buy ({fullBuyCost} pts)
+                            Buy ({buyQuote.finalCost} pts)
                           </button>
                         </div>
                       )}

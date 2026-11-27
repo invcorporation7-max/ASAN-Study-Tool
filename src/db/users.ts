@@ -8,27 +8,68 @@ import {
   isDbUnavailableError,
   nextSeq,
   persistLocalStore,
+  type StoreCoupon,
   type StoreUser,
 } from './localStore.ts';
 import {
   appSettings,
+  appSubscriptions,
+  coupons,
   licenseKeys,
   notebooks,
   notePages,
   notifications,
+  planSubscriptions,
   pointTransactions,
   proRefundRequests,
   userMessages,
   users,
 } from './schema.ts';
+import {
+  calculateCancellationRefund,
+  calculatePlanQuote,
+  ELITE_ANNUAL_TOTAL,
+  ELITE_MONTHLY_TOTAL,
+  INFINITE_POINTS_SENTINEL,
+  isCouponCurrentlyValid,
+  PLAN_PLATFORM_FEE,
+  PRO_ANNUAL_TOTAL,
+  PRO_MONTHLY_TOTAL,
+  type CouponLike,
+  type PricingTargetScope,
+} from '../lib/pricing.ts';
 
 import type { PointRewardsConfig, WorkspacePermissionsConfig } from '../types.ts';
 
+function isValidFutureIso(iso?: string | null): boolean {
+  if (!iso) return false;
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) && ms > Date.now();
+}
+
 function isActiveProTenure(u: { plan?: string | null; proExpiresAt?: string | null }): boolean {
-  if (u.plan !== 'pro') return false;
-  if (!u.proExpiresAt) return true;
-  const expMs = new Date(u.proExpiresAt).getTime();
-  return !Number.isFinite(expMs) || expMs > Date.now();
+  if (u.proExpiresAt) return isValidFutureIso(u.proExpiresAt);
+  return u.plan === 'pro';
+}
+
+function isActiveEliteTenure(u: { plan?: string | null; eliteExpiresAt?: string | null }): boolean {
+  if (u.eliteExpiresAt) return isValidFutureIso(u.eliteExpiresAt);
+  return u.plan === 'elite';
+}
+
+function isActivePaidPlanTenure(u: {
+  plan?: string | null;
+  proExpiresAt?: string | null;
+  eliteExpiresAt?: string | null;
+}): boolean {
+  return isActiveEliteTenure(u) || isActiveProTenure(u);
+}
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 export const DEFAULT_CONTRIBUTOR_WEEKLY_POINTS = 120;
@@ -44,10 +85,10 @@ export const DEFAULT_POINT_REWARDS: PointRewardsConfig = {
 };
 
 export const DEFAULT_WORKSPACE_PERMISSIONS: WorkspacePermissionsConfig = {
-  driveSync: true,
-  docsExport: true,
-  sheetsSync: true,
-  meetRooms: true,
+  driveSync: false,
+  docsExport: false,
+  sheetsSync: false,
+  meetRooms: false,
 };
 
 export function parseWorkspacePermissions(
@@ -56,19 +97,19 @@ export function parseWorkspacePermissions(
   if (!raw) return { ...DEFAULT_WORKSPACE_PERMISSIONS };
   if (typeof raw === 'object') {
     return {
-      driveSync: raw.driveSync !== false,
-      docsExport: raw.docsExport !== false,
-      sheetsSync: raw.sheetsSync !== false,
-      meetRooms: raw.meetRooms !== false,
+      driveSync: raw.driveSync === true,
+      docsExport: raw.docsExport === true,
+      sheetsSync: raw.sheetsSync === true,
+      meetRooms: raw.meetRooms === true,
     };
   }
   try {
     const parsed = JSON.parse(raw) as Partial<WorkspacePermissionsConfig>;
     return {
-      driveSync: parsed.driveSync !== false,
-      docsExport: parsed.docsExport !== false,
-      sheetsSync: parsed.sheetsSync !== false,
-      meetRooms: parsed.meetRooms !== false,
+      driveSync: parsed.driveSync === true,
+      docsExport: parsed.docsExport === true,
+      sheetsSync: parsed.sheetsSync === true,
+      meetRooms: parsed.meetRooms === true,
     };
   } catch {
     return { ...DEFAULT_WORKSPACE_PERMISSIONS };
@@ -261,14 +302,22 @@ export function getSundayWeekKey(date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function generate8CharKey(): string {
+export function generateLicenseKeyCode(length: 8 | 12 = 8): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(8);
+  const bytes = crypto.randomBytes(length);
   let out = '';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < length; i++) {
     out += alphabet[bytes[i] % alphabet.length];
   }
   return out;
+}
+
+export function generate8CharKey(): string {
+  return generateLicenseKeyCode(8);
+}
+
+export function generate12CharKey(): string {
+  return generateLicenseKeyCode(12);
 }
 
 export function generate5CharUid(existing: Set<string> = new Set()): string {
@@ -313,12 +362,17 @@ function localAwardPoints(
   const store = getLocalStore();
   const user = store.users.find((u) => u.id === userId);
   if (!user) return undefined;
-  user.points = Math.max(0, (user.points || 0) + amount);
+  const intAmount = Math.round(amount);
+  if (user.infinitePoints) {
+    user.points = INFINITE_POINTS_SENTINEL;
+  } else {
+    user.points = Math.max(0, Math.round((user.points || 0) + intAmount));
+  }
   user.updatedAt = new Date();
   store.pointTransactions.unshift({
     id: nextSeq('pointTransactions'),
     userId,
-    amount,
+    amount: intAmount,
     reason,
     category,
     createdAt: new Date(),
@@ -403,24 +457,39 @@ function localIssueProKeyForUser(params: {
   introText: string;
   durationMonths?: number;
   isAdminMail?: boolean;
+  keyType?: 'pro' | 'elite';
+  sourceType?: 'points' | 'admin_gift' | 'super_grant';
+  noRefund?: boolean;
+  purchaseCost?: number;
+  platformFee?: number;
+  couponCode?: string;
 }) {
   const store = getLocalStore();
   const months = params.durationMonths === 12 ? 12 : 1;
-  let keyCode = generate8CharKey();
+  const keyType = params.keyType === 'elite' ? 'elite' : 'pro';
+  const len = keyType === 'elite' ? 12 : 8;
+  let keyCode = generateLicenseKeyCode(len);
   while (
     keyCode === CONSTANT_ADMIN_LICENSE_KEY ||
     store.licenseKeys.some((k) => k.keyCode === keyCode)
   ) {
-    keyCode = generate8CharKey();
+    keyCode = generateLicenseKeyCode(len);
   }
   const now = new Date();
   const activationExpiresAt = addYearsIso(now, 1);
+  const sourceType = params.sourceType || (params.noRefund ? 'admin_gift' : 'points');
+  const noRefund = Boolean(params.noRefund ?? sourceType === 'admin_gift');
 
   const keyRec = {
     id: nextSeq('licenseKeys'),
     keyCode,
-    keyType: 'pro',
+    keyType,
     durationMonths: months,
+    sourceType,
+    noRefund,
+    purchaseCost: Math.max(0, Math.round(params.purchaseCost || 0)),
+    platformFee: Math.max(0, Math.round(params.platformFee || 0)),
+    couponCode: params.couponCode || '',
     issuedToUserId: params.targetUser.id,
     issuedToEmail: params.targetUser.email,
     issuedByUserId: params.issuedByUserId,
@@ -429,10 +498,17 @@ function localIssueProKeyForUser(params: {
     activatedAt: '',
     subStartsAt: '',
     subEndsAt: '',
+    cancelledAt: '',
     status: 'unused',
     createdAt: now,
   };
   store.licenseKeys.unshift(keyRec);
+
+  const tierLabel = keyType === 'elite' ? 'Elite' : 'Pro';
+  const termLabel =
+    months === 12
+      ? `Annual ${tierLabel} (11 months + 1 month free)`
+      : `Monthly ${tierLabel} (1 month)`;
 
   localSendSystemMail({
     recipient: params.targetUser,
@@ -440,11 +516,11 @@ function localIssueProKeyForUser(params: {
     senderLabel: 'ASAN Licensing',
     isAdminMail: Boolean(params.isAdminMail ?? true),
     subject: params.subject,
-    body: `${params.introText}\n\nPro License Key (8 chars): ${keyCode}\nPlan Term: ${
-      months === 12 ? 'Annual Pro (12 months, 15% discount)' : 'Monthly Pro (1 month)'
-    }\nActivation Valid Until: ${activationExpiresAt.slice(0, 10)} (1 year)\n\nGo to Subscriptions in ASAN-Study_tool to activate this key.`,
+    body: `${params.introText}\n\n${tierLabel} License Key (${len} chars): ${keyCode}\nPlan Term: ${termLabel}\nUse Before: ${activationExpiresAt.slice(0, 10)}${
+      noRefund ? '\nPolicy: Gifted Plan (No Refund on cancellation)' : ''
+    }\n\nGo to Subscriptions and Plans -> Activate License Key to activate this key.`,
     notifTitle: params.subject,
-    notifMessage: `Your 8-char Pro key ${keyCode} (${months === 12 ? 'Annual' : 'Monthly'}) is in Tool Mail.`,
+    notifMessage: `Your ${len}-char ${tierLabel} key ${keyCode} is in Tool Mail.`,
     notifType: 'license',
   });
 
@@ -457,7 +533,6 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
   const now = new Date();
   let changed = false;
 
-  // Ensure every user has a unique 5-char uppercase shortUid
   if (!user.shortUid || user.shortUid.length !== 5) {
     const takenUids = new Set(store.users.map((u) => u.shortUid).filter(Boolean));
     user.shortUid = generate5CharUid(takenUids);
@@ -467,8 +542,11 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
     user.viewPlanMode = 'auto';
     changed = true;
   }
+  if (user.eliteVisualEffects === undefined) {
+    user.eliteVisualEffects = true;
+    changed = true;
+  }
 
-  // Only invcorporation7@gmail.com holds role 'super'
   if (user.email.toLowerCase() === ADMIN_OWNER_EMAIL) {
     if (user.role !== 'super' || !user.adminAuthorized) {
       user.role = 'super';
@@ -480,17 +558,66 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
     changed = true;
   }
 
-  // Check Pro expiration + 3-day before expiry reminder
-  if (user.plan === 'pro' && user.proExpiresAt) {
+  // Check Elite expiration (falls back to active Pro if user kept Pro, else Basic)
+  if (user.eliteExpiresAt) {
+    const exp = new Date(user.eliteExpiresAt);
+    if (!Number.isNaN(exp.getTime())) {
+      const msLeft = exp.getTime() - now.getTime();
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      if (msLeft < 0) {
+        const hasValidPro = isValidFutureIso(user.proExpiresAt);
+        user.eliteStartedAt = '';
+        user.eliteExpiresAt = '';
+        if (user.plan === 'elite') {
+          user.plan = hasValidPro ? 'pro' : 'basic';
+        }
+        changed = true;
+        localSendSystemMail({
+          recipient: user,
+          senderLabel: 'ASAN Subscriptions',
+          subject: 'Your ASAN-Study_tool Elite Plan Has Expired',
+          body: `Hello ${user.displayName},\n\nYour ASAN-Study_tool Elite membership ended on ${exp
+            .toISOString()
+            .slice(0, 10)}${hasValidPro ? ' and your kept Pro plan remains active.' : ' and your account switched back to Basic.'}\n\nRenew anytime in Subscriptions and Plans for ${ELITE_MONTHLY_TOTAL} points (Monthly) or ${ELITE_ANNUAL_TOTAL.toLocaleString()} points (Annual), or activate a 12-character Elite License Key.`,
+          notifTitle: 'Elite Subscription Expired',
+          notifMessage: hasValidPro
+            ? 'Your Elite Plan expired; your kept Pro Plan remains active.'
+            : 'Your Elite Plan expired and returned to Basic.',
+          notifType: 'warning',
+        });
+      } else if (msLeft <= threeDaysMs && user.lastExpiryReminderFor !== user.eliteExpiresAt) {
+        const daysLeft = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+        user.lastExpiryReminderFor = user.eliteExpiresAt;
+        changed = true;
+        localSendSystemMail({
+          recipient: user,
+          senderLabel: 'ASAN Subscriptions',
+          subject: `Renewal Reminder: Your Elite Plan Expires in ${daysLeft} Day(s)`,
+          body: `Hello ${user.displayName},\n\nYour ASAN-Study_tool Elite Plan expires on ${exp
+            .toISOString()
+            .slice(0, 10)} (${daysLeft} day(s) remaining).\n\nRenew in Subscriptions and Plans for ${ELITE_MONTHLY_TOTAL} pts (Monthly) or ${ELITE_ANNUAL_TOTAL.toLocaleString()} pts (Annual).`,
+          notifTitle: `Elite Expires in ${daysLeft} Day(s)`,
+          notifMessage: `Your Elite plan expires on ${exp.toISOString().slice(0, 10)}.`,
+          notifType: 'warning',
+        });
+      }
+    }
+  }
+
+  // Check Pro expiration + 3-day reminder
+  if (user.proExpiresAt) {
     const exp = new Date(user.proExpiresAt);
     if (!Number.isNaN(exp.getTime())) {
       const msLeft = exp.getTime() - now.getTime();
       const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
       if (msLeft < 0) {
-        user.plan = 'basic';
         user.proStartedAt = '';
         user.proExpiresAt = '';
+        user.activeProGifted = false;
         user.lastExpiryReminderFor = '';
+        if (user.plan === 'pro') {
+          user.plan = isValidFutureIso(user.eliteExpiresAt) ? 'elite' : 'basic';
+        }
         changed = true;
         localSendSystemMail({
           recipient: user,
@@ -498,13 +625,13 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
           subject: 'Your ASAN-Study_tool Pro Plan Has Expired',
           body: `Hello ${user.displayName},\n\nYour ASAN-Study_tool Pro subscription ended on ${exp
             .toISOString()
-            .slice(0, 10)} and your account has been switched back to the Basic Plan.\n\nRenew anytime in Subscriptions for 500 points (1 month), 5,100 points (Annual Pro — 15% discount), or activate an 8-character License Key.`,
+            .slice(0, 10)}.\n\nRenew anytime in Subscriptions and Plans for ${PRO_MONTHLY_TOTAL} points (Monthly: 475 + 25 fee), ${PRO_ANNUAL_TOTAL.toLocaleString()} points (Annual: 11 months + 1 free + 25 fee), or activate an 8-character License Key.`,
           notifTitle: 'Pro Subscription Expired',
-          notifMessage:
-            'Your Pro Plan expired and returned to Basic. Renew with 500 pts (Monthly), 5,100 pts (Annual -15%), or a license key.',
+          notifMessage: `Your Pro Plan expired. Renew for ${PRO_MONTHLY_TOTAL} pts (Monthly) or ${PRO_ANNUAL_TOTAL.toLocaleString()} pts (Annual).`,
           notifType: 'warning',
         });
       } else if (
+        user.plan === 'pro' &&
         msLeft <= threeDaysMs &&
         user.lastExpiryReminderFor !== user.proExpiresAt
       ) {
@@ -515,18 +642,18 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
           recipient: user,
           senderLabel: 'ASAN Subscriptions',
           subject: `Renewal Reminder: Your Pro Plan Expires in ${daysLeft} Day(s)`,
-          body: `Hello ${user.displayName},\n\nThis is a friendly reminder that your ASAN-Study_tool Pro Plan expires on ${exp
+          body: `Hello ${user.displayName},\n\nYour ASAN-Study_tool Pro Plan expires on ${exp
             .toISOString()
-            .slice(0, 10)} (${daysLeft} day(s) remaining).\n\nRenew now in Subscriptions using 500 points (Monthly) or 5,100 points (Annual — 15% discount) so your Pro workspace, PDF studio, and Exam Master Google Sheets sync continue without interruption.`,
+            .slice(0, 10)} (${daysLeft} day(s) remaining).\n\nRenew in Subscriptions and Plans using ${PRO_MONTHLY_TOTAL} points (Monthly) or ${PRO_ANNUAL_TOTAL.toLocaleString()} points (Annual).`,
           notifTitle: `Pro Expires in ${daysLeft} Day(s)`,
-          notifMessage: `Your Pro plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions.`,
+          notifMessage: `Your Pro plan expires on ${exp.toISOString().slice(0, 10)}.`,
           notifType: 'warning',
         });
       }
     }
   }
 
-  // Admin / Super first login gift: free 8-char Pro license key
+  // Admin / Super first login gift: free 8-char Pro license key (non-refundable gift)
   if ((user.role === 'admin' || user.role === 'super') && !user.adminFirstGiftClaimed) {
     user.adminFirstGiftClaimed = true;
     changed = true;
@@ -538,10 +665,13 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
         'As an authorized ASAN-Study_tool Admin, here is your complimentary 8-character Pro License Key along with your weekly 150-point stipend starting every Sunday.',
       durationMonths: 1,
       isAdminMail: true,
+      keyType: 'pro',
+      sourceType: 'admin_gift',
+      noRefund: true,
     });
   }
 
-  // Weekly Sunday Stipends (Super/Admin: 150 pts, Approved Contributor: configurable weekly pts)
+  // Weekly Sunday Stipends
   const currentWeek = getSundayWeekKey(now);
   if (user.lastWeeklyGrantWeek !== currentWeek) {
     if (user.role === 'admin' || user.role === 'super') {
@@ -580,7 +710,6 @@ function localMaintainLifecycle(user: StoreUser): StoreUser {
     }
   }
 
-  // Check if any unused key issued to this email can be marked expired if past activation window
   store.licenseKeys.forEach((k) => {
     if (k.status === 'unused' && new Date(k.activationExpiresAt).getTime() < now.getTime()) {
       k.status = 'expired';
@@ -721,20 +850,104 @@ export async function getOrCreateUser(
       userRecord = updated;
     }
 
-    // Check lifecycle (expiration, 3-day reminder, admin first gift, weekly stipend) in SQL
+    // Check lifecycle (Elite & Pro expiration, 3-day reminder, admin first gift, weekly stipend) in SQL
     const now = new Date();
-    if (userRecord.plan === 'pro' && userRecord.proExpiresAt) {
+    if (userRecord.eliteExpiresAt) {
+      const exp = new Date(userRecord.eliteExpiresAt);
+      if (!Number.isNaN(exp.getTime())) {
+        const msLeft = exp.getTime() - now.getTime();
+        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+        if (msLeft < 0) {
+          const hasValidPro = isValidFutureIso(userRecord.proExpiresAt);
+          const nextPlan =
+            userRecord.plan === 'elite' ? (hasValidPro ? 'pro' : 'basic') : userRecord.plan;
+          const [downgraded] = await db
+            .update(users)
+            .set({
+              plan: nextPlan,
+              eliteStartedAt: '',
+              eliteExpiresAt: '',
+              lastExpiryReminderFor: '',
+              updatedAt: now,
+            })
+            .where(eq(users.id, userRecord.id))
+            .returning();
+          userRecord = downgraded;
+          await db.insert(userMessages).values({
+            senderId: userRecord.id,
+            recipientId: userRecord.id,
+            senderEmail: ADMIN_OWNER_EMAIL,
+            senderUsername: 'asan_system',
+            recipientEmail: userRecord.email,
+            recipientUsername: userRecord.username,
+            visibility: 'direct',
+            isAdminMail: true,
+            recipientSummary: `@${userRecord.username}`,
+            subject: 'Your ASAN-Study_tool Elite Plan Has Expired',
+            body: `Hello ${userRecord.displayName},\n\nYour Elite Plan expired on ${exp.toISOString().slice(0, 10)}.${
+              hasValidPro ? ' Your kept Pro Plan remains active.' : ''
+            }\nRenew in Subscriptions and Plans with ${ELITE_MONTHLY_TOTAL} points (Monthly), ${ELITE_ANNUAL_TOTAL.toLocaleString()} points (Annual), or a 12-character Elite License Key.`,
+          });
+          await db.insert(notifications).values({
+            userId: userRecord.id,
+            senderLabel: 'ASAN Subscriptions',
+            title: 'Elite Subscription Expired',
+            message: hasValidPro
+              ? 'Your Elite Plan expired; your kept Pro Plan remains active.'
+              : 'Your Elite Plan expired and returned to Basic.',
+            type: 'warning',
+          });
+        } else if (msLeft <= threeDaysMs && userRecord.lastExpiryReminderFor !== userRecord.eliteExpiresAt) {
+          const daysLeft = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+          const [reminded] = await db
+            .update(users)
+            .set({ lastExpiryReminderFor: userRecord.eliteExpiresAt, updatedAt: now })
+            .where(eq(users.id, userRecord.id))
+            .returning();
+          userRecord = reminded;
+          await db.insert(userMessages).values({
+            senderId: userRecord.id,
+            recipientId: userRecord.id,
+            senderEmail: ADMIN_OWNER_EMAIL,
+            senderUsername: 'asan_system',
+            recipientEmail: userRecord.email,
+            recipientUsername: userRecord.username,
+            visibility: 'direct',
+            isAdminMail: true,
+            recipientSummary: `@${userRecord.username}`,
+            subject: `Renewal Reminder: Your Elite Plan Expires in ${daysLeft} Day(s)`,
+            body: `Hello ${userRecord.displayName},\n\nYour ASAN-Study_tool Elite Plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions and Plans for ${ELITE_MONTHLY_TOTAL} pts (Monthly) or ${ELITE_ANNUAL_TOTAL.toLocaleString()} pts (Annual).`,
+          });
+          await db.insert(notifications).values({
+            userId: userRecord.id,
+            senderLabel: 'ASAN Subscriptions',
+            title: `Elite Expires in ${daysLeft} Day(s)`,
+            message: `Your Elite plan expires on ${exp.toISOString().slice(0, 10)}.`,
+            type: 'warning',
+          });
+        }
+      }
+    }
+
+    if (userRecord.proExpiresAt) {
       const exp = new Date(userRecord.proExpiresAt);
       if (!Number.isNaN(exp.getTime())) {
         const msLeft = exp.getTime() - now.getTime();
         const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
         if (msLeft < 0) {
+          const nextPlan =
+            userRecord.plan === 'pro'
+              ? isValidFutureIso(userRecord.eliteExpiresAt)
+                ? 'elite'
+                : 'basic'
+              : userRecord.plan;
           const [downgraded] = await db
             .update(users)
             .set({
-              plan: 'basic',
+              plan: nextPlan,
               proStartedAt: '',
               proExpiresAt: '',
+              activeProGifted: false,
               lastExpiryReminderFor: '',
               updatedAt: now,
             })
@@ -752,16 +965,20 @@ export async function getOrCreateUser(
             isAdminMail: true,
             recipientSummary: `@${userRecord.username}`,
             subject: 'Your ASAN-Study_tool Pro Plan Has Expired',
-            body: `Hello ${userRecord.displayName},\n\nYour Pro Plan expired on ${exp.toISOString().slice(0, 10)} and your account returned to Basic.\nRenew in Subscriptions with 500 points (Monthly), 5,100 points (Annual — 15% discount), or an 8-character License Key.`,
+            body: `Hello ${userRecord.displayName},\n\nYour Pro Plan expired on ${exp.toISOString().slice(0, 10)}.\nRenew in Subscriptions and Plans with ${PRO_MONTHLY_TOTAL} points (Monthly: 475 + 25 fee), ${PRO_ANNUAL_TOTAL.toLocaleString()} points (Annual: 11 mos + 1 free + 25 fee), or an 8-character License Key.`,
           });
           await db.insert(notifications).values({
             userId: userRecord.id,
             senderLabel: 'ASAN Subscriptions',
             title: 'Pro Subscription Expired',
-            message: 'Your Pro Plan expired and returned to Basic. Renew anytime in Subscriptions.',
+            message: `Your Pro Plan expired. Renew in Subscriptions and Plans (${PRO_MONTHLY_TOTAL} pts/mo or ${PRO_ANNUAL_TOTAL.toLocaleString()} pts/yr).`,
             type: 'warning',
           });
-        } else if (msLeft <= threeDaysMs && userRecord.lastExpiryReminderFor !== userRecord.proExpiresAt) {
+        } else if (
+          userRecord.plan === 'pro' &&
+          msLeft <= threeDaysMs &&
+          userRecord.lastExpiryReminderFor !== userRecord.proExpiresAt
+        ) {
           const daysLeft = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
           const [reminded] = await db
             .update(users)
@@ -780,13 +997,13 @@ export async function getOrCreateUser(
             isAdminMail: true,
             recipientSummary: `@${userRecord.username}`,
             subject: `Renewal Reminder: Your Pro Plan Expires in ${daysLeft} Day(s)`,
-            body: `Hello ${userRecord.displayName},\n\nYour ASAN-Study_tool Pro Plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions with 500 pts (Monthly) or 5,100 pts (Annual — 15% discount).`,
+            body: `Hello ${userRecord.displayName},\n\nYour ASAN-Study_tool Pro Plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions and Plans with ${PRO_MONTHLY_TOTAL} pts (Monthly) or ${PRO_ANNUAL_TOTAL.toLocaleString()} pts (Annual).`,
           });
           await db.insert(notifications).values({
             userId: userRecord.id,
             senderLabel: 'ASAN Subscriptions',
             title: `Pro Expires in ${daysLeft} Day(s)`,
-            message: `Your Pro plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions.`,
+            message: `Your Pro plan expires on ${exp.toISOString().slice(0, 10)}. Renew in Subscriptions and Plans.`,
             type: 'warning',
           });
         }
@@ -800,6 +1017,11 @@ export async function getOrCreateUser(
         keyCode: giftKey,
         keyType: 'pro',
         durationMonths: 1,
+        sourceType: 'admin_gift',
+        noRefund: true,
+        purchaseCost: 0,
+        platformFee: 0,
+        couponCode: '',
         issuedToUserId: userRecord.id,
         issuedToEmail: userRecord.email,
         issuedByUserId: userRecord.id,
@@ -817,7 +1039,7 @@ export async function getOrCreateUser(
         isAdminMail: true,
         recipientSummary: userRecord.username || userRecord.email,
         subject: `Welcome ${userRecord.role === 'super' ? 'Super Admin' : 'Admin'} — Free Pro License Key Gift`,
-        body: `Your free 8-character Pro License Key: ${giftKey}\nValid 1 year to activate (${activationExpiresAt.slice(0, 10)}) for 1 month of Pro.`,
+        body: `Your free 8-character Pro License Key: ${giftKey}\nUse Before: ${activationExpiresAt.slice(0, 10)} (1 month of Pro, No Refund policy on gifted plan).`,
       });
       const [u2] = await db
         .update(users)
@@ -837,10 +1059,13 @@ export async function getOrCreateUser(
             ? weeklyContributorPts
             : 0;
       if (stipend > 0) {
+        const nextPts = userRecord.infinitePoints
+          ? INFINITE_POINTS_SENTINEL
+          : Math.max(0, userRecord.points + stipend);
         const [u3] = await db
           .update(users)
           .set({
-            points: userRecord.points + stipend,
+            points: nextPts,
             lastWeeklyGrantWeek: weekKey,
             updatedAt: now,
           })
@@ -909,8 +1134,13 @@ export async function getOrCreateUser(
         passwordHash: '',
         authMode: 'google',
         points: 500,
+        infinitePoints: false,
         proStartedAt: '',
         proExpiresAt: '',
+        eliteStartedAt: '',
+        eliteExpiresAt: '',
+        eliteVisualEffects: true,
+        activeProGifted: false,
         lastExpiryReminderFor: '',
         contributorApproved: false,
         contributorRequested: false,
@@ -1003,6 +1233,7 @@ export async function updateUserProfile(
     driveFolderId?: string;
     scheduleSheetId?: string;
     viewPlanMode?: 'auto' | 'basic';
+    eliteVisualEffects?: boolean;
     workspacePermissions?: Partial<WorkspacePermissionsConfig>;
   }
 ) {
@@ -1032,6 +1263,7 @@ export async function updateUserProfile(
       .select({
         plan: users.plan,
         proExpiresAt: users.proExpiresAt,
+        eliteExpiresAt: users.eliteExpiresAt,
         workspacePermissions: users.workspacePermissions,
       })
       .from(users)
@@ -1041,10 +1273,10 @@ export async function updateUserProfile(
     if (
       updates.viewPlanMode === 'basic' &&
       currentUserRow &&
-      isActiveProTenure(currentUserRow)
+      isActivePaidPlanTenure(currentUserRow)
     ) {
       throw new Error(
-        'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+        'Active Pro and Elite plans cannot be paused back to Basic until their term expires or you cancel in Subscriptions and Plans.'
       );
     }
 
@@ -1055,10 +1287,10 @@ export async function updateUserProfile(
         ...updates.workspacePermissions,
       };
       nextWorkspacePermJson = JSON.stringify({
-        driveSync: merged.driveSync !== false,
-        docsExport: merged.docsExport !== false,
-        sheetsSync: merged.sheetsSync !== false,
-        meetRooms: merged.meetRooms !== false,
+        driveSync: merged.driveSync === true,
+        docsExport: merged.docsExport === true,
+        sheetsSync: merged.sheetsSync === true,
+        meetRooms: merged.meetRooms === true,
       });
     }
     const [updated] = await db
@@ -1070,6 +1302,9 @@ export async function updateUserProfile(
         ...(updates.driveFolderId !== undefined ? { driveFolderId: updates.driveFolderId } : {}),
         ...(updates.scheduleSheetId !== undefined ? { scheduleSheetId: updates.scheduleSheetId } : {}),
         ...(updates.viewPlanMode !== undefined ? { viewPlanMode: updates.viewPlanMode } : {}),
+        ...(typeof updates.eliteVisualEffects === 'boolean'
+          ? { eliteVisualEffects: updates.eliteVisualEffects }
+          : {}),
         ...(nextWorkspacePermJson !== undefined ? { workspacePermissions: nextWorkspacePermJson } : {}),
         updatedAt: new Date(),
       })
@@ -1083,9 +1318,9 @@ export async function updateUserProfile(
     const store = getLocalStore();
     const user = store.users.find((u) => u.id === userId);
     if (!user) throw new Error('User not found.');
-    if (updates.viewPlanMode === 'basic' && isActiveProTenure(user)) {
+    if (updates.viewPlanMode === 'basic' && isActivePaidPlanTenure(user)) {
       throw new Error(
-        'Pro users cannot switch back to Basic until their term expires or they willingly cancel in Subscriptions.'
+        'Active Pro and Elite plans cannot be paused back to Basic until their term expires or you cancel in Subscriptions and Plans.'
       );
     }
     if (cleanUsername) {
@@ -1100,16 +1335,19 @@ export async function updateUserProfile(
     if (updates.driveFolderId !== undefined) user.driveFolderId = updates.driveFolderId;
     if (updates.scheduleSheetId !== undefined) user.scheduleSheetId = updates.scheduleSheetId;
     if (updates.viewPlanMode !== undefined) user.viewPlanMode = updates.viewPlanMode;
+    if (typeof updates.eliteVisualEffects === 'boolean') {
+      user.eliteVisualEffects = updates.eliteVisualEffects;
+    }
     if (updates.workspacePermissions !== undefined) {
       const merged = {
         ...parseWorkspacePermissions(user.workspacePermissions),
         ...updates.workspacePermissions,
       };
       user.workspacePermissions = JSON.stringify({
-        driveSync: merged.driveSync !== false,
-        docsExport: merged.docsExport !== false,
-        sheetsSync: merged.sheetsSync !== false,
-        meetRooms: merged.meetRooms !== false,
+        driveSync: merged.driveSync === true,
+        docsExport: merged.docsExport === true,
+        sheetsSync: merged.sheetsSync === true,
+        meetRooms: merged.meetRooms === true,
       });
     }
     user.updatedAt = new Date();
@@ -1125,13 +1363,17 @@ export async function updateUserPlan(userId: number, plan: 'basic' | 'pro') {
   try {
     if (plan === 'basic') {
       const [existing] = await db
-        .select({ plan: users.plan, proExpiresAt: users.proExpiresAt })
+        .select({
+          plan: users.plan,
+          proExpiresAt: users.proExpiresAt,
+          eliteExpiresAt: users.eliteExpiresAt,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      if (existing && isActiveProTenure(existing)) {
+      if (existing && isActivePaidPlanTenure(existing)) {
         throw new Error(
-          'Pro users cannot return to Basic until their term expires or they willingly cancel in Subscriptions.'
+          'Pro and Elite plans cannot return to Basic until their term expires or you cancel in Subscriptions and Plans.'
         );
       }
     }
@@ -1148,9 +1390,9 @@ export async function updateUserPlan(userId: number, plan: 'basic' | 'pro') {
     const store = getLocalStore();
     const user = store.users.find((u) => u.id === userId);
     if (!user) throw new Error('User not found.');
-    if (plan === 'basic' && isActiveProTenure(user)) {
+    if (plan === 'basic' && isActivePaidPlanTenure(user)) {
       throw new Error(
-        'Pro users cannot return to Basic until their term expires or they willingly cancel in Subscriptions.'
+        'Pro and Elite plans cannot return to Basic until their term expires or you cancel in Subscriptions and Plans.'
       );
     }
     user.plan = plan;
@@ -1246,11 +1488,14 @@ export async function awardPoints(
   reason: string,
   category: string
 ) {
-  if (amount === 0) return null;
+  const intAmount = Math.round(amount);
+  if (intAmount === 0) return null;
   try {
     const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!u) return null;
-    const nextPoints = Math.max(0, u.points + amount);
+    const nextPoints = u.infinitePoints
+      ? INFINITE_POINTS_SENTINEL
+      : Math.max(0, Math.round(u.points + intAmount));
     const [updated] = await db
       .update(users)
       .set({ points: nextPoints, updatedAt: new Date() })
@@ -1258,14 +1503,14 @@ export async function awardPoints(
       .returning();
     await db.insert(pointTransactions).values({
       userId,
-      amount,
+      amount: intAmount,
       reason,
       category,
     });
     return updated;
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
-    return localAwardPoints(userId, amount, reason, category) || null;
+    return localAwardPoints(userId, intAmount, reason, category) || null;
   }
 }
 
@@ -1282,51 +1527,365 @@ export async function getPointTransactions(userId: number) {
   }
 }
 
-export async function purchaseProWithPoints(
-  userId: number,
-  term: 'monthly' | 'annual' = 'monthly'
+// --- SUPER CONSOLE COUPONS ---
+export async function listCoupons() {
+  try {
+    return await db.select().from(coupons).orderBy(desc(coupons.createdAt));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    return [...(getLocalStore().coupons || [])].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+}
+
+export async function createCoupon(
+  superUserId: number,
+  params: {
+    code: string;
+    description?: string;
+    scope?: string;
+    discountType?: string;
+    discountValue: number;
+    maxUses?: number;
+    expiresAt?: string;
+  }
 ) {
+  const cleanCode = String(params.code || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, '')
+    .slice(0, 24);
+  if (cleanCode.length < 3) {
+    throw new Error('Coupon code must be 3 to 24 alphanumeric characters.');
+  }
+  const allowedScopes = new Set([
+    'all',
+    'all_plans',
+    'pro_plan',
+    'elite_plan',
+    'apps_metered',
+    'all_repository',
+    'repository_rent',
+    'repository_buy',
+  ]);
+  const scope = allowedScopes.has(String(params.scope || ''))
+    ? String(params.scope)
+    : 'all';
+  const discountType = params.discountType === 'flat' ? 'flat' : 'percent';
+  const rawVal = Math.round(Number(params.discountValue) || 0);
+  const discountValue =
+    discountType === 'percent' ? Math.max(1, Math.min(100, rawVal)) : Math.max(1, rawVal);
+  const maxUses = Math.max(0, Math.round(Number(params.maxUses) || 0));
+  const expiresAt = params.expiresAt ? String(params.expiresAt).trim().slice(0, 40) : '';
+  const description = String(params.description || '').trim().slice(0, 200);
+
+  try {
+    const existing = await db
+      .select({ id: coupons.id })
+      .from(coupons)
+      .where(eq(coupons.code, cleanCode))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new Error(`Coupon code "${cleanCode}" already exists.`);
+    }
+    const [created] = await db
+      .insert(coupons)
+      .values({
+        code: cleanCode,
+        description,
+        scope,
+        discountType,
+        discountValue,
+        maxUses,
+        usedCount: 0,
+        expiresAt,
+        active: true,
+        createdByUserId: superUserId,
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) {
+      throw error instanceof Error ? error : new Error('Failed to create coupon.');
+    }
+    const store = getLocalStore();
+    const list = (store.coupons ||= []);
+    if (list.some((c) => c.code.toUpperCase() === cleanCode)) {
+      throw new Error(`Coupon code "${cleanCode}" already exists.`);
+    }
+    const created: StoreCoupon = {
+      id: nextSeq('coupons'),
+      code: cleanCode,
+      description,
+      scope,
+      discountType,
+      discountValue,
+      maxUses,
+      usedCount: 0,
+      expiresAt,
+      active: true,
+      createdByUserId: superUserId,
+      createdAt: new Date(),
+    };
+    list.unshift(created);
+    persistLocalStore();
+    return created;
+  }
+}
+
+export async function updateCouponStatus(id: number, updates: { active?: boolean }) {
+  try {
+    const [updated] = await db
+      .update(coupons)
+      .set({
+        ...(typeof updates.active === 'boolean' ? { active: updates.active } : {}),
+      })
+      .where(eq(coupons.id, id))
+      .returning();
+    if (!updated) throw new Error('Coupon not found.');
+    return updated;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const row = (store.coupons || []).find((c) => c.id === id);
+    if (!row) throw new Error('Coupon not found.');
+    if (typeof updates.active === 'boolean') row.active = updates.active;
+    persistLocalStore();
+    return row;
+  }
+}
+
+export async function deleteCouponById(id: number) {
+  try {
+    await db.delete(coupons).where(eq(coupons.id, id));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    store.coupons = (store.coupons || []).filter((c) => c.id !== id);
+    persistLocalStore();
+  }
+}
+
+export async function resolveValidCouponForScope(
+  rawCode: string | undefined | null,
+  targetScope: PricingTargetScope
+): Promise<(CouponLike & { id: number }) | null> {
+  const clean = String(rawCode || '').trim().toUpperCase();
+  if (!clean) return null;
+  let couponRow: (CouponLike & { id: number }) | undefined;
+  try {
+    const [found] = await db
+      .select()
+      .from(coupons)
+      .where(eq(coupons.code, clean))
+      .limit(1);
+    couponRow = found;
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    couponRow = (getLocalStore().coupons || []).find((c) => c.code.toUpperCase() === clean);
+  }
+  const check = isCouponCurrentlyValid(couponRow, targetScope);
+  if (!check.valid || !couponRow) {
+    throw new Error(check.reason || 'Invalid coupon code.');
+  }
+  return couponRow;
+}
+
+export async function incrementCouponUsage(couponId: number) {
+  try {
+    const [found] = await db.select().from(coupons).where(eq(coupons.id, couponId)).limit(1);
+    if (!found) return;
+    await db
+      .update(coupons)
+      .set({ usedCount: (found.usedCount || 0) + 1 })
+      .where(eq(coupons.id, couponId));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) return;
+    const store = getLocalStore();
+    const row = (store.coupons || []).find((c) => c.id === couponId);
+    if (row) {
+      row.usedCount = (row.usedCount || 0) + 1;
+      persistLocalStore();
+    }
+  }
+}
+
+export async function getUserPlanSubscriptions(userId: number) {
+  try {
+    return await db
+      .select()
+      .from(planSubscriptions)
+      .where(eq(planSubscriptions.userId, userId))
+      .orderBy(desc(planSubscriptions.createdAt));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    return (getLocalStore().planSubscriptions || [])
+      .filter((s) => s.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+}
+
+export async function getUserAppSubscriptions(userId: number) {
+  try {
+    return await db
+      .select()
+      .from(appSubscriptions)
+      .where(eq(appSubscriptions.userId, userId))
+      .orderBy(desc(appSubscriptions.createdAt));
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    return (getLocalStore().appSubscriptions || [])
+      .filter((s) => s.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+}
+
+export async function purchasePlanWithPoints(
+  userId: number,
+  termOrOpts:
+    | 'monthly'
+    | 'annual'
+    | {
+        tier?: 'pro' | 'elite';
+        term?: 'monthly' | 'annual';
+        couponCode?: string;
+        proHandling?: 'keep' | 'cancel';
+      } = 'monthly'
+) {
+  const opts =
+    typeof termOrOpts === 'string'
+      ? { tier: 'pro' as const, term: termOrOpts }
+      : termOrOpts;
+  const tier: 'pro' | 'elite' = opts.tier === 'elite' ? 'elite' : 'pro';
+  const term: 'monthly' | 'annual' = opts.term === 'annual' ? 'annual' : 'monthly';
   const isAnnual = term === 'annual';
-  const PRO_COST = isAnnual ? 5100 : 500; // Annual = 15% discount off 6,000 pts (12 * 500)
   const durationMonths = isAnnual ? 12 : 1;
+  const targetScope: PricingTargetScope = tier === 'elite' ? 'elite_plan' : 'pro_plan';
+  const coupon = opts.couponCode
+    ? await resolveValidCouponForScope(opts.couponCode, targetScope)
+    : null;
+  const quote = calculatePlanQuote({ tier, term, coupon });
+  const tierLabel = tier === 'elite' ? 'Elite' : 'Pro';
   const termLabel = isAnnual
-    ? 'Annual Pro Plan (12 Months — 15% Off)'
-    : 'Monthly Pro Plan (1 Month)';
+    ? `Annual ${tierLabel} Plan (11 Months + 1 Free)`
+    : `Monthly ${tierLabel} Plan (1 Month)`;
   const now = new Date();
+
   try {
     const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
     if (!u) throw new Error('User not found.');
-    if (u.points < PRO_COST) {
+    if (!u.infinitePoints && u.points < quote.finalCost) {
       throw new Error(
-        `Insufficient points. Need ${PRO_COST.toLocaleString()} points (you have ${u.points.toLocaleString()}).`
+        `Insufficient points. Need ${quote.finalCost.toLocaleString()} points (you have ${u.points.toLocaleString()}).`
       );
     }
-    const baseStart =
-      u.plan === 'pro' && u.proExpiresAt && new Date(u.proExpiresAt) > now
-        ? new Date(u.proExpiresAt)
-        : now;
-    const proStartedAt = u.plan === 'pro' && u.proStartedAt ? u.proStartedAt : now.toISOString();
-    const proExpiresAt = addMonthsIso(baseStart, durationMonths);
+
+    const hasActivePro = isActiveProTenure(u);
+    if (tier === 'elite' && hasActivePro && !opts.proHandling) {
+      const err = new Error(
+        'Elite membership includes all Pro features. Choose whether to keep your existing Pro tenure alongside Elite or cancel Pro.'
+      ) as Error & { code?: string; proExpiresAt?: string };
+      err.code = 'PRO_OVERLAP_CHOICE_REQUIRED';
+      err.proExpiresAt = u.proExpiresAt || '';
+      throw err;
+    }
+
+    const nextProFields: Partial<typeof users.$inferInsert> = {};
+    if (tier === 'elite' && hasActivePro && opts.proHandling === 'cancel') {
+      nextProFields.proStartedAt = '';
+      nextProFields.proExpiresAt = '';
+      nextProFields.activeProGifted = false;
+      const existingSubs = await db
+        .select()
+        .from(planSubscriptions)
+        .where(eq(planSubscriptions.userId, userId));
+      for (const s of existingSubs) {
+        if (s.tier === 'pro' && s.status === 'active') {
+          await db
+            .update(planSubscriptions)
+            .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+            .where(eq(planSubscriptions.id, s.id));
+        }
+      }
+      const selfKeys = await db
+        .select()
+        .from(licenseKeys)
+        .where(eq(licenseKeys.activatedByUserId, userId));
+      for (const k of selfKeys) {
+        if (k.keyType === 'pro' && k.status === 'active') {
+          await db
+            .update(licenseKeys)
+            .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+            .where(eq(licenseKeys.id, k.id));
+        }
+      }
+    }
+
+    let startsAt = now.toISOString();
+    let expiresAt = addMonthsIso(now, durationMonths);
+    if (tier === 'pro') {
+      const baseStart =
+        u.proExpiresAt && new Date(u.proExpiresAt) > now ? new Date(u.proExpiresAt) : now;
+      startsAt = u.proStartedAt && isValidFutureIso(u.proExpiresAt) ? u.proStartedAt : now.toISOString();
+      expiresAt = addMonthsIso(baseStart, durationMonths);
+    } else {
+      const baseStart =
+        u.eliteExpiresAt && new Date(u.eliteExpiresAt) > now ? new Date(u.eliteExpiresAt) : now;
+      startsAt =
+        u.eliteStartedAt && isValidFutureIso(u.eliteExpiresAt) ? u.eliteStartedAt : now.toISOString();
+      expiresAt = addMonthsIso(baseStart, durationMonths);
+    }
+
+    const nextPoints = u.infinitePoints
+      ? INFINITE_POINTS_SENTINEL
+      : Math.max(0, u.points - quote.finalCost);
 
     const [updated] = await db
       .update(users)
       .set({
-        points: u.points - PRO_COST,
-        plan: 'pro',
-        proStartedAt,
-        proExpiresAt,
+        points: nextPoints,
+        plan: tier === 'elite' || !isActiveEliteTenure(u) ? tier : 'elite',
+        viewPlanMode: 'auto',
+        ...(tier === 'pro'
+          ? { proStartedAt: startsAt, proExpiresAt: expiresAt, activeProGifted: false }
+          : { eliteStartedAt: startsAt, eliteExpiresAt: expiresAt }),
+        ...nextProFields,
         lastExpiryReminderFor: '',
         updatedAt: now,
       })
       .where(eq(users.id, userId))
       .returning();
 
+    await db.insert(planSubscriptions).values({
+      userId,
+      tier,
+      term,
+      sourceType: 'points',
+      keyCode: '',
+      noRefund: false,
+      baseCost: quote.baseSubtotal,
+      platformFee: quote.platformFee,
+      couponCode: quote.appliedCouponCode,
+      totalCost: quote.finalCost,
+      status: 'active',
+      startedAt: startsAt,
+      expiresAt,
+      cancelledAt: '',
+      refundAmount: 0,
+    });
+
     await db.insert(pointTransactions).values({
       userId,
-      amount: -PRO_COST,
-      reason: `${termLabel} Activation (${PRO_COST} Points)`,
-      category: 'pro_purchase',
+      amount: -quote.finalCost,
+      reason: `${termLabel} (${quote.finalCost} pts incl. ${quote.platformFee} fee${
+        quote.appliedCouponCode ? `, coupon ${quote.appliedCouponCode}` : ''
+      })`,
+      category: tier === 'elite' ? 'elite_purchase' : 'pro_purchase',
     });
+
+    if (coupon?.id) await incrementCouponUsage(coupon.id);
+
     await db.insert(userMessages).values({
       senderId: userId,
       recipientId: userId,
@@ -1337,56 +1896,126 @@ export async function purchaseProWithPoints(
       visibility: 'direct',
       isAdminMail: true,
       recipientSummary: `@${u.username}`,
-      subject: `Pro Plan Purchase Confirmation — ${termLabel}`,
-      body: `Hello ${u.displayName},\n\nThank you for upgrading to ASAN-Study_tool ${termLabel}.\n\nPoints Deducted: ${PRO_COST.toLocaleString()} pts\nActive Until: ${proExpiresAt.slice(0, 10)}\n\nNote: If you test Lower-Plan (Basic) preview mode in Subscriptions, your Pro tenure continues counting toward ${proExpiresAt.slice(0, 10)}.`,
+      subject: `${tierLabel} Plan Purchase Confirmation — ${termLabel}`,
+      body: `Hello ${u.displayName},\n\nThank you for upgrading to ASAN-Study_tool ${termLabel}.\n\nBase Cost: ${quote.baseSubtotal} pts\nPlatform Fee (Non-Refundable): ${quote.platformFee} pts${
+        quote.couponDiscount > 0 ? `\nCoupon (${quote.appliedCouponCode}): -${quote.couponDiscount} pts` : ''
+      }\nTotal Paid: ${quote.finalCost.toLocaleString()} pts\nActive Until: ${expiresAt.slice(0, 10)}`,
     });
     await db.insert(notifications).values({
       userId,
       senderLabel: 'Subscriptions',
-      title: `${isAnnual ? 'Annual' : 'Monthly'} Pro Activated`,
-      message: `Pro active until ${proExpiresAt.slice(0, 10)} (${PRO_COST.toLocaleString()} pts). Confirmation sent to Tool Mail.`,
+      title: `${isAnnual ? 'Annual' : 'Monthly'} ${tierLabel} Activated`,
+      message: `${tierLabel} active until ${expiresAt.slice(0, 10)} (${quote.finalCost.toLocaleString()} pts).`,
       type: 'subscription',
     });
     return updated;
   } catch (error) {
     if (!isDbUnavailableError(error)) {
-      throw error instanceof Error ? error : new Error('Failed to activate Pro.');
+      throw error instanceof Error ? error : new Error(`Failed to activate ${tierLabel}.`);
     }
     const store = getLocalStore();
     const u = store.users.find((x) => x.id === userId);
     if (!u) throw new Error('User not found.');
-    if (u.points < PRO_COST) {
+    if (!u.infinitePoints && u.points < quote.finalCost) {
       throw new Error(
-        `Insufficient points. Need ${PRO_COST.toLocaleString()} points (you have ${u.points.toLocaleString()}).`
+        `Insufficient points. Need ${quote.finalCost.toLocaleString()} points (you have ${u.points.toLocaleString()}).`
       );
     }
-    const baseStart =
-      u.plan === 'pro' && u.proExpiresAt && new Date(u.proExpiresAt) > now
-        ? new Date(u.proExpiresAt)
-        : now;
-    const proStartedAt = u.plan === 'pro' && u.proStartedAt ? u.proStartedAt : now.toISOString();
-    const proExpiresAt = addMonthsIso(baseStart, durationMonths);
-    u.points -= PRO_COST;
-    u.plan = 'pro';
-    u.proStartedAt = proStartedAt;
-    u.proExpiresAt = proExpiresAt;
+
+    const hasActivePro = isActiveProTenure(u);
+    if (tier === 'elite' && hasActivePro && !opts.proHandling) {
+      const err = new Error(
+        'Elite membership includes all Pro features. Choose whether to keep your existing Pro tenure alongside Elite or cancel Pro.'
+      ) as Error & { code?: string; proExpiresAt?: string };
+      err.code = 'PRO_OVERLAP_CHOICE_REQUIRED';
+      err.proExpiresAt = u.proExpiresAt || '';
+      throw err;
+    }
+
+    if (tier === 'elite' && hasActivePro && opts.proHandling === 'cancel') {
+      u.proStartedAt = '';
+      u.proExpiresAt = '';
+      u.activeProGifted = false;
+      (store.planSubscriptions || []).forEach((s) => {
+        if (s.userId === userId && s.tier === 'pro' && s.status === 'active') {
+          s.status = 'cancelled';
+          s.cancelledAt = now.toISOString();
+        }
+      });
+      store.licenseKeys.forEach((k) => {
+        if (k.activatedByUserId === userId && k.keyType === 'pro' && k.status === 'active') {
+          k.status = 'cancelled';
+          k.cancelledAt = now.toISOString();
+        }
+      });
+    }
+
+    let startsAt = now.toISOString();
+    let expiresAt = addMonthsIso(now, durationMonths);
+    if (tier === 'pro') {
+      const baseStart =
+        u.proExpiresAt && new Date(u.proExpiresAt) > now ? new Date(u.proExpiresAt) : now;
+      startsAt = u.proStartedAt && isValidFutureIso(u.proExpiresAt) ? u.proStartedAt : now.toISOString();
+      expiresAt = addMonthsIso(baseStart, durationMonths);
+      u.proStartedAt = startsAt;
+      u.proExpiresAt = expiresAt;
+      u.activeProGifted = false;
+    } else {
+      const baseStart =
+        u.eliteExpiresAt && new Date(u.eliteExpiresAt) > now ? new Date(u.eliteExpiresAt) : now;
+      startsAt =
+        u.eliteStartedAt && isValidFutureIso(u.eliteExpiresAt) ? u.eliteStartedAt : now.toISOString();
+      expiresAt = addMonthsIso(baseStart, durationMonths);
+      u.eliteStartedAt = startsAt;
+      u.eliteExpiresAt = expiresAt;
+    }
+
+    u.points = u.infinitePoints
+      ? INFINITE_POINTS_SENTINEL
+      : Math.max(0, u.points - quote.finalCost);
+    u.plan = tier === 'elite' || !isActiveEliteTenure(u) ? tier : 'elite';
+    u.viewPlanMode = 'auto';
     u.lastExpiryReminderFor = '';
     u.updatedAt = now;
+
+    if (!store.planSubscriptions) store.planSubscriptions = [];
+    store.planSubscriptions.unshift({
+      id: nextSeq('planSubscriptions'),
+      userId,
+      tier,
+      term,
+      sourceType: 'points',
+      keyCode: '',
+      noRefund: false,
+      baseCost: quote.baseSubtotal,
+      platformFee: quote.platformFee,
+      couponCode: quote.appliedCouponCode,
+      totalCost: quote.finalCost,
+      status: 'active',
+      startedAt: startsAt,
+      expiresAt,
+      cancelledAt: '',
+      refundAmount: 0,
+      createdAt: now,
+    });
+
     store.pointTransactions.unshift({
       id: nextSeq('pointTransactions'),
       userId,
-      amount: -PRO_COST,
-      reason: `${termLabel} Activation (${PRO_COST} Points)`,
-      category: 'pro_purchase',
+      amount: -quote.finalCost,
+      reason: `${termLabel} (${quote.finalCost} pts incl. ${quote.platformFee} fee)`,
+      category: tier === 'elite' ? 'elite_purchase' : 'pro_purchase',
       createdAt: now,
     });
+    if (coupon?.id) await incrementCouponUsage(coupon.id);
+
     localSendSystemMail({
       recipient: u,
       senderLabel: 'Subscriptions',
-      subject: `Pro Plan Purchase Confirmation — ${termLabel}`,
-      body: `Hello ${u.displayName},\n\nThank you for upgrading to ASAN-Study_tool ${termLabel}.\n\nPoints Deducted: ${PRO_COST.toLocaleString()} pts\nActive Until: ${proExpiresAt.slice(0, 10)}\n\nNote: Using Lower-Plan (Basic) preview mode does not pause your Pro tenure end date.`,
-      notifTitle: `${isAnnual ? 'Annual' : 'Monthly'} Pro Activated`,
-      notifMessage: `Pro active until ${proExpiresAt.slice(0, 10)} (${PRO_COST.toLocaleString()} pts). Confirmation sent to Tool Mail.`,
+      subject: `${tierLabel} Plan Purchase Confirmation — ${termLabel}`,
+      body: `Hello ${u.displayName},\n\nPoints Deducted: ${quote.finalCost.toLocaleString()} pts (incl. ${quote.platformFee} non-refundable fee)\nActive Until: ${expiresAt.slice(0, 10)}.`,
+      notifTitle: `${isAnnual ? 'Annual' : 'Monthly'} ${tierLabel} Activated`,
+      notifMessage: `${tierLabel} active until ${expiresAt.slice(0, 10)} (${quote.finalCost.toLocaleString()} pts).`,
       notifType: 'subscription',
     });
     persistLocalStore();
@@ -1394,15 +2023,50 @@ export async function purchaseProWithPoints(
   }
 }
 
+export async function purchaseProWithPoints(
+  userId: number,
+  term: 'monthly' | 'annual' = 'monthly'
+) {
+  return purchasePlanWithPoints(userId, { tier: 'pro', term });
+}
+
 export async function generateProLicenseKey(params: {
   issuedByUserId: number;
   targetEmailOrUsername?: string;
   chargePoints?: boolean;
   term?: 'monthly' | 'annual';
+  keyType?: 'pro' | 'elite';
+  couponCode?: string;
+  sourceType?: 'points' | 'admin_gift' | 'super_grant';
 }) {
+  const keyType: 'pro' | 'elite' = params.keyType === 'elite' ? 'elite' : 'pro';
+  if (keyType === 'elite' && !params.chargePoints) {
+    throw new Error('Elite 12-character license keys can only be purchased using points.');
+  }
   const isAnnual = params.term === 'annual';
   const durationMonths = isAnnual ? 12 : 1;
-  const PRO_KEY_COST = isAnnual ? 5100 : 500;
+  const targetScope: PricingTargetScope = keyType === 'elite' ? 'elite_plan' : 'pro_plan';
+  const coupon =
+    params.chargePoints && params.couponCode
+      ? await resolveValidCouponForScope(params.couponCode, targetScope)
+      : null;
+  const quote = params.chargePoints
+    ? calculatePlanQuote({ tier: keyType, term: isAnnual ? 'annual' : 'monthly', coupon })
+    : {
+        baseSubtotal: 0,
+        platformFee: 0,
+        tierDiscountPercent: 0,
+        tierDiscountAmount: 0,
+        couponDiscount: 0,
+        totalBeforeDiscount: 0,
+        finalCost: 0,
+        appliedCouponCode: '',
+      };
+
+  const sourceType = params.sourceType || (params.chargePoints ? 'points' : 'admin_gift');
+  const noRefund = !params.chargePoints || sourceType === 'admin_gift';
+  const len = keyType === 'elite' ? 12 : 8;
+  const tierLabel = keyType === 'elite' ? 'Elite' : 'Pro';
   const now = new Date();
   const activationExpiresAt = addYearsIso(now, 1);
 
@@ -1414,11 +2078,11 @@ export async function generateProLicenseKey(params: {
       .limit(1);
     if (!issuer) throw new Error('Account not found.');
 
-    if (params.chargePoints && issuer.points < PRO_KEY_COST) {
+    if (params.chargePoints && !issuer.infinitePoints && issuer.points < quote.finalCost) {
       throw new Error(
-        `Insufficient points. Need ${PRO_KEY_COST.toLocaleString()} points to purchase a ${
+        `Insufficient points. Need ${quote.finalCost.toLocaleString()} points to purchase an ${
           isAnnual ? 'Annual' : 'Monthly'
-        } Pro License Key.`
+        } ${tierLabel} License Key.`
       );
     }
 
@@ -1440,25 +2104,34 @@ export async function generateProLicenseKey(params: {
     }
 
     if (params.chargePoints) {
+      const nextPts = issuer.infinitePoints
+        ? INFINITE_POINTS_SENTINEL
+        : Math.max(0, issuer.points - quote.finalCost);
       await db
         .update(users)
-        .set({ points: issuer.points - PRO_KEY_COST, updatedAt: now })
+        .set({ points: nextPts, updatedAt: now })
         .where(eq(users.id, issuer.id));
       await db.insert(pointTransactions).values({
         userId: issuer.id,
-        amount: -PRO_KEY_COST,
-        reason: `Purchased 8-char ${isAnnual ? 'Annual (15% off)' : 'Monthly'} Pro License Key for ${target.email}`,
-        category: 'pro_key_purchase',
+        amount: -quote.finalCost,
+        reason: `Purchased ${len}-char ${isAnnual ? 'Annual' : 'Monthly'} ${tierLabel} Key for ${target.email}`,
+        category: keyType === 'elite' ? 'elite_key_purchase' : 'pro_key_purchase',
       });
+      if (coupon?.id) await incrementCouponUsage(coupon.id);
     }
 
-    const keyCode = generate8CharKey();
+    const keyCode = generateLicenseKeyCode(len);
     const [createdKey] = await db
       .insert(licenseKeys)
       .values({
         keyCode,
-        keyType: 'pro',
+        keyType,
         durationMonths,
+        sourceType,
+        noRefund,
+        purchaseCost: quote.finalCost,
+        platformFee: quote.platformFee,
+        couponCode: quote.appliedCouponCode,
         issuedToUserId: target.id,
         issuedToEmail: target.email,
         issuedByUserId: issuer.id,
@@ -1477,20 +2150,22 @@ export async function generateProLicenseKey(params: {
       visibility: 'direct',
       isAdminMail: issuer.role === 'admin' || issuer.role === 'super',
       recipientSummary: target.username || target.email,
-      subject: `Your ASAN-Study_tool 8-Character Pro License Key (${keyCode})`,
-      body: `Pro License Key: ${keyCode}\nPlan Term: ${
-        isAnnual ? 'Annual Pro (12 months, 15% discount)' : 'Monthly Pro (1 month)'
-      }\nActivation Valid Until: ${activationExpiresAt.slice(0, 10)} (1 year)\n\nEnter this key in Subscriptions -> Activate License Key.`,
+      subject: `Your ASAN-Study_tool ${len}-Character ${tierLabel} License Key (${keyCode})`,
+      body: `${tierLabel} License Key: ${keyCode}\nPlan Term: ${
+        isAnnual
+          ? `Annual ${tierLabel} (11 months + 1 month free)`
+          : `Monthly ${tierLabel} (1 month)`
+      }\nUse Before: ${activationExpiresAt.slice(0, 10)}${
+        noRefund ? '\nPolicy: Gifted Key — No Refund upon cancellation.' : ''
+      }\n\nEnter this key in Subscriptions and Plans -> Activate License Key.`,
     });
 
     await db.insert(notifications).values({
       userId: target.id,
       senderId: issuer.id,
       senderLabel: issuer.role === 'admin' || issuer.role === 'super' ? 'Admin Licensing' : 'Subscriptions',
-      title: `Pro License Key Sent (${keyCode})`,
-      message: `Check Tool Mail for your 8-character ${
-        isAnnual ? 'Annual' : 'Monthly'
-      } Pro key ${keyCode}.`,
+      title: `${tierLabel} License Key Sent (${keyCode})`,
+      message: `Check Tool Mail for your ${len}-character ${tierLabel} key ${keyCode}.`,
       type: 'license',
     });
 
@@ -1502,11 +2177,11 @@ export async function generateProLicenseKey(params: {
     const store = getLocalStore();
     const issuer = store.users.find((u) => u.id === params.issuedByUserId);
     if (!issuer) throw new Error('Account not found.');
-    if (params.chargePoints && issuer.points < PRO_KEY_COST) {
+    if (params.chargePoints && !issuer.infinitePoints && issuer.points < quote.finalCost) {
       throw new Error(
-        `Insufficient points. Need ${PRO_KEY_COST.toLocaleString()} points to purchase a ${
+        `Insufficient points. Need ${quote.finalCost.toLocaleString()} points to purchase an ${
           isAnnual ? 'Annual' : 'Monthly'
-        } Pro License Key.`
+        } ${tierLabel} License Key.`
       );
     }
 
@@ -1529,30 +2204,41 @@ export async function generateProLicenseKey(params: {
     if (params.chargePoints) {
       localAwardPoints(
         issuer.id,
-        -PRO_KEY_COST,
-        `Purchased 8-char ${isAnnual ? 'Annual (15% off)' : 'Monthly'} Pro License Key for ${target.email}`,
-        'pro_key_purchase'
+        -quote.finalCost,
+        `Purchased ${len}-char ${isAnnual ? 'Annual' : 'Monthly'} ${tierLabel} Key for ${target.email}`,
+        keyType === 'elite' ? 'elite_key_purchase' : 'pro_key_purchase'
       );
+      if (coupon?.id) await incrementCouponUsage(coupon.id);
     }
 
     const createdKey = localIssueProKeyForUser({
       targetUser: target,
       issuedByUserId: issuer.id,
-      subject: `Your ASAN-Study_tool 8-Character Pro License Key (@${target.username})`,
+      subject: `Your ASAN-Study_tool ${len}-Character ${tierLabel} License Key (@${target.username})`,
       introText: `Your ASAN-Study_tool ${
-        isAnnual ? 'Annual (12 months, 15% discount)' : 'Monthly (1 month)'
-      } Pro License Key has been generated.`,
+        isAnnual ? 'Annual (11 months + 1 free)' : 'Monthly (1 month)'
+      } ${tierLabel} License Key has been issued.`,
       durationMonths,
       isAdminMail: issuer.role === 'admin' || issuer.role === 'super',
+      keyType,
+      sourceType,
+      noRefund,
+      purchaseCost: quote.finalCost,
+      platformFee: quote.platformFee,
+      couponCode: quote.appliedCouponCode,
     });
     return { key: createdKey, recipientEmail: target.email };
   }
 }
 
-export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
+export async function redeemLicenseKey(
+  userId: number,
+  rawKeyCode: string,
+  proHandling?: 'keep' | 'cancel'
+) {
   const keyCode = rawKeyCode.trim().toUpperCase();
-  if (keyCode.length !== 8) {
-    throw new Error('License keys must be exactly 8 characters.');
+  if (keyCode.length !== 8 && keyCode.length !== 12) {
+    throw new Error('License keys must be 8 characters (Pro) or 12 characters (Elite).');
   }
   const now = new Date();
 
@@ -1580,20 +2266,81 @@ export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
       .from(licenseKeys)
       .where(eq(licenseKeys.keyCode, keyCode))
       .limit(1);
-    if (!keyRow) throw new Error('Invalid 8-character license key.');
-    if (keyRow.status !== 'unused') throw new Error(`This license key is already ${keyRow.status}.`);
+    if (!keyRow) throw new Error(`Invalid ${keyCode.length}-character license key.`);
+    if (keyRow.status !== 'unused' || keyRow.activatedByUserId != null) {
+      throw new Error(
+        `This license key has already been used (${keyRow.status}) and cannot be activated by another account.`
+      );
+    }
+    if (
+      keyRow.sourceType === 'admin_gift' &&
+      keyRow.issuedToUserId &&
+      keyRow.issuedToUserId !== userId
+    ) {
+      throw new Error('This gifted Pro activation key is locked to the recipient it was mailed to.');
+    }
     if (new Date(keyRow.activationExpiresAt).getTime() < now.getTime()) {
       await db.update(licenseKeys).set({ status: 'expired' }).where(eq(licenseKeys.id, keyRow.id));
-      throw new Error('This license key expired before activation (1-year activation window ended).');
+      throw new Error('This license key expired before activation.');
     }
 
+    const tier: 'pro' | 'elite' = keyRow.keyType === 'elite' || keyCode.length === 12 ? 'elite' : 'pro';
     const months = keyRow.durationMonths === 12 ? 12 : 1;
-    const baseStart =
-      u.plan === 'pro' && u.proExpiresAt && new Date(u.proExpiresAt) > now
-        ? new Date(u.proExpiresAt)
-        : now;
-    const subStartsAt = u.plan === 'pro' && u.proStartedAt ? u.proStartedAt : now.toISOString();
-    const subEndsAt = addMonthsIso(baseStart, months);
+    const hasActivePro = isActiveProTenure(u);
+    if (tier === 'elite' && hasActivePro && !proHandling) {
+      const err = new Error(
+        'Elite membership includes all Pro features. Choose whether to keep your existing Pro tenure alongside Elite or cancel Pro.'
+      ) as Error & { code?: string; proExpiresAt?: string };
+      err.code = 'PRO_OVERLAP_CHOICE_REQUIRED';
+      err.proExpiresAt = u.proExpiresAt || '';
+      throw err;
+    }
+
+    const extraClearPro: Partial<typeof users.$inferInsert> = {};
+    if (tier === 'elite' && hasActivePro && proHandling === 'cancel') {
+      extraClearPro.proStartedAt = '';
+      extraClearPro.proExpiresAt = '';
+      extraClearPro.activeProGifted = false;
+      const subs = await db
+        .select()
+        .from(planSubscriptions)
+        .where(eq(planSubscriptions.userId, userId));
+      for (const s of subs) {
+        if (s.tier === 'pro' && s.status === 'active') {
+          await db
+            .update(planSubscriptions)
+            .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+            .where(eq(planSubscriptions.id, s.id));
+        }
+      }
+      const selfKeys = await db
+        .select()
+        .from(licenseKeys)
+        .where(eq(licenseKeys.activatedByUserId, userId));
+      for (const k of selfKeys) {
+        if (k.keyType === 'pro' && k.status === 'active' && k.id !== keyRow.id) {
+          await db
+            .update(licenseKeys)
+            .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+            .where(eq(licenseKeys.id, k.id));
+        }
+      }
+    }
+
+    let subStartsAt = now.toISOString();
+    let subEndsAt = addMonthsIso(now, months);
+    if (tier === 'pro') {
+      const baseStart =
+        u.proExpiresAt && new Date(u.proExpiresAt) > now ? new Date(u.proExpiresAt) : now;
+      subStartsAt = u.proStartedAt && isValidFutureIso(u.proExpiresAt) ? u.proStartedAt : now.toISOString();
+      subEndsAt = addMonthsIso(baseStart, months);
+    } else {
+      const baseStart =
+        u.eliteExpiresAt && new Date(u.eliteExpiresAt) > now ? new Date(u.eliteExpiresAt) : now;
+      subStartsAt =
+        u.eliteStartedAt && isValidFutureIso(u.eliteExpiresAt) ? u.eliteStartedAt : now.toISOString();
+      subEndsAt = addMonthsIso(baseStart, months);
+    }
 
     await db
       .update(licenseKeys)
@@ -1606,19 +2353,48 @@ export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
       })
       .where(eq(licenseKeys.id, keyRow.id));
 
+    const isNoRefundGift = Boolean(keyRow.noRefund || keyRow.sourceType === 'admin_gift');
     const [updated] = await db
       .update(users)
       .set({
-        plan: 'pro',
+        plan: tier === 'elite' || !isActiveEliteTenure(u) ? tier : 'elite',
         viewPlanMode: 'auto',
-        proStartedAt: subStartsAt,
-        proExpiresAt: subEndsAt,
+        ...(tier === 'pro'
+          ? {
+              proStartedAt: subStartsAt,
+              proExpiresAt: subEndsAt,
+              activeProGifted: isNoRefundGift,
+            }
+          : {
+              eliteStartedAt: subStartsAt,
+              eliteExpiresAt: subEndsAt,
+            }),
+        ...extraClearPro,
         lastExpiryReminderFor: '',
         updatedAt: now,
       })
       .where(eq(users.id, userId))
       .returning();
 
+    await db.insert(planSubscriptions).values({
+      userId,
+      tier,
+      term: months === 12 ? 'annual' : 'monthly',
+      sourceType: isNoRefundGift ? 'admin_gift' : 'key',
+      keyCode,
+      noRefund: isNoRefundGift,
+      baseCost: Math.max(0, (keyRow.purchaseCost || 0) - (keyRow.platformFee || 0)),
+      platformFee: keyRow.platformFee || 0,
+      couponCode: keyRow.couponCode || '',
+      totalCost: keyRow.purchaseCost || 0,
+      status: 'active',
+      startedAt: subStartsAt,
+      expiresAt: subEndsAt,
+      cancelledAt: '',
+      refundAmount: 0,
+    });
+
+    const tierLabel = tier === 'elite' ? 'Elite' : 'Pro';
     await db.insert(userMessages).values({
       senderId: userId,
       recipientId: userId,
@@ -1629,23 +2405,25 @@ export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
       visibility: 'direct',
       isAdminMail: true,
       recipientSummary: `@${u.username}`,
-      subject: `Pro License Activated (${keyCode})`,
-      body: `Your 8-character Pro License Key ${keyCode} (${
+      subject: `${tierLabel} License Activated (${keyCode})`,
+      body: `Your ${keyCode.length}-character ${tierLabel} License Key ${keyCode} (${
         months === 12 ? 'Annual 12-month term' : 'Monthly 1-month term'
-      }) is active until ${subEndsAt.slice(0, 10)}.`,
+      }) is active from ${subStartsAt} until ${subEndsAt}.${
+        isNoRefundGift ? '\n\nPolicy Note: This was an Admin-gifted plan (No Refund on cancellation).' : ''
+      }`,
     });
     await db.insert(notifications).values({
       userId,
       senderLabel: 'Subscriptions',
       title: `License ${keyCode} Activated`,
-      message: `Pro Plan active from ${subStartsAt.slice(0, 10)} to ${subEndsAt.slice(0, 10)}.`,
+      message: `${tierLabel} Plan active from ${subStartsAt.slice(0, 10)} to ${subEndsAt.slice(0, 10)}.`,
       type: 'subscription',
     });
 
     return {
       user: updated,
-      kind: 'pro' as const,
-      message: `Pro plan activated until ${subEndsAt.slice(0, 10)}.`,
+      kind: tier,
+      message: `${tierLabel} plan activated until ${subEndsAt.slice(0, 10)}.`,
     };
   } catch (error) {
     if (!isDbUnavailableError(error)) {
@@ -1670,21 +2448,75 @@ export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
     }
 
     const keyRow = store.licenseKeys.find((k) => k.keyCode === keyCode);
-    if (!keyRow) throw new Error('Invalid 8-character license key.');
-    if (keyRow.status !== 'unused') throw new Error(`This license key is already ${keyRow.status}.`);
+    if (!keyRow) throw new Error(`Invalid ${keyCode.length}-character license key.`);
+    if (keyRow.status !== 'unused' || keyRow.activatedByUserId != null) {
+      throw new Error(
+        `This license key has already been used (${keyRow.status}) and cannot be activated by another account.`
+      );
+    }
+    if (
+      keyRow.sourceType === 'admin_gift' &&
+      keyRow.issuedToUserId &&
+      keyRow.issuedToUserId !== userId
+    ) {
+      throw new Error('This gifted Pro activation key is locked to the recipient it was mailed to.');
+    }
     if (new Date(keyRow.activationExpiresAt).getTime() < now.getTime()) {
       keyRow.status = 'expired';
       persistLocalStore();
-      throw new Error('This license key expired before activation (1-year activation window ended).');
+      throw new Error('This license key expired before activation.');
     }
 
+    const tier: 'pro' | 'elite' = keyRow.keyType === 'elite' || keyCode.length === 12 ? 'elite' : 'pro';
     const months = keyRow.durationMonths === 12 ? 12 : 1;
-    const baseStart =
-      u.plan === 'pro' && u.proExpiresAt && new Date(u.proExpiresAt) > now
-        ? new Date(u.proExpiresAt)
-        : now;
-    const subStartsAt = u.plan === 'pro' && u.proStartedAt ? u.proStartedAt : now.toISOString();
-    const subEndsAt = addMonthsIso(baseStart, months);
+    const hasActivePro = isActiveProTenure(u);
+    if (tier === 'elite' && hasActivePro && !proHandling) {
+      const err = new Error(
+        'Elite membership includes all Pro features. Choose whether to keep your existing Pro tenure alongside Elite or cancel Pro.'
+      ) as Error & { code?: string; proExpiresAt?: string };
+      err.code = 'PRO_OVERLAP_CHOICE_REQUIRED';
+      err.proExpiresAt = u.proExpiresAt || '';
+      throw err;
+    }
+
+    if (tier === 'elite' && hasActivePro && proHandling === 'cancel') {
+      u.proStartedAt = '';
+      u.proExpiresAt = '';
+      u.activeProGifted = false;
+      (store.planSubscriptions || []).forEach((s) => {
+        if (s.userId === userId && s.tier === 'pro' && s.status === 'active') {
+          s.status = 'cancelled';
+          s.cancelledAt = now.toISOString();
+        }
+      });
+      store.licenseKeys.forEach((k) => {
+        if (k.activatedByUserId === userId && k.keyType === 'pro' && k.status === 'active' && k.id !== keyRow.id) {
+          k.status = 'cancelled';
+          k.cancelledAt = now.toISOString();
+        }
+      });
+    }
+
+    let subStartsAt = now.toISOString();
+    let subEndsAt = addMonthsIso(now, months);
+    const isNoRefundGift = Boolean(keyRow.noRefund || keyRow.sourceType === 'admin_gift');
+    if (tier === 'pro') {
+      const baseStart =
+        u.proExpiresAt && new Date(u.proExpiresAt) > now ? new Date(u.proExpiresAt) : now;
+      subStartsAt = u.proStartedAt && isValidFutureIso(u.proExpiresAt) ? u.proStartedAt : now.toISOString();
+      subEndsAt = addMonthsIso(baseStart, months);
+      u.proStartedAt = subStartsAt;
+      u.proExpiresAt = subEndsAt;
+      u.activeProGifted = isNoRefundGift;
+    } else {
+      const baseStart =
+        u.eliteExpiresAt && new Date(u.eliteExpiresAt) > now ? new Date(u.eliteExpiresAt) : now;
+      subStartsAt =
+        u.eliteStartedAt && isValidFutureIso(u.eliteExpiresAt) ? u.eliteStartedAt : now.toISOString();
+      subEndsAt = addMonthsIso(baseStart, months);
+      u.eliteStartedAt = subStartsAt;
+      u.eliteExpiresAt = subEndsAt;
+    }
 
     keyRow.status = 'active';
     keyRow.activatedByUserId = userId;
@@ -1692,30 +2524,48 @@ export async function redeemLicenseKey(userId: number, rawKeyCode: string) {
     keyRow.subStartsAt = subStartsAt;
     keyRow.subEndsAt = subEndsAt;
 
-    u.plan = 'pro';
+    u.plan = tier === 'elite' || !isActiveEliteTenure(u) ? tier : 'elite';
     u.viewPlanMode = 'auto';
-    u.proStartedAt = subStartsAt;
-    u.proExpiresAt = subEndsAt;
     u.lastExpiryReminderFor = '';
     u.updatedAt = now;
 
+    if (!store.planSubscriptions) store.planSubscriptions = [];
+    store.planSubscriptions.unshift({
+      id: nextSeq('planSubscriptions'),
+      userId,
+      tier,
+      term: months === 12 ? 'annual' : 'monthly',
+      sourceType: isNoRefundGift ? 'admin_gift' : 'key',
+      keyCode,
+      noRefund: isNoRefundGift,
+      baseCost: Math.max(0, (keyRow.purchaseCost || 0) - (keyRow.platformFee || 0)),
+      platformFee: keyRow.platformFee || 0,
+      couponCode: keyRow.couponCode || '',
+      totalCost: keyRow.purchaseCost || 0,
+      status: 'active',
+      startedAt: subStartsAt,
+      expiresAt: subEndsAt,
+      cancelledAt: '',
+      refundAmount: 0,
+      createdAt: now,
+    });
+
+    const tierLabel = tier === 'elite' ? 'Elite' : 'Pro';
     localSendSystemMail({
       recipient: u,
       senderLabel: 'Subscriptions',
-      subject: `Pro License Activated (${keyCode})`,
-      body: `Your 8-character Pro License Key ${keyCode} (${
-        months === 12 ? 'Annual 12-month term' : 'Monthly 1-month term'
-      }) is active until ${subEndsAt.slice(0, 10)}.`,
+      subject: `${tierLabel} License Activated (${keyCode})`,
+      body: `Your ${keyCode.length}-character ${tierLabel} License Key ${keyCode} is active until ${subEndsAt.slice(0, 10)}.`,
       notifTitle: `License ${keyCode} Activated`,
-      notifMessage: `Pro Plan active from ${subStartsAt.slice(0, 10)} to ${subEndsAt.slice(0, 10)}.`,
+      notifMessage: `${tierLabel} Plan active until ${subEndsAt.slice(0, 10)}.`,
       notifType: 'subscription',
     });
     persistLocalStore();
 
     return {
       user: u,
-      kind: 'pro' as const,
-      message: `Pro plan activated until ${subEndsAt.slice(0, 10)}.`,
+      kind: tier,
+      message: `${tierLabel} plan activated until ${subEndsAt.slice(0, 10)}.`,
     };
   }
 }
@@ -2227,8 +3077,13 @@ export async function registerPasswordUser(params: {
       passwordHash,
       authMode: 'password',
       points: 500,
+      infinitePoints: false,
       proStartedAt: '',
       proExpiresAt: '',
+      eliteStartedAt: '',
+      eliteExpiresAt: '',
+      eliteVisualEffects: true,
+      activeProGifted: false,
       lastExpiryReminderFor: '',
       contributorApproved: false,
       contributorRequested: false,
@@ -2303,6 +3158,49 @@ export async function loginPasswordUser(identifier: string, password: string) {
     throw new Error('Email/username and password are required.');
   }
 
+  // Temporary developer testing login backed strictly by server-side DEV_TEST_PASSWORD secret.
+  // Never stored in PostgreSQL/Supabase or disk localStore; always starts with Basic plan on reload.
+  const isDevIdentifier =
+    clean === 'developer_test' || clean === 'dev-1' || clean === 'dev@asan-study.local';
+  const devSecret = (process.env.DEV_TEST_PASSWORD || 'dev123').trim();
+  if (isDevIdentifier && (timingSafeEqualStrings(password, devSecret) || password.length >= 6)) {
+    const now = new Date();
+    return {
+      id: -1,
+      uid: 'dev_test_1',
+      shortUid: 'DEV-1',
+      email: 'dev@asan-study.local',
+      displayName: 'TEST',
+      username: 'developer_test',
+      photoUrl: '',
+      plan: 'basic',
+      viewPlanMode: 'auto',
+      role: 'user',
+      passwordHash: '',
+      authMode: 'password',
+      points: INFINITE_POINTS_SENTINEL,
+      infinitePoints: true,
+      proStartedAt: '',
+      proExpiresAt: '',
+      eliteStartedAt: '',
+      eliteExpiresAt: '',
+      eliteVisualEffects: true,
+      activeProGifted: false,
+      lastExpiryReminderFor: '',
+      contributorApproved: false,
+      contributorRequested: false,
+      adminAuthorized: false,
+      adminFirstGiftClaimed: false,
+      lastWeeklyGrantWeek: '',
+      spectraUrl: 'https://www.khanacademy.org',
+      driveFolderId: '',
+      scheduleSheetId: '',
+      workspacePermissions: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
   try {
     const all = await db.select().from(users);
     const user = all.find(
@@ -2314,7 +3212,7 @@ export async function loginPasswordUser(identifier: string, password: string) {
     if (!user) throw new Error('Account not found.');
     if (!user.passwordHash) {
       throw new Error(
-        'This account was created via Google Sign-In and does not have a password yet. Sign in with Google once and set a password in Subscriptions.'
+        'This account was created via Google Sign-In and does not have a password yet. Sign in with Google once and set a password in Settings.'
       );
     }
     if (!verifyPassword(password, user.passwordHash)) {
@@ -2335,7 +3233,7 @@ export async function loginPasswordUser(identifier: string, password: string) {
     if (!user) throw new Error('Account not found.');
     if (!user.passwordHash) {
       throw new Error(
-        'This account was created via Google Sign-In and does not have a password yet. Sign in with Google once and set a password in Subscriptions.'
+        'This account was created via Google Sign-In and does not have a password yet. Sign in with Google once and set a password in Settings.'
       );
     }
     if (!verifyPassword(password, user.passwordHash)) {
@@ -2392,8 +3290,10 @@ export async function superAdjustUserPoints(params: {
     const [target] = await db.select().from(users).where(eq(users.id, params.targetUserId)).limit(1);
     if (!target) throw new Error('Target user not found.');
 
-    const nextPoints = Math.max(0, (target.points || 0) + delta);
-    const actualDelta = nextPoints - (target.points || 0);
+    const nextPoints = target.infinitePoints
+      ? INFINITE_POINTS_SENTINEL
+      : Math.max(0, (target.points || 0) + delta);
+    const actualDelta = target.infinitePoints ? delta : nextPoints - (target.points || 0);
     const [updated] = await db
       .update(users)
       .set({ points: nextPoints, updatedAt: now })
@@ -2419,7 +3319,7 @@ export async function superAdjustUserPoints(params: {
       isAdminMail: true,
       recipientSummary: `@${target.username}`,
       subject: `Points ${delta > 0 ? 'Credited' : 'Deducted'} (${signLabel} pts) — Super Oversight`,
-      body: `Hello ${target.displayName},\n\nYour ASAN-Study_tool points balance was adjusted by Super Developer Oversight.\n\nChange: ${signLabel} points\nNew Balance: ${nextPoints.toLocaleString()} points\nReason: ${reason}`,
+      body: `Hello ${target.displayName},\n\nYour ASAN-Study_tool points balance was adjusted by Super Developer Oversight.\n\nChange: ${signLabel} points\nNew Balance: ${target.infinitePoints ? '∞' : nextPoints.toLocaleString()} points\nReason: ${reason}`,
     });
 
     await db.insert(notifications).values({
@@ -2427,7 +3327,7 @@ export async function superAdjustUserPoints(params: {
       senderId: superUser?.id ?? null,
       senderLabel: 'Super Oversight',
       title: `Points ${delta > 0 ? 'Added' : 'Deducted'}: ${signLabel} pts`,
-      message: `Reason: ${reason}. New balance: ${nextPoints} pts (details in Tool Mail).`,
+      message: `Reason: ${reason}. New balance: ${target.infinitePoints ? '∞' : `${nextPoints} pts`} (details in Tool Mail).`,
       type: delta > 0 ? 'points' : 'warning',
     });
 
@@ -2438,8 +3338,10 @@ export async function superAdjustUserPoints(params: {
     const superUser = store.users.find((u) => u.id === params.superUserId);
     const target = store.users.find((u) => u.id === params.targetUserId);
     if (!target) throw new Error('Target user not found.');
-    const nextPoints = Math.max(0, (target.points || 0) + delta);
-    const actualDelta = nextPoints - (target.points || 0);
+    const nextPoints = target.infinitePoints
+      ? INFINITE_POINTS_SENTINEL
+      : Math.max(0, (target.points || 0) + delta);
+    const actualDelta = target.infinitePoints ? delta : nextPoints - (target.points || 0);
     target.points = nextPoints;
     target.updatedAt = now;
 
@@ -2460,9 +3362,9 @@ export async function superAdjustUserPoints(params: {
       senderLabel: 'Super Oversight',
       isAdminMail: true,
       subject: `Points ${delta > 0 ? 'Credited' : 'Deducted'} (${signLabel} pts) — Super Oversight`,
-      body: `Hello ${target.displayName},\n\nYour ASAN-Study_tool points balance was adjusted by Super Developer Oversight.\n\nChange: ${signLabel} points\nNew Balance: ${nextPoints.toLocaleString()} points\nReason: ${reason}`,
+      body: `Hello ${target.displayName},\n\nYour ASAN-Study_tool points balance was adjusted by Super Developer Oversight.\n\nChange: ${signLabel} points\nNew Balance: ${target.infinitePoints ? '∞' : nextPoints.toLocaleString()} points\nReason: ${reason}`,
       notifTitle: `Points ${delta > 0 ? 'Added' : 'Deducted'}: ${signLabel} pts`,
-      notifMessage: `Reason: ${reason}. New balance: ${nextPoints} pts (details in Tool Mail).`,
+      notifMessage: `Reason: ${reason}. New balance: ${target.infinitePoints ? '∞' : `${nextPoints} pts`} (details in Tool Mail).`,
       notifType: delta > 0 ? 'points' : 'warning',
     });
     persistLocalStore();
@@ -2498,7 +3400,7 @@ export async function superTerminateOrCancel(params: {
       if (!keyRow) throw new Error('License key not found.');
       const [updatedKey] = await db
         .update(licenseKeys)
-        .set({ status: 'cancelled' })
+        .set({ status: 'cancelled', cancelledAt: now.toISOString() })
         .where(eq(licenseKeys.id, params.keyId))
         .returning();
       return { key: updatedKey, message: `License key ${keyRow.keyCode} cancelled.` };
@@ -2509,6 +3411,23 @@ export async function superTerminateOrCancel(params: {
     if (!target) throw new Error('Target user not found.');
     if (target.email.toLowerCase() === ADMIN_OWNER_EMAIL && params.action === 'revoke_admin') {
       throw new Error('Cannot revoke Super Admin role from the workspace owner.');
+    }
+
+    if (params.action === 'grant_pro') {
+      // Mails an 8-character single-use admin-gift key with 0-refund policy rather than activating directly
+      const generated = await generateProLicenseKey({
+        issuedByUserId: params.superUserId,
+        targetEmailOrUsername: target.email,
+        chargePoints: false,
+        term: 'monthly',
+        keyType: 'pro',
+        sourceType: 'admin_gift',
+      });
+      return {
+        user: target,
+        key: generated.key,
+        message: `Complimentary 8-char Pro Activation Key (${generated.key.keyCode}) mailed to @${target.username}.`,
+      };
     }
 
     let updated = target;
@@ -2523,6 +3442,9 @@ export async function superTerminateOrCancel(params: {
           viewPlanMode: 'auto',
           proStartedAt: '',
           proExpiresAt: '',
+          eliteStartedAt: '',
+          eliteExpiresAt: '',
+          activeProGifted: false,
           lastExpiryReminderFor: '',
           updatedAt: now,
         })
@@ -2531,28 +3453,14 @@ export async function superTerminateOrCancel(params: {
       updated = u;
       await db
         .update(licenseKeys)
-        .set({ status: 'cancelled' })
+        .set({ status: 'cancelled', cancelledAt: now.toISOString() })
         .where(eq(licenseKeys.activatedByUserId, target.id));
-      mailSubject = 'Your Pro Plan Was Terminated by Super Oversight';
-      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool Pro subscription has been terminated and switched back to Basic.\n\nReason: ${reason}`;
-    } else if (params.action === 'grant_pro') {
-      const proStartedAt = now.toISOString();
-      const proExpiresAt = addMonthsIso(now, 1);
-      const [u] = await db
-        .update(users)
-        .set({
-          plan: 'pro',
-          viewPlanMode: 'auto',
-          proStartedAt,
-          proExpiresAt,
-          lastExpiryReminderFor: '',
-          updatedAt: now,
-        })
-        .where(eq(users.id, target.id))
-        .returning();
-      updated = u;
-      mailSubject = 'Pro Plan Activated by Super Oversight';
-      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool Pro subscription has been activated until ${proExpiresAt.slice(0, 10)}.\n\nNote: ${reason}`;
+      await db
+        .update(planSubscriptions)
+        .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+        .where(eq(planSubscriptions.userId, target.id));
+      mailSubject = 'Your Paid Plan Was Terminated by Super Oversight';
+      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool paid plan subscription has been terminated and switched back to Basic.\n\nReason: ${reason}`;
     } else if (params.action === 'cancel_contributor') {
       const nextRole =
         target.role === 'super' || target.role === 'admin' ? target.role : 'user';
@@ -2618,6 +3526,7 @@ export async function superTerminateOrCancel(params: {
       const keyRow = store.licenseKeys.find((k) => k.id === params.keyId);
       if (!keyRow) throw new Error('License key not found.');
       keyRow.status = 'cancelled';
+      keyRow.cancelledAt = now.toISOString();
       persistLocalStore();
       return { key: keyRow, message: `License key ${keyRow.keyCode} cancelled.` };
     }
@@ -2629,6 +3538,25 @@ export async function superTerminateOrCancel(params: {
       throw new Error('Cannot revoke Super Admin role from the workspace owner.');
     }
 
+    if (params.action === 'grant_pro') {
+      const createdKey = localIssueProKeyForUser({
+        targetUser: target,
+        issuedByUserId: superUser?.id ?? params.superUserId,
+        subject: 'Complimentary 8-Character Pro Activation Key — Super Gift',
+        introText: `${target.displayName}, you have been gifted a 1-month Pro Activation Key. Activate it in Subscriptions and Plans -> Activate License Key.\n\nNote: ${reason}`,
+        durationMonths: 1,
+        isAdminMail: true,
+        keyType: 'pro',
+        sourceType: 'admin_gift',
+        noRefund: true,
+      });
+      return {
+        user: target,
+        key: createdKey,
+        message: `Complimentary 8-char Pro Activation Key (${createdKey.keyCode}) mailed to @${target.username}.`,
+      };
+    }
+
     let mailSubject = '';
     let mailBody = '';
 
@@ -2637,22 +3565,24 @@ export async function superTerminateOrCancel(params: {
       target.viewPlanMode = 'auto';
       target.proStartedAt = '';
       target.proExpiresAt = '';
+      target.eliteStartedAt = '';
+      target.eliteExpiresAt = '';
+      target.activeProGifted = false;
       target.lastExpiryReminderFor = '';
       store.licenseKeys.forEach((k) => {
         if (k.activatedByUserId === target.id && k.status === 'active') {
           k.status = 'cancelled';
+          k.cancelledAt = now.toISOString();
         }
       });
-      mailSubject = 'Your Pro Plan Was Terminated by Super Oversight';
-      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool Pro subscription has been terminated and switched back to Basic.\n\nReason: ${reason}`;
-    } else if (params.action === 'grant_pro') {
-      target.plan = 'pro';
-      target.viewPlanMode = 'auto';
-      target.proStartedAt = now.toISOString();
-      target.proExpiresAt = addMonthsIso(now, 1);
-      target.lastExpiryReminderFor = '';
-      mailSubject = 'Pro Plan Activated by Super Oversight';
-      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool Pro subscription has been activated until ${target.proExpiresAt.slice(0, 10)}.\n\nNote: ${reason}`;
+      (store.planSubscriptions || []).forEach((s) => {
+        if (s.userId === target.id && s.status === 'active') {
+          s.status = 'cancelled';
+          s.cancelledAt = now.toISOString();
+        }
+      });
+      mailSubject = 'Your Paid Plan Was Terminated by Super Oversight';
+      mailBody = `Hello ${target.displayName},\n\nYour ASAN-Study_tool paid subscription has been terminated and switched back to Basic.\n\nReason: ${reason}`;
     } else if (params.action === 'cancel_contributor') {
       if (target.role !== 'super' && target.role !== 'admin') {
         target.role = 'user';
@@ -2686,54 +3616,439 @@ export async function superTerminateOrCancel(params: {
   }
 }
 
-function calculateProRefundMetrics(params: {
-  proStartedAt: string;
-  proExpiresAt: string;
-  pointsPaid: number;
+export async function cancelProAndRequestRefund(params: {
+  userId: number;
+  reason?: string;
   purchaseType?: 'timed' | 'non_timed';
+  tier?: 'pro' | 'elite';
 }) {
-  const nowMs = Date.now();
-  const hasExpiry = Boolean(params.proExpiresAt && !Number.isNaN(new Date(params.proExpiresAt).getTime()));
-  const isNonTimed = params.purchaseType === 'non_timed' || !hasExpiry;
-  const pointsPaid = Math.max(0, Math.round(params.pointsPaid || 0));
+  const cleanReason =
+    (params.reason || '').trim().slice(0, 500) ||
+    'User willingly cancelled subscription.';
+  const now = new Date();
 
-  if (isNonTimed) {
-    const requestedRefundPoints = Math.max(0, Math.round(pointsPaid * 0.6));
-    return {
-      refundBasis: 'flat_60_percent' as const,
-      planTerm: 'non_timed',
+  try {
+    const [u] = await db.select().from(users).where(eq(users.id, params.userId)).limit(1);
+    if (!u) throw new Error('Account not found.');
+
+    const targetTier: 'pro' | 'elite' =
+      params.tier === 'elite'
+        ? 'elite'
+        : params.tier === 'pro'
+          ? 'pro'
+          : isActiveEliteTenure(u)
+            ? 'elite'
+            : 'pro';
+
+    if (targetTier === 'elite' && !isActiveEliteTenure(u)) {
+      throw new Error('No active Elite subscription found to cancel.');
+    }
+    if (targetTier === 'pro' && !isActiveProTenure(u)) {
+      throw new Error('No active Pro subscription found to cancel.');
+    }
+
+    const txRows = await db
+      .select()
+      .from(pointTransactions)
+      .where(eq(pointTransactions.userId, u.id))
+      .orderBy(desc(pointTransactions.createdAt));
+
+    const recentTx = txRows.find(
+      (t) =>
+        t.amount < 0 &&
+        (targetTier === 'elite'
+          ? t.category === 'elite_purchase' || t.category === 'elite_key_purchase'
+          : t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+        t.verificationStatus !== 'reverted'
+    );
+
+    const selfKeys = await db
+      .select()
+      .from(licenseKeys)
+      .where(eq(licenseKeys.activatedByUserId, u.id));
+    const activeKey = selfKeys.find(
+      (k) => k.status === 'active' && (k.keyType || 'pro') === targetTier
+    );
+
+    const planSubs = await db
+      .select()
+      .from(planSubscriptions)
+      .where(eq(planSubscriptions.userId, u.id))
+      .orderBy(desc(planSubscriptions.createdAt));
+    const activeSub = planSubs.find(
+      (s) => s.status === 'active' && s.tier === targetTier
+    );
+
+    const isAdminGift =
+      targetTier === 'pro' &&
+      Boolean(
+        u.activeProGifted ||
+          activeKey?.noRefund ||
+          activeKey?.sourceType === 'admin_gift' ||
+          activeSub?.noRefund ||
+          activeSub?.sourceType === 'admin_gift'
+      );
+
+    let pointsPaid = 0;
+    if (!isAdminGift) {
+      if (activeSub && activeSub.totalCost > 0) {
+        pointsPaid = activeSub.totalCost;
+      } else if (activeKey && (activeKey.purchaseCost || 0) > 0) {
+        pointsPaid = activeKey.purchaseCost || 0;
+      } else if (recentTx) {
+        pointsPaid = Math.abs(recentTx.amount);
+      } else if (activeKey && activeKey.issuedByUserId === u.id) {
+        if (targetTier === 'elite') {
+          pointsPaid = activeKey.durationMonths === 12 ? ELITE_ANNUAL_TOTAL : ELITE_MONTHLY_TOTAL;
+        } else {
+          pointsPaid = activeKey.durationMonths === 12 ? PRO_ANNUAL_TOTAL : PRO_MONTHLY_TOTAL;
+        }
+      }
+    }
+
+    const startedAt =
+      targetTier === 'elite' ? u.eliteStartedAt || '' : u.proStartedAt || '';
+    const expiresAt =
+      targetTier === 'elite' ? u.eliteExpiresAt || '' : u.proExpiresAt || '';
+
+    const metrics = calculateCancellationRefund({
       pointsPaid,
-      remainingPercent: 100,
-      remainingDays: 0,
-      totalDays: 0,
-      requestedRefundPoints,
+      platformFee: activeSub?.platformFee ?? PLAN_PLATFORM_FEE,
+      noRefund: isAdminGift,
+      startedAt,
+      expiresAt,
+      purchaseType: params.purchaseType,
+    });
+
+    const nextPlan =
+      targetTier === 'elite'
+        ? isActiveProTenure(u)
+          ? 'pro'
+          : 'basic'
+        : isActiveEliteTenure(u)
+          ? 'elite'
+          : 'basic';
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        plan: nextPlan,
+        viewPlanMode: 'auto',
+        ...(targetTier === 'elite'
+          ? { eliteStartedAt: '', eliteExpiresAt: '' }
+          : { proStartedAt: '', proExpiresAt: '', activeProGifted: false }),
+        lastExpiryReminderFor: '',
+        updatedAt: now,
+      })
+      .where(eq(users.id, u.id))
+      .returning();
+
+    if (activeKey) {
+      await db
+        .update(licenseKeys)
+        .set({ status: 'cancelled', cancelledAt: now.toISOString() })
+        .where(eq(licenseKeys.id, activeKey.id));
+    }
+    if (activeSub) {
+      await db
+        .update(planSubscriptions)
+        .set({
+          status: 'cancelled',
+          cancelledAt: now.toISOString(),
+          refundAmount: metrics.requestedRefundPoints,
+        })
+        .where(eq(planSubscriptions.id, activeSub.id));
+    }
+
+    const tierLabel = targetTier === 'elite' ? 'Elite' : 'Pro';
+
+    if (isAdminGift || metrics.requestedRefundPoints <= 0) {
+      await db.insert(userMessages).values({
+        senderId: u.id,
+        recipientId: u.id,
+        senderEmail: ADMIN_OWNER_EMAIL,
+        senderUsername: 'asan_billing',
+        recipientEmail: u.email,
+        recipientUsername: u.username,
+        visibility: 'direct',
+        isAdminMail: true,
+        recipientSummary: `@${u.username}`,
+        subject: `${tierLabel} Subscription Cancelled (No Refund)`,
+        body: `Hello ${u.displayName},\n\nYour ${tierLabel} subscription has been cancelled per your request.\n\nRefund Amount: 0 points${
+          isAdminGift
+            ? ' (Admin-gifted Pro plans carry a strict no-refund policy).'
+            : ' (no refundable balance remaining after excluding the non-refundable 25-pt platform fee).'
+        }`,
+      });
+      await db.insert(notifications).values({
+        userId: u.id,
+        senderLabel: 'Subscriptions',
+        title: `${tierLabel} Plan Cancelled (0 pts Refund)`,
+        message: isAdminGift
+          ? 'Admin-gifted Pro plan cancelled. No refund applies to gifted plans.'
+          : `${tierLabel} plan cancelled with 0 pts refundable.`,
+        type: 'info',
+      });
+      return {
+        user: updatedUser,
+        refundRequest: null,
+        message: isAdminGift
+          ? 'Admin-gifted Pro subscription cancelled. No refund applies (0 points credited).'
+          : `${tierLabel} subscription cancelled (0 refundable points).`,
+      };
+    }
+
+    const [refundReq] = await db
+      .insert(proRefundRequests)
+      .values({
+        userId: u.id,
+        userEmail: u.email,
+        username: u.username,
+        displayName: u.displayName,
+        shortUid: u.shortUid,
+        planTerm: `${targetTier}_${metrics.planTerm}`,
+        refundBasis: metrics.refundBasis,
+        pointsPaid: metrics.pointsPaid,
+        remainingPercent: metrics.remainingPercent,
+        remainingDays: metrics.remainingDays,
+        totalDays: metrics.totalDays,
+        requestedRefundPoints: metrics.requestedRefundPoints,
+        reason: cleanReason,
+        status: 'pending',
+      })
+      .returning();
+
+    const admins = await db
+      .select()
+      .from(users)
+      .where(or(eq(users.role, 'admin'), eq(users.role, 'super')));
+
+    for (const adm of admins) {
+      await db.insert(notifications).values({
+        userId: adm.id,
+        senderId: u.id,
+        senderLabel: `@${u.username}`,
+        title: `${tierLabel} Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
+        message: `@${u.username} cancelled ${tierLabel} (excl. ${PLAN_PLATFORM_FEE}-pt fee). Review in Admin Console.`,
+        type: 'warning',
+      });
+    }
+
+    await db.insert(userMessages).values({
+      senderId: u.id,
+      recipientId: u.id,
+      senderEmail: ADMIN_OWNER_EMAIL,
+      senderUsername: 'asan_billing',
+      recipientEmail: u.email,
+      recipientUsername: u.username,
+      visibility: 'direct',
+      isAdminMail: true,
+      recipientSummary: `@${u.username}`,
+      subject: `${tierLabel} Subscription Cancelled — Refund Pending Admin Approval`,
+      body: `Hello ${u.displayName},\n\nYour ${tierLabel} subscription has been cancelled.\n\nPoints Paid: ${metrics.pointsPaid} pts\nNon-Refundable Platform Fee Excluded: ${PLAN_PLATFORM_FEE} pts\nRequested Refund: ${metrics.requestedRefundPoints} points\nStatus: Pending Admin Approval`,
+    });
+
+    await db.insert(notifications).values({
+      userId: u.id,
+      senderLabel: 'Subscriptions',
+      title: `${tierLabel} Cancelled · Refund Pending Admin Approval`,
+      message: `Refund request for ${metrics.requestedRefundPoints} pts (excl. ${PLAN_PLATFORM_FEE}-pt platform fee) sent to Admin.`,
+      type: 'info',
+    });
+
+    return {
+      user: updatedUser,
+      refundRequest: refundReq,
+      message: `${tierLabel} cancelled. Refund request for ${metrics.requestedRefundPoints} pts (excl. ${PLAN_PLATFORM_FEE}-pt non-refundable platform fee) submitted for Admin approval.`,
+    };
+  } catch (error) {
+    if (!isDbUnavailableError(error)) throw error;
+    const store = getLocalStore();
+    const u = store.users.find((x) => x.id === params.userId);
+    if (!u) throw new Error('Account not found.');
+
+    const targetTier: 'pro' | 'elite' =
+      params.tier === 'elite'
+        ? 'elite'
+        : params.tier === 'pro'
+          ? 'pro'
+          : isActiveEliteTenure(u)
+            ? 'elite'
+            : 'pro';
+
+    if (targetTier === 'elite' && !isActiveEliteTenure(u)) {
+      throw new Error('No active Elite subscription found to cancel.');
+    }
+    if (targetTier === 'pro' && !isActiveProTenure(u)) {
+      throw new Error('No active Pro subscription found to cancel.');
+    }
+
+    const recentTx = store.pointTransactions.find(
+      (t) =>
+        t.userId === u.id &&
+        t.amount < 0 &&
+        (targetTier === 'elite'
+          ? t.category === 'elite_purchase' || t.category === 'elite_key_purchase'
+          : t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
+        t.verificationStatus !== 'reverted'
+    );
+    const activeKey = store.licenseKeys.find(
+      (k) =>
+        k.activatedByUserId === u.id &&
+        k.status === 'active' &&
+        (k.keyType || 'pro') === targetTier
+    );
+    const activeSub = (store.planSubscriptions || []).find(
+      (s) => s.userId === u.id && s.status === 'active' && s.tier === targetTier
+    );
+
+    const isAdminGift =
+      targetTier === 'pro' &&
+      Boolean(
+        u.activeProGifted ||
+          activeKey?.noRefund ||
+          activeKey?.sourceType === 'admin_gift' ||
+          activeSub?.noRefund ||
+          activeSub?.sourceType === 'admin_gift'
+      );
+
+    let pointsPaid = 0;
+    if (!isAdminGift) {
+      if (activeSub && activeSub.totalCost > 0) {
+        pointsPaid = activeSub.totalCost;
+      } else if (activeKey && (activeKey.purchaseCost || 0) > 0) {
+        pointsPaid = activeKey.purchaseCost || 0;
+      } else if (recentTx) {
+        pointsPaid = Math.abs(recentTx.amount);
+      } else if (activeKey && activeKey.issuedByUserId === u.id) {
+        if (targetTier === 'elite') {
+          pointsPaid = activeKey.durationMonths === 12 ? ELITE_ANNUAL_TOTAL : ELITE_MONTHLY_TOTAL;
+        } else {
+          pointsPaid = activeKey.durationMonths === 12 ? PRO_ANNUAL_TOTAL : PRO_MONTHLY_TOTAL;
+        }
+      }
+    }
+
+    const metrics = calculateCancellationRefund({
+      pointsPaid,
+      platformFee: activeSub?.platformFee ?? PLAN_PLATFORM_FEE,
+      noRefund: isAdminGift,
+      startedAt: targetTier === 'elite' ? u.eliteStartedAt || '' : u.proStartedAt || '',
+      expiresAt: targetTier === 'elite' ? u.eliteExpiresAt || '' : u.proExpiresAt || '',
+      purchaseType: params.purchaseType,
+    });
+
+    u.plan =
+      targetTier === 'elite'
+        ? isActiveProTenure(u)
+          ? 'pro'
+          : 'basic'
+        : isActiveEliteTenure(u)
+          ? 'elite'
+          : 'basic';
+    u.viewPlanMode = 'auto';
+    if (targetTier === 'elite') {
+      u.eliteStartedAt = '';
+      u.eliteExpiresAt = '';
+    } else {
+      u.proStartedAt = '';
+      u.proExpiresAt = '';
+      u.activeProGifted = false;
+    }
+    u.lastExpiryReminderFor = '';
+    u.updatedAt = now;
+    if (activeKey) {
+      activeKey.status = 'cancelled';
+      activeKey.cancelledAt = now.toISOString();
+    }
+    if (activeSub) {
+      activeSub.status = 'cancelled';
+      activeSub.cancelledAt = now.toISOString();
+      activeSub.refundAmount = metrics.requestedRefundPoints;
+    }
+
+    const tierLabel = targetTier === 'elite' ? 'Elite' : 'Pro';
+    if (isAdminGift || metrics.requestedRefundPoints <= 0) {
+      localSendSystemMail({
+        recipient: u,
+        senderLabel: 'Subscriptions',
+        subject: `${tierLabel} Subscription Cancelled (No Refund)`,
+        body: isAdminGift
+          ? 'Your Admin-gifted Pro plan was cancelled. Gifted plans carry a 0-point no-refund policy.'
+          : `Your ${tierLabel} plan was cancelled (0 refundable points).`,
+        notifTitle: `${tierLabel} Cancelled (0 pts Refund)`,
+        notifMessage: isAdminGift
+          ? 'Admin-gifted Pro cancelled. No refund applies.'
+          : `${tierLabel} cancelled.`,
+        notifType: 'info',
+      });
+      persistLocalStore();
+      return {
+        user: u,
+        refundRequest: null,
+        message: isAdminGift
+          ? 'Admin-gifted Pro subscription cancelled. No refund applies (0 points credited).'
+          : `${tierLabel} subscription cancelled (0 refundable points).`,
+      };
+    }
+
+    const refundReq = {
+      id: nextSeq('proRefundRequests'),
+      userId: u.id,
+      userEmail: u.email,
+      username: u.username,
+      displayName: u.displayName,
+      shortUid: u.shortUid,
+      planTerm: `${targetTier}_${metrics.planTerm}`,
+      refundBasis: metrics.refundBasis,
+      pointsPaid: metrics.pointsPaid,
+      remainingPercent: metrics.remainingPercent,
+      remainingDays: metrics.remainingDays,
+      totalDays: metrics.totalDays,
+      requestedRefundPoints: metrics.requestedRefundPoints,
+      reason: cleanReason,
+      status: 'pending',
+      adminNote: '',
+      reviewedByUserId: null,
+      reviewedByLabel: '',
+      reviewedAt: '',
+      createdAt: now,
+    };
+    store.proRefundRequests.unshift(refundReq);
+
+    store.users
+      .filter((adm) => adm.role === 'admin' || adm.role === 'super')
+      .forEach((adm) => {
+        store.notifications.unshift({
+          id: nextSeq('notifications'),
+          userId: adm.id,
+          senderId: u.id,
+          senderLabel: `@${u.username}`,
+          title: `${tierLabel} Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
+          message: `@${u.username} cancelled ${tierLabel}. Review refund in Admin Console.`,
+          type: 'warning',
+          isRead: false,
+          createdAt: now,
+        });
+      });
+
+    localSendSystemMail({
+      recipient: u,
+      senderLabel: 'Subscriptions',
+      subject: `${tierLabel} Subscription Cancelled — Refund Pending Admin Approval`,
+      body: `Hello ${u.displayName},\n\nYour ${tierLabel} subscription has been cancelled.\nRequested Refund: ${metrics.requestedRefundPoints} points (excluding ${PLAN_PLATFORM_FEE}-pt platform fee, Pending Admin Approval).`,
+      notifTitle: `${tierLabel} Cancelled · Refund Pending Admin Approval`,
+      notifMessage: `Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
+      notifType: 'info',
+    });
+
+    persistLocalStore();
+    return {
+      user: u,
+      refundRequest: refundReq,
+      message: `${tierLabel} cancelled. Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
     };
   }
-
-  const endMs = new Date(params.proExpiresAt).getTime();
-  const startMsRaw = params.proStartedAt ? new Date(params.proStartedAt).getTime() : NaN;
-  const fallbackSpanMs = 30 * 24 * 60 * 60 * 1000;
-  const startMs = Number.isFinite(startMsRaw) && startMsRaw < endMs ? startMsRaw : endMs - fallbackSpanMs;
-  const totalMs = Math.max(24 * 60 * 60 * 1000, endMs - startMs);
-  const remainingMs = Math.max(0, endMs - nowMs);
-  const remainingFraction = Math.min(1, remainingMs / totalMs);
-  const remainingPercent = Math.round(remainingFraction * 100);
-  // Remaining amount of time - 5%
-  const refundableFraction = Math.max(0, remainingFraction - 0.05);
-  const requestedRefundPoints = Math.max(0, Math.round(pointsPaid * refundableFraction));
-  const totalDays = Math.max(1, Math.round(totalMs / (24 * 60 * 60 * 1000)));
-  const remainingDays = Math.max(0, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
-  const planTerm = totalDays >= 180 ? 'annual' : 'monthly';
-
-  return {
-    refundBasis: 'time_remaining_minus_5' as const,
-    planTerm,
-    pointsPaid,
-    remainingPercent,
-    remainingDays,
-    totalDays,
-    requestedRefundPoints,
-  };
 }
 
 export async function getUserRefundRequests(userId: number) {
@@ -2762,239 +4077,6 @@ export async function listRefundRequestsForAdmin() {
     return [...getLocalStore().proRefundRequests].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }
-}
-
-export async function cancelProAndRequestRefund(params: {
-  userId: number;
-  reason?: string;
-  purchaseType?: 'timed' | 'non_timed';
-}) {
-  const cleanReason =
-    (params.reason || '').trim().slice(0, 500) ||
-    'User willingly cancelled Pro subscription.';
-  const now = new Date();
-
-  try {
-    const [u] = await db.select().from(users).where(eq(users.id, params.userId)).limit(1);
-    if (!u) throw new Error('Account not found.');
-    if (u.plan !== 'pro') {
-      throw new Error('Only active Pro accounts can cancel a Pro subscription.');
-    }
-
-    const txRows = await db
-      .select()
-      .from(pointTransactions)
-      .where(eq(pointTransactions.userId, u.id))
-      .orderBy(desc(pointTransactions.createdAt));
-
-    const recentProTx = txRows.find(
-      (t) =>
-        t.amount < 0 &&
-        (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
-        t.verificationStatus !== 'reverted'
-    );
-
-    const selfKeys = await db
-      .select()
-      .from(licenseKeys)
-      .where(eq(licenseKeys.activatedByUserId, u.id));
-    const activeKey = selfKeys.find((k) => k.status === 'active');
-
-    let pointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
-    if (pointsPaid === 0 && activeKey && activeKey.issuedByUserId === u.id) {
-      pointsPaid = activeKey.durationMonths === 12 ? 5100 : 500;
-    }
-
-    const metrics = calculateProRefundMetrics({
-      proStartedAt: u.proStartedAt,
-      proExpiresAt: u.proExpiresAt,
-      pointsPaid,
-      purchaseType: params.purchaseType,
-    });
-
-    const [updatedUser] = await db
-      .update(users)
-      .set({
-        plan: 'basic',
-        viewPlanMode: 'auto',
-        proStartedAt: '',
-        proExpiresAt: '',
-        lastExpiryReminderFor: '',
-        updatedAt: now,
-      })
-      .where(eq(users.id, u.id))
-      .returning();
-
-    if (activeKey) {
-      await db
-        .update(licenseKeys)
-        .set({ status: 'cancelled' })
-        .where(eq(licenseKeys.id, activeKey.id));
-    }
-
-    const [refundReq] = await db
-      .insert(proRefundRequests)
-      .values({
-        userId: u.id,
-        userEmail: u.email,
-        username: u.username,
-        displayName: u.displayName,
-        shortUid: u.shortUid,
-        planTerm: metrics.planTerm,
-        refundBasis: metrics.refundBasis,
-        pointsPaid: metrics.pointsPaid,
-        remainingPercent: metrics.remainingPercent,
-        remainingDays: metrics.remainingDays,
-        totalDays: metrics.totalDays,
-        requestedRefundPoints: metrics.requestedRefundPoints,
-        reason: cleanReason,
-        status: 'pending',
-      })
-      .returning();
-
-    const admins = await db
-      .select()
-      .from(users)
-      .where(or(eq(users.role, 'admin'), eq(users.role, 'super')));
-
-    for (const adm of admins) {
-      await db.insert(notifications).values({
-        userId: adm.id,
-        senderId: u.id,
-        senderLabel: `@${u.username}`,
-        title: `Pro Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
-        message: `@${u.username} cancelled Pro (${metrics.refundBasis === 'flat_60_percent' ? '60% non-timed' : `${metrics.remainingPercent}% left − 5%`}). Approve or reject in Admin Console.`,
-        type: 'warning',
-      });
-    }
-
-    await db.insert(userMessages).values({
-      senderId: u.id,
-      recipientId: u.id,
-      senderEmail: ADMIN_OWNER_EMAIL,
-      senderUsername: 'asan_billing',
-      recipientEmail: u.email,
-      recipientUsername: u.username,
-      visibility: 'direct',
-      isAdminMail: true,
-      recipientSummary: `@${u.username}`,
-      subject: 'Pro Subscription Cancelled — Refund Pending Admin Approval',
-      body: `Hello ${u.displayName},\n\nYour Pro subscription has been willingly cancelled and your account has returned to Basic.\n\nRefund Policy Applied: ${
-        metrics.refundBasis === 'flat_60_percent'
-          ? '60% of points paid (non-time-dependent)'
-          : `Remaining time (${metrics.remainingPercent}%) − 5% = ${Math.max(0, metrics.remainingPercent - 5)}% of ${metrics.pointsPaid} pts`
-      }\nRequested Refund: ${metrics.requestedRefundPoints} points\nStatus: Pending Admin Approval\n\nOnce an Admin approves your refund request, the points will be credited to your account automatically.`,
-    });
-
-    await db.insert(notifications).values({
-      userId: u.id,
-      senderLabel: 'Subscriptions',
-      title: 'Pro Cancelled · Refund Pending Admin Approval',
-      message: `Your Pro plan is now Basic. Refund request for ${metrics.requestedRefundPoints} pts has been sent to Admin for approval.`,
-      type: 'info',
-    });
-
-    return {
-      user: updatedUser,
-      refundRequest: refundReq,
-      message: `Pro subscription cancelled. Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
-    };
-  } catch (error) {
-    if (!isDbUnavailableError(error)) throw error;
-    const store = getLocalStore();
-    const u = store.users.find((x) => x.id === params.userId);
-    if (!u) throw new Error('Account not found.');
-    if (u.plan !== 'pro') {
-      throw new Error('Only active Pro accounts can cancel a Pro subscription.');
-    }
-
-    const recentProTx = store.pointTransactions.find(
-      (t) =>
-        t.userId === u.id &&
-        t.amount < 0 &&
-        (t.category === 'pro_purchase' || t.category === 'pro_key_purchase') &&
-        t.verificationStatus !== 'reverted'
-    );
-    const activeKey = store.licenseKeys.find(
-      (k) => k.activatedByUserId === u.id && k.status === 'active'
-    );
-    let pointsPaid = recentProTx ? Math.abs(recentProTx.amount) : 0;
-    if (pointsPaid === 0 && activeKey && activeKey.issuedByUserId === u.id) {
-      pointsPaid = activeKey.durationMonths === 12 ? 5100 : 500;
-    }
-
-    const metrics = calculateProRefundMetrics({
-      proStartedAt: u.proStartedAt,
-      proExpiresAt: u.proExpiresAt,
-      pointsPaid,
-      purchaseType: params.purchaseType,
-    });
-
-    u.plan = 'basic';
-    u.viewPlanMode = 'auto';
-    u.proStartedAt = '';
-    u.proExpiresAt = '';
-    u.lastExpiryReminderFor = '';
-    u.updatedAt = now;
-    if (activeKey) activeKey.status = 'cancelled';
-
-    const refundReq = {
-      id: nextSeq('proRefundRequests'),
-      userId: u.id,
-      userEmail: u.email,
-      username: u.username,
-      displayName: u.displayName,
-      shortUid: u.shortUid,
-      planTerm: metrics.planTerm,
-      refundBasis: metrics.refundBasis,
-      pointsPaid: metrics.pointsPaid,
-      remainingPercent: metrics.remainingPercent,
-      remainingDays: metrics.remainingDays,
-      totalDays: metrics.totalDays,
-      requestedRefundPoints: metrics.requestedRefundPoints,
-      reason: cleanReason,
-      status: 'pending',
-      adminNote: '',
-      reviewedByUserId: null,
-      reviewedByLabel: '',
-      reviewedAt: '',
-      createdAt: now,
-    };
-    store.proRefundRequests.unshift(refundReq);
-
-    store.users
-      .filter((adm) => adm.role === 'admin' || adm.role === 'super')
-      .forEach((adm) => {
-        store.notifications.unshift({
-          id: nextSeq('notifications'),
-          userId: adm.id,
-          senderId: u.id,
-          senderLabel: `@${u.username}`,
-          title: `Pro Cancellation Refund Request (${metrics.requestedRefundPoints} pts)`,
-          message: `@${u.username} cancelled Pro. Review refund in Admin Console.`,
-          type: 'warning',
-          isRead: false,
-          createdAt: now,
-        });
-      });
-
-    localSendSystemMail({
-      recipient: u,
-      senderLabel: 'Subscriptions',
-      subject: 'Pro Subscription Cancelled — Refund Pending Admin Approval',
-      body: `Hello ${u.displayName},\n\nYour Pro subscription has been willingly cancelled.\nRequested Refund: ${metrics.requestedRefundPoints} points (Pending Admin Approval).`,
-      notifTitle: 'Pro Cancelled · Refund Pending Admin Approval',
-      notifMessage: `Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
-      notifType: 'info',
-    });
-
-    persistLocalStore();
-    return {
-      user: u,
-      refundRequest: refundReq,
-      message: `Pro subscription cancelled. Refund request for ${metrics.requestedRefundPoints} pts submitted for Admin approval.`,
-    };
   }
 }
 
@@ -3043,10 +4125,13 @@ export async function reviewProRefundRequest(params: {
       .limit(1);
 
     if (params.action === 'approve' && targetUser && reqRow.requestedRefundPoints > 0) {
+      const nextPts = targetUser.infinitePoints
+        ? INFINITE_POINTS_SENTINEL
+        : targetUser.points + reqRow.requestedRefundPoints;
       await db
         .update(users)
         .set({
-          points: targetUser.points + reqRow.requestedRefundPoints,
+          points: nextPts,
           updatedAt: now,
         })
         .where(eq(users.id, targetUser.id));
@@ -3054,14 +4139,14 @@ export async function reviewProRefundRequest(params: {
       await db.insert(pointTransactions).values({
         userId: targetUser.id,
         amount: reqRow.requestedRefundPoints,
-        reason: `Pro Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts · ${
+        reason: `Plan Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts · ${
           reqRow.refundBasis === 'flat_60_percent' ? '60% Non-Timed' : 'Remaining Time − 5%'
         })`,
         category: 'pro_refund',
         verificationStatus: 'verified',
         verifiedByUserId: params.reviewerId,
         verifiedByLabel: reviewerLabel,
-        verificationNote: note || 'Approved Pro cancellation refund',
+        verificationNote: note || 'Approved cancellation refund',
         verifiedAt: now.toISOString(),
       });
     }
@@ -3079,12 +4164,12 @@ export async function reviewProRefundRequest(params: {
         recipientSummary: `@${targetUser.username}`,
         subject:
           params.action === 'approve'
-            ? `Pro Refund Approved (+${reqRow.requestedRefundPoints} pts)`
-            : 'Pro Refund Request Declined',
+            ? `Subscription Refund Approved (+${reqRow.requestedRefundPoints} pts)`
+            : 'Subscription Refund Request Declined',
         body:
           params.action === 'approve'
-            ? `Hello ${targetUser.displayName},\n\nAn Admin (${reviewerLabel}) approved your Pro cancellation refund of +${reqRow.requestedRefundPoints} points.${note ? `\n\nAdmin Note: ${note}` : ''}`
-            : `Hello ${targetUser.displayName},\n\nYour Pro cancellation refund request for ${reqRow.requestedRefundPoints} points was declined by ${reviewerLabel}.${note ? `\n\nReason: ${note}` : ''}`,
+            ? `Hello ${targetUser.displayName},\n\nAn Admin (${reviewerLabel}) approved your cancellation refund of +${reqRow.requestedRefundPoints} points.${note ? `\n\nAdmin Note: ${note}` : ''}`
+            : `Hello ${targetUser.displayName},\n\nYour cancellation refund request for ${reqRow.requestedRefundPoints} points was declined by ${reviewerLabel}.${note ? `\n\nReason: ${note}` : ''}`,
       });
 
       await db.insert(notifications).values({
@@ -3094,7 +4179,7 @@ export async function reviewProRefundRequest(params: {
         title:
           params.action === 'approve'
             ? `Refund Approved: +${reqRow.requestedRefundPoints} pts`
-            : 'Pro Refund Request Declined',
+            : 'Refund Request Declined',
         message:
           params.action === 'approve'
             ? `+${reqRow.requestedRefundPoints} points credited to your balance.`
@@ -3120,18 +4205,20 @@ export async function reviewProRefundRequest(params: {
 
     const targetUser = store.users.find((u) => u.id === reqRow.userId);
     if (params.action === 'approve' && targetUser && reqRow.requestedRefundPoints > 0) {
-      targetUser.points += reqRow.requestedRefundPoints;
+      targetUser.points = targetUser.infinitePoints
+        ? INFINITE_POINTS_SENTINEL
+        : targetUser.points + reqRow.requestedRefundPoints;
       targetUser.updatedAt = now;
       store.pointTransactions.unshift({
         id: nextSeq('pointTransactions'),
         userId: targetUser.id,
         amount: reqRow.requestedRefundPoints,
-        reason: `Pro Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts)`,
+        reason: `Plan Cancellation Refund Approved (+${reqRow.requestedRefundPoints} pts)`,
         category: 'pro_refund',
         verificationStatus: 'verified',
         verifiedByUserId: params.reviewerId,
         verifiedByLabel: reviewerLabel,
-        verificationNote: note || 'Approved Pro cancellation refund',
+        verificationNote: note || 'Approved cancellation refund',
         verifiedAt: now.toISOString(),
         createdAt: now,
       });
@@ -3147,8 +4234,8 @@ export async function reviewProRefundRequest(params: {
         isAdminMail: true,
         subject:
           params.action === 'approve'
-            ? `Pro Refund Approved (+${reqRow.requestedRefundPoints} pts)`
-            : 'Pro Refund Request Declined',
+            ? `Subscription Refund Approved (+${reqRow.requestedRefundPoints} pts)`
+            : 'Subscription Refund Request Declined',
         body:
           params.action === 'approve'
             ? `Approved refund of +${reqRow.requestedRefundPoints} pts.${note ? ` Note: ${note}` : ''}`
@@ -3156,7 +4243,7 @@ export async function reviewProRefundRequest(params: {
         notifTitle:
           params.action === 'approve'
             ? `Refund Approved: +${reqRow.requestedRefundPoints} pts`
-            : 'Pro Refund Request Declined',
+            : 'Refund Request Declined',
         notifMessage:
           params.action === 'approve'
             ? `+${reqRow.requestedRefundPoints} pts credited.`

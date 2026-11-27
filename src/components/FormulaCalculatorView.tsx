@@ -11,11 +11,18 @@ import {
   Plus,
   Sparkles,
   Square,
+  Tag,
   Trash2,
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch, apiPublicFetch } from '../lib/api';
+import {
+  APP_PLATFORM_FEE,
+  INFINITE_POINTS_SENTINEL,
+  calculateRepoOrAppQuote,
+  type CouponLike,
+} from '../lib/pricing';
 import {
   GEOMETRY_CASE_LABEL,
   autoDetectFormulaCase,
@@ -174,6 +181,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
   const {
     dbUser,
     isGuest,
+    effectivePlan,
     isEffectiveProOrAdmin,
     isApprovedContributor,
     isAdmin,
@@ -182,6 +190,11 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
     exitGuestToSignIn,
   } = useAuth();
   const canAuthorFormulas = Boolean(isApprovedContributor || isAdmin || isSuper);
+  const eliteGlow = effectivePlan === 'elite' && dbUser?.eliteVisualEffects !== false;
+  const formatPts = (val: number | undefined | null) =>
+    dbUser?.infinitePoints || (val ?? 0) >= INFINITE_POINTS_SENTINEL
+      ? '∞ pts'
+      : `${(val ?? 0).toLocaleString()} pts`;
 
   const [activeTab, setActiveTab] = useState<'solver' | 'library'>('solver');
   const [formulas, setFormulas] = useState<FormulaEquationItem[]>([]);
@@ -192,6 +205,9 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
   const [loadingAccess, setLoadingAccess] = useState(false);
   const [togglingAccess, setTogglingAccess] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponLike | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
   const renewInFlightRef = useRef(false);
 
   // Solver State
@@ -221,6 +237,17 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
 
   const isProIncluded = Boolean(isEffectiveProOrAdmin || accessStatus?.proIncluded);
   const hasSolverAccess = Boolean(!isGuest && (isProIncluded || accessStatus?.hasAccess));
+  const startQuote = useMemo(
+    () =>
+      calculateRepoOrAppQuote({
+        targetScope: 'apps_metered',
+        baseSubtotal: accessStatus?.nextQuarterCost ?? 8,
+        effectivePlan,
+        role: dbUser?.role || 'user',
+        coupon: appliedCoupon,
+      }),
+    [accessStatus?.nextQuarterCost, effectivePlan, dbUser?.role, appliedCoupon]
+  );
 
   const loadFormulas = useCallback(async () => {
     setLoadingFormulas(true);
@@ -278,6 +305,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
         renewInFlightRef.current = true;
         void apiFetch<FormulaAccessStatus>('/api/formula-access/renew', {
           method: 'POST',
+          body: JSON.stringify({ couponCode: appliedCoupon?.code || undefined }),
         })
           .then(async (next) => {
             setAccessStatus(next);
@@ -330,6 +358,34 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
     selectedCase,
   ]);
 
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) {
+      setAppliedCoupon(null);
+      return;
+    }
+    setValidatingCoupon(true);
+    setErrorMsg(null);
+    setStatusMsg(null);
+    try {
+      const res = await apiFetch<{ valid: boolean; coupon: CouponLike }>('/api/coupons/validate', {
+        method: 'POST',
+        body: JSON.stringify({
+          code,
+          targetScope: 'apps_metered',
+          baseSubtotal: accessStatus?.nextQuarterCost ?? 8,
+        }),
+      });
+      setAppliedCoupon(res.coupon);
+      setStatusMsg(`Coupon "${res.coupon.code}" applied to metered formula access.`);
+    } catch (err) {
+      setAppliedCoupon(null);
+      setErrorMsg(err instanceof Error ? err.message : 'Invalid metered app coupon.');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
   const handleEnableMetered = async () => {
     setTogglingAccess(true);
     setErrorMsg(null);
@@ -337,14 +393,15 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
     try {
       const res = await apiFetch<FormulaAccessStatus>('/api/formula-access/start', {
         method: 'POST',
+        body: JSON.stringify({ couponCode: appliedCoupon?.code || undefined }),
       });
       setAccessStatus(res);
       await refreshProfile();
       setStatusMsg(
         res.proIncluded
-          ? 'Pro / Admin access active — unlimited usage.'
+          ? 'Pro / Elite / Admin access active — unlimited usage.'
           : res.lastChargedPoints > 0
-            ? `Metered access enabled: ${res.lastChargedPoints} pts billed for 15 min (30 pts/hr rate).`
+            ? `Metered access enabled: ${res.lastChargedPoints} pts billed for 15 min (incl. ${APP_PLATFORM_FEE}-pt App platform fee).`
             : `Metered access resumed inside your active 15-min quarter.`
       );
       if (formulas.length > 0) {
@@ -624,7 +681,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
               Formula Equation &amp; Case Parameter Calculator
             </h1>
             <span className="asan-pro-badge rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-              Pro or 30 pts/hr
+              Pro / Elite or 30 pts/hr
             </span>
           </div>
           <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -661,14 +718,16 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
         </div>
       </div>
 
-      {/* Pro / Metered Hourly Access Strip (30 pts/hr billed quarterly every 15 min) */}
+      {/* Pro / Elite / Metered Hourly Access Strip (30 pts/hr billed quarterly every 15 min) */}
       <div
         className={`rounded-xl border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${
-          isProIncluded
-            ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
-            : hasSolverAccess
-              ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/60 dark:bg-emerald-950/30'
-              : 'border-amber-200 dark:border-amber-800/80 bg-amber-50/70 dark:bg-amber-950/30'
+          eliteGlow
+            ? 'asan-elite-card border-cyan-400/50 dark:border-cyan-400/50'
+            : isProIncluded
+              ? 'asan-pro-card border-indigo-200 dark:border-indigo-800/70'
+              : hasSolverAccess
+                ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/60 dark:bg-emerald-950/30'
+                : 'border-amber-200 dark:border-amber-800/80 bg-amber-50/70 dark:bg-amber-950/30'
         }`}
       >
         <div className="space-y-1">
@@ -677,7 +736,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
               <>
                 <Crown className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Formula Calculator Included in Pro / Admin
+                  Formula Calculator Included in {effectivePlan === 'elite' ? 'Elite' : 'Pro / Admin'}
                 </span>
                 <span className="rounded bg-indigo-100 dark:bg-indigo-900/60 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
                   Unlimited · 0 pts/hr
@@ -687,14 +746,14 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
               <>
                 <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Pro Plan or Metered Access Required (30 pts/hr · Quarterly 15-min billing)
+                  Pro / Elite Plan or Metered Access Required (30 pts/hr · +{APP_PLATFORM_FEE}-pt initial App fee)
                 </span>
               </>
             ) : (
               <>
                 <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Metered Hourly Access · 30 pts/hr (Calculated Quarterly: 8 / 7 / 8 / 7 pts per 15 min)
+                  Metered Hourly Access · 30 pts/hr (8 / 7 / 8 / 7 pts per 15 min + {APP_PLATFORM_FEE}-pt App fee on enable)
                 </span>
                 {accessStatus?.enabled && (
                   <span className="rounded bg-emerald-600 px-2 py-0.5 font-mono text-[10px] font-bold text-white tabular-nums">
@@ -707,14 +766,14 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
 
           <p className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
             {isProIncluded
-              ? 'Your active Pro, Admin, or Super privileges include unrestricted access to all case equations and symbolic conic solvers.'
+              ? 'Your active Pro, Elite, Admin, or Super privileges include unrestricted access to all case equations and symbolic conic solvers.'
               : isGuest
-                ? 'Sign in with Google or Email/Password to toggle Metered Access (30 pts/hr billed every 15 minutes) or activate Pro.'
+                ? 'Sign in with Google or Email/Password to toggle Metered Access (30 pts/hr billed every 15 minutes) or activate Pro / Elite.'
                 : loadingAccess
                   ? 'Checking metered session status...'
                   : accessStatus?.enabled
-                    ? `Balance: ${dbUser?.points ?? accessStatus.points ?? 0} pts · Session billed: ${accessStatus.totalSessionPoints} pts · Re-bills automatically every 15 minutes until manually disabled.`
-                    : `Balance: ${dbUser?.points ?? accessStatus?.points ?? 0} pts · Manual Enable/Disable — starts at ${accessStatus?.nextQuarterCost ?? 8} pts for the first 15-minute quarter (exact 30 pts/hr across 4 quarters).`}
+                    ? `Balance: ${formatPts(dbUser?.points ?? accessStatus.points ?? 0)} · Session billed: ${accessStatus.totalSessionPoints} pts · Re-bills automatically every 15 minutes until manually disabled.`
+                    : `Balance: ${formatPts(dbUser?.points ?? accessStatus?.points ?? 0)} · First 15-min start quote: ${startQuote.finalCost} pts (${accessStatus?.nextQuarterCost ?? 8} pts quarter + ${APP_PLATFORM_FEE} App fee${startQuote.tierDiscountAmount > 0 ? ` − ${startQuote.tierDiscountPercent}% tier` : ''}${startQuote.couponDiscount > 0 ? ` − ${startQuote.couponDiscount} coupon` : ''}).`}
           </p>
         </div>
 
@@ -729,6 +788,38 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
             </button>
           ) : !isProIncluded ? (
             <>
+              {!accessStatus?.enabled && (
+                <div className="flex items-center gap-1">
+                  <Tag className="h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                    placeholder="App coupon"
+                    className="w-24 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 font-mono text-[11px] uppercase text-slate-900 dark:text-slate-100"
+                  />
+                  <button
+                    type="button"
+                    disabled={validatingCoupon || !couponInput.trim()}
+                    onClick={() => void handleApplyCoupon()}
+                    className="rounded-md bg-slate-800 dark:bg-slate-700 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+                  >
+                    {validatingCoupon ? '...' : 'Apply'}
+                  </button>
+                  {appliedCoupon && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAppliedCoupon(null);
+                        setCouponInput('');
+                      }}
+                      className="rounded border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-1 font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
+                    >
+                      {appliedCoupon.code} ×
+                    </button>
+                  )}
+                </div>
+              )}
               {accessStatus?.enabled ? (
                 <button
                   type="button"
@@ -744,12 +835,12 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                   type="button"
                   disabled={togglingAccess || loadingAccess}
                   onClick={() => void handleEnableMetered()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 tabular-nums"
                 >
                   <Play className="h-3.5 w-3.5 fill-current" />
                   {togglingAccess
                     ? 'Enabling...'
-                    : `Enable Metered (${accessStatus?.nextQuarterCost ?? 8} pts / 15m)`}
+                    : `Enable Metered (${startQuote.finalCost} pts)`}
                 </button>
               )}
               {onNavigate && (
@@ -759,7 +850,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
                 >
                   <Crown className="h-3.5 w-3.5" />
-                  Go Pro
+                  Plans
                 </button>
               )}
             </>
@@ -1173,12 +1264,12 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                     onClick={() =>
                       isGuest ? exitGuestToSignIn() : void handleEnableMetered()
                     }
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 tabular-nums"
                   >
                     <Lock className="h-4 w-4" />
                     {isGuest
-                      ? 'Sign In for Metered Mode (30 pts/hr) or Pro'
-                      : `Enable Metered Access (${accessStatus?.nextQuarterCost ?? 8} pts / 15 min) & Solve`}
+                      ? 'Sign In for Metered Mode (30 pts/hr) or Pro / Elite'
+                      : `Enable Metered Access (${startQuote.finalCost} pts incl. ${APP_PLATFORM_FEE}-pt fee) & Solve`}
                   </button>
                 )}
               </div>
@@ -1212,7 +1303,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                         Formula Calculator Solver Locked
                       </h3>
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
-                        This case-aware symbolic calculator is included with <strong>Pro</strong> or available via manual <strong>Metered Hourly Access (30 pts/hr billed quarterly every 15 minutes)</strong>. Note: Specialized Math Calculators remain available as the Lite Version for Pro &amp; Admin.
+                        This case-aware symbolic calculator is included with <strong>Pro / Elite</strong> or available via manual <strong>Metered Hourly Access (30 pts/hr billed quarterly + {APP_PLATFORM_FEE}-pt App fee on enable)</strong>. Note: Specialized Math Calculators remain available as the Lite Version for Pro, Elite &amp; Admin.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
@@ -1230,10 +1321,10 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                             type="button"
                             disabled={togglingAccess}
                             onClick={() => void handleEnableMetered()}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 tabular-nums"
                           >
                             <Play className="h-3.5 w-3.5 fill-current" />
-                            Enable Metered ({accessStatus?.nextQuarterCost ?? 8} pts / 15m)
+                            Enable Metered ({startQuote.finalCost} pts)
                           </button>
                           {onNavigate && (
                             <button
@@ -1242,7 +1333,7 @@ export const FormulaCalculatorView: React.FC<FormulaCalculatorViewProps> = ({
                               className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50"
                             >
                               <Crown className="h-3.5 w-3.5" />
-                              Upgrade to Pro
+                              Upgrade Plan
                             </button>
                           )}
                         </>

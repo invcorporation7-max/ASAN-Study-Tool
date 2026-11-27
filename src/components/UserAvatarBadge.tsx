@@ -6,6 +6,7 @@ interface UserAvatarBadgeProps {
   plan?: string;
   role?: string;
   contributorApproved?: boolean;
+  visualEffects?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -15,11 +16,13 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = ({
   plan = 'basic',
   role = 'user',
   contributorApproved = false,
+  visualEffects = true,
   size = 'md',
 }) => {
   const isSuper = role === 'super';
   const isAdmin = role === 'admin';
   const isContributor = Boolean(contributorApproved) || role === 'contributor';
+  const isElite = plan === 'elite';
   const isPro = plan === 'pro';
 
   const dim =
@@ -28,7 +31,8 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = ({
   // Ring & Glow rules:
   // - Super: Purple + Amber Developer Ring + Golden/Violet Glow
   // - Admin: Golden ring + Red glow
-  // - Approved Contributor: Red glow (Rainbow ring + red glow if also Pro, else Red ring + red glow)
+  // - Elite: Glowing animated blue ring with shine (.asan-elite-ring when visualEffects enabled)
+  // - Approved Contributor: Red glow (Rainbow/Blue ring + red glow if Pro/Elite, else Red ring + red glow)
   // - Pro: Rainbow gradient ring
   // - Basic / Normal: Plain Blue ring
   let ringClass = 'bg-blue-600';
@@ -43,6 +47,16 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = ({
     ringClass = 'bg-gradient-to-tr from-amber-300 via-yellow-500 to-amber-600';
     glowClass = 'shadow-[0_0_12px_rgba(239,68,68,0.68)]';
     badgeTitle = 'Admin (Golden Ring + Red Glow)';
+  } else if (isContributor && isElite) {
+    ringClass = 'bg-gradient-to-tr from-blue-900 via-blue-500 to-cyan-400';
+    glowClass = visualEffects
+      ? 'asan-elite-ring shadow-[0_0_12px_rgba(239,68,68,0.68)]'
+      : 'shadow-[0_0_12px_rgba(239,68,68,0.68)]';
+    badgeTitle = 'Elite + Approved Contributor (Blue Shine Ring + Red Glow)';
+  } else if (isElite) {
+    ringClass = 'bg-gradient-to-tr from-blue-900 via-blue-500 to-cyan-400';
+    glowClass = visualEffects ? 'asan-elite-ring' : '';
+    badgeTitle = 'Elite Plan (Blue Ring + Shine)';
   } else if (isContributor && isPro) {
     ringClass = 'bg-gradient-to-tr from-rose-500 via-amber-400 via-emerald-400 to-blue-600';
     glowClass = 'shadow-[0_0_12px_rgba(239,68,68,0.68)]';

@@ -101,7 +101,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleConnectAndLoadFolder = async () => {
     if (!workspacePermissions.driveSync) {
-      setStatusMsg('Google Drive Folder Sync is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Drive Folder Sync is disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -127,7 +127,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleUploadToAppFolder = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!workspacePermissions.driveSync) {
-      setStatusMsg('Google Drive Folder Sync is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Drive Folder Sync is disabled in Settings → Workspace Permissions.');
       e.target.value = '';
       return;
     }
@@ -177,7 +177,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const handleCreateDoc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!workspacePermissions.docsExport) {
-      setStatusMsg('Google Docs export is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Docs export is disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -201,7 +201,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleSyncScheduleSheet = async () => {
     if (!workspacePermissions.sheetsSync) {
-      setStatusMsg('Google Sheets sync is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Sheets sync is disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -255,7 +255,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleSyncMasterExams = async () => {
     if (!workspacePermissions.sheetsSync) {
-      setStatusMsg('Google Sheets sync is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Sheets sync is disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -282,7 +282,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleExportTasksSheet = async () => {
     if (!workspacePermissions.sheetsSync) {
-      setStatusMsg('Google Sheets sync is disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Sheets sync is disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -311,7 +311,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   const handleCreateMeet = async () => {
     if (!workspacePermissions.meetRooms) {
-      setStatusMsg('Google Meet study rooms are disabled in View Plans and Settings → Workspace Permissions.');
+      setStatusMsg('Google Meet study rooms are disabled in Settings → Workspace Permissions.');
       return;
     }
     setBusy(true);
@@ -373,7 +373,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         !workspacePermissions.meetRooms ||
         !workspacePermissions.docsExport) && (
         <div className="rounded-lg border border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/40 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-300">
-          One or more Google Workspace functions are turned off under <strong>View Plans and Settings → Google Workspace Function Permissions</strong>. Re-enable them anytime in View Plans and Settings.
+          One or more Google Workspace functions are turned off under <strong>Settings → Google Workspace Function Permissions</strong>. Re-enable them anytime in Settings.
         </div>
       )}
 
@@ -439,7 +439,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   </button>
                 </>
               ) : (
-                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans and Settings</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in Settings</span>
               )}
             </div>
           </div>
@@ -541,7 +541,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                     </button>
                   </>
                 ) : (
-                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans and Settings</span>
+                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in Settings</span>
                 )}
               </div>
             </div>
@@ -579,7 +579,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   Create Meet Room
                 </button>
               ) : (
-                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in View Plans and Settings</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">Disabled in Settings</span>
               )}
             </div>
             {meetRoom ? (
@@ -635,7 +635,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                 disabled={busy || !workspacePermissions.docsExport}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {workspacePermissions.docsExport ? 'Create Doc' : 'Docs Export Disabled in View Plans and Settings'}
+                {workspacePermissions.docsExport ? 'Create Doc' : 'Docs Export Disabled in Settings'}
               </button>
               {createdDocUrl && (
                 <a

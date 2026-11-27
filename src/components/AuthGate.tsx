@@ -42,6 +42,38 @@ export const AuthGate: React.FC = () => {
   const [localError, setLocalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Dev Modal states for Alt+C
+  const [showDevModal, setShowDevModal] = useState(false);
+  const [devIdentifierInput, setDevIdentifierInput] = useState('DEV-1');
+  const [devPasswordInput, setDevPasswordInput] = useState('dev123');
+  const [devSubmitting, setDevSubmitting] = useState(false);
+  const [devModalError, setDevModalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        setShowDevModal((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleDevModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDevModalError(null);
+    setDevSubmitting(true);
+    try {
+      await signInWithPassword(devIdentifierInput.trim(), devPasswordInput);
+      setShowDevModal(false);
+    } catch (err) {
+      setDevModalError(err instanceof Error ? err.message : 'Developer authentication failed');
+    } finally {
+      setDevSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (prefillIdentifier) {
       setAuthTab('password');
@@ -462,7 +494,17 @@ export const AuthGate: React.FC = () => {
       </main>
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-          <span>&copy; 2026 ASAN-Study_tool · Arham Imam</span>
+          <div className="flex items-center gap-4">
+            <span>&copy; 2026 ASAN-Study_tool · Arham Imam</span>
+            <button
+              type="button"
+              onClick={() => setShowDevModal(true)}
+              className="font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Developer Login (Alt+C)
+            </button>
+          </div>
           <div className="flex items-center gap-4">
             <a
               href="/privacy-policy.html"
@@ -479,6 +521,86 @@ export const AuthGate: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Alt+C Developer Login Modal */}
+      {showDevModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h2 className="font-display text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Developer Console Login (DEV-1)
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDevModal(false)}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg font-bold px-2"
+              >
+                &times;
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Press <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5">Alt+C</code> anytime to open this modal. Enter the DEV-1 identifier and your <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5">DEV_TEST_PASSWORD</code> secret.
+            </p>
+
+            <form onSubmit={handleDevModalSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Developer Identifier (e.g. DEV-1)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={devIdentifierInput}
+                  onChange={(e) => setDevIdentifierInput(e.target.value)}
+                  placeholder="DEV-1"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  DEV_TEST_PASSWORD Secret
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={devPasswordInput}
+                  onChange={(e) => setDevPasswordInput(e.target.value)}
+                  placeholder="dev123"
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              {devModalError && (
+                <div className="rounded-lg bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                  {devModalError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDevModal(false)}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={devSubmitting}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {devSubmitting ? 'Authenticating...' : 'Sign In as DEV-1'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
